@@ -24,6 +24,22 @@ npm run start
 
 Open `http://localhost:3000`
 
+## Deploy on Render
+
+- A Render Blueprint file is included at [render.yaml](/Users/sowmya/h2houseofhealth.github.io/render.yaml).
+- The deployment uses a persistent disk for:
+  - SQLite database data
+  - uploaded files
+- Required secrets to fill in on Render:
+  - `RAZORPAY_KEY_ID`
+  - `RAZORPAY_KEY_SECRET`
+  - `SENDGRID_API_KEY`
+  - `SENDGRID_OTP_TEMPLATE_ID`
+  - `SENDGRID_FROM_EMAIL`
+- Optional mail / SES vars can also be filled if you use those flows.
+- One-click deploy URL for this repo:
+  - `https://render.com/deploy?repo=https://github.com/h2houseofhealth/h2houseofhealth.github.io`
+
 ## Demo admin login
 
 - Email: `admin@h2health.local`
@@ -80,8 +96,12 @@ Open `http://localhost:3000`
 - OTP delivery requires valid SendGrid configuration in all environments.
 - For Razorpay payments configure:
 `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`
+- Keep Razorpay in test mode:
+`RAZORPAY_MODE=test` and use `rzp_test_*` keys.
 - Hydrogen Session pricing is membership-aware:
   active members get `memberPriceInr`; others get `nonMemberPriceInr`.
+- IV Therapies and IV Shots use the same price for members and non-members.
+- Membership Services (Lab Tests, Oxidative Stress Marker Test, Radiology Services) are available only to active members.
 
 ## Payment Flow
 
@@ -94,7 +114,11 @@ Open `http://localhost:3000`
 ## Booking Safeguards
 
 - Double-booking prevention:
-  same doctor + date + slot cannot be booked if another active booking exists (`pending`, `booked`, `confirmed`).
+  same service + date + slot cannot be booked if another active booking exists (`pending`, `booked`, `confirmed`).
+- Slot duration:
+  1.5 hours per slot (first slot `9:30 AM - 11:00 AM`, last slot `7:30 PM - 9:00 PM`).
+- Add-on rule:
+  only one IV add-on (IV Therapy or IV Shot) is allowed per user in the same slot; additional add-ons are handled by admin after consultation.
 - Only approved doctors are visible in user booking flow.
 - User edit policy:
   users cannot edit bookings once they are `confirmed` or `completed`.

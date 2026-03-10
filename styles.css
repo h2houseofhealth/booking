@@ -170,6 +170,12 @@ h1 {
   font-size: 1.1rem;
 }
 
+.service-panel-lead {
+  margin: -0.45rem 0 0;
+  font-size: 0.84rem;
+  color: rgba(63, 45, 33, 0.75);
+}
+
 .membership-head {
   display: flex;
   justify-content: space-between;
@@ -196,6 +202,73 @@ h1 {
   gap: 0.8rem;
 }
 
+.member-choice-gate {
+  max-width: 860px;
+  margin-inline: auto;
+}
+
+.member-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.user-tab-nav {
+  padding: 0.6rem;
+}
+
+.user-tab-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.user-tab-btn {
+  border: 1px solid rgba(122, 78, 47, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.8rem 0.9rem;
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.user-tab-btn.is-active {
+  border-color: rgba(122, 78, 47, 0.55);
+  background: rgba(245, 235, 226, 0.95);
+  color: #7a4e2f;
+}
+
+.member-choice-card {
+  border: 1px solid rgba(122, 78, 47, 0.22);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 1rem;
+  text-align: left;
+  cursor: pointer;
+  display: grid;
+  gap: 0.35rem;
+  transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
+}
+
+.member-choice-card:hover {
+  border-color: rgba(122, 78, 47, 0.5);
+  background: rgba(250, 243, 236, 0.9);
+  transform: translateY(-1px);
+}
+
+.member-choice-card strong {
+  font-size: 1rem;
+  color: #7a4e2f;
+}
+
+.member-choice-card span {
+  font-size: 0.88rem;
+  color: rgba(63, 45, 33, 0.78);
+  line-height: 1.45;
+}
+
 .membership-card {
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -216,6 +289,44 @@ h1 {
 .membership-price {
   color: #7a4e2f;
   font-weight: 700;
+}
+
+.membership-add-controls {
+  margin-top: 0.45rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.membership-add-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #7a4e2f;
+}
+
+.membership-checkout-summary {
+  margin: 0 0 0.75rem;
+  font-size: 0.86rem;
+  color: rgba(63, 45, 33, 0.82);
+}
+
+.membership-members-grid {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.membership-member-row {
+  border: 1px solid rgba(122, 78, 47, 0.2);
+  border-radius: 12px;
+  padding: 0.62rem;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.membership-member-row h4 {
+  margin: 0 0 0.55rem;
+  font-size: 0.9rem;
+  color: #7a4e2f;
 }
 
 .auth-card {
@@ -421,6 +532,50 @@ h1 {
   white-space: nowrap;
 }
 
+.admin-booking-target {
+  min-width: min(560px, 100%);
+}
+
+.admin-customer-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.admin-booking-target label {
+  min-width: 0;
+}
+
+.admin-client-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0 0 0.9rem;
+}
+
+.admin-client-chip {
+  border: 1px solid rgba(122, 78, 47, 0.18);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.86);
+  padding: 0.65rem 0.72rem;
+}
+
+.admin-client-chip strong {
+  display: block;
+  margin-bottom: 0.2rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(63, 45, 33, 0.68);
+}
+
+.admin-client-chip span {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #5f3f26;
+}
+
 .service-date-row {
   margin: 0 0 0.8rem;
 }
@@ -443,13 +598,13 @@ h1 {
 
 .hydrogen-plan-controls {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 0.7rem;
 }
 
 .hydrogen-layout {
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: minmax(300px, 340px) 1fr;
   gap: 0.8rem;
 }
 
@@ -458,6 +613,16 @@ h1 {
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.9);
   padding: 0.7rem;
+}
+
+.hydrogen-plan-controls label {
+  min-width: 0;
+}
+
+.hydrogen-plan-controls select,
+.hydrogen-plan-controls input {
+  width: 100%;
+  max-width: 100%;
 }
 
 .hydrogen-sidebar-title {
@@ -510,6 +675,42 @@ h1 {
   margin-top: 0.6rem;
   border-top: 1px dashed rgba(122, 78, 47, 0.22);
   padding-top: 0.55rem;
+}
+
+.hydrogen-addon-panel {
+  margin-top: 0.6rem;
+  border: 1px solid rgba(122, 78, 47, 0.2);
+  background: rgba(250, 243, 236, 0.82);
+  border-radius: 10px;
+  padding: 0.65rem;
+}
+
+.hydrogen-addon-head {
+  display: grid;
+  gap: 0.15rem;
+  margin-bottom: 0.55rem;
+}
+
+.hydrogen-addon-head strong {
+  color: #7a4e2f;
+  font-size: 0.9rem;
+}
+
+.hydrogen-addon-head span {
+  font-size: 0.8rem;
+  color: rgba(63, 45, 33, 0.78);
+}
+
+.hydrogen-addon-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.hydrogen-addon-note {
+  margin: 0.55rem 0 0;
+  font-size: 0.78rem;
+  color: rgba(63, 45, 33, 0.78);
 }
 
 .hydrogen-session-editor h4 {
@@ -758,6 +959,105 @@ h1 {
   width: 100%;
 }
 
+.admin-membership-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.admin-membership-card {
+  border: 1px solid rgba(122, 78, 47, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.86);
+  padding: 0.85rem;
+}
+
+.admin-membership-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.8rem;
+  margin-bottom: 0.65rem;
+}
+
+.admin-membership-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.admin-membership-head p {
+  margin: 0.2rem 0 0;
+  font-size: 0.84rem;
+  color: rgba(63, 45, 33, 0.76);
+}
+
+.admin-membership-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-membership-meta-item {
+  border: 1px solid rgba(122, 78, 47, 0.16);
+  border-radius: 10px;
+  background: rgba(250, 243, 236, 0.72);
+  padding: 0.55rem 0.6rem;
+}
+
+.admin-membership-meta-item strong {
+  display: block;
+  margin-bottom: 0.18rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(63, 45, 33, 0.68);
+}
+
+.admin-membership-meta-item span {
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.admin-membership-members {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-membership-members h4 {
+  margin: 0;
+  font-size: 0.86rem;
+  color: #7a4e2f;
+}
+
+.admin-member-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.admin-member-field {
+  border: 1px solid rgba(122, 78, 47, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 0.52rem 0.58rem;
+}
+
+.admin-member-field strong {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(63, 45, 33, 0.66);
+}
+
+.admin-member-field span {
+  display: block;
+  font-size: 0.85rem;
+  word-break: break-word;
+}
+
 .filters {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr auto;
@@ -845,6 +1145,110 @@ th {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: rgba(63, 45, 33, 0.75);
+}
+
+.booking-service-block,
+.booking-schedule-block {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.booking-service-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #4f3522;
+}
+
+.booking-service-meta,
+.booking-schedule-line {
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: rgba(63, 45, 33, 0.82);
+}
+
+.booking-service-meta {
+  padding-left: 0.75rem;
+  position: relative;
+}
+
+.booking-service-meta::before {
+  content: '';
+  position: absolute;
+  left: 0.2rem;
+  top: 0.52rem;
+  width: 0.28rem;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: rgba(122, 78, 47, 0.6);
+}
+
+.booking-schedule-line {
+  padding: 0.28rem 0.5rem;
+  border: 1px solid rgba(122, 78, 47, 0.14);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.booking-details-toggle {
+  margin-top: 0.45rem;
+  border: 1px solid rgba(122, 78, 47, 0.16);
+  border-radius: 10px;
+  background: rgba(247, 241, 235, 0.82);
+  padding: 0.4rem 0.55rem;
+}
+
+.booking-details-toggle summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #7a4e2f;
+  list-style: none;
+}
+
+.booking-details-toggle summary::-webkit-details-marker {
+  display: none;
+}
+
+.booking-details-section + .booking-details-section {
+  margin-top: 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed rgba(122, 78, 47, 0.18);
+}
+
+.booking-details-heading {
+  margin: 0.45rem 0 0.25rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(63, 45, 33, 0.68);
+}
+
+.booking-details-line {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgba(63, 45, 33, 0.84);
+}
+
+.user-checkout-summary {
+  margin-right: auto;
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(122, 78, 47, 0.16);
+  border-radius: 10px;
+  background: rgba(247, 241, 235, 0.9);
+  color: #4f3522;
+}
+
+.user-checkout-summary strong {
+  font-size: 0.92rem;
+}
+
+.user-checkout-summary span {
+  font-size: 0.84rem;
+  color: rgba(63, 45, 33, 0.8);
 }
 
 .empty-state {
@@ -1059,7 +1463,22 @@ th {
     grid-template-columns: 1fr;
   }
 
+  .member-choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .user-tab-grid {
+    grid-template-columns: 1fr;
+  }
+
   .filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .admin-client-meta,
+  .admin-membership-meta,
+  .admin-member-grid,
+  .admin-customer-form {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -1088,6 +1507,11 @@ th {
     gap: 0.45rem;
   }
 
+  .admin-booking-target,
+  .admin-booking-target label {
+    min-width: 100%;
+  }
+
   .service-cluster-note {
     white-space: normal;
   }
@@ -1095,10 +1519,6 @@ th {
   .service-slot-row {
     grid-template-columns: 1fr;
     gap: 0.35rem;
-  }
-
-  .hydrogen-plan-controls {
-    grid-template-columns: 1fr;
   }
 
   .hydrogen-layout {
@@ -1109,7 +1529,18 @@ th {
     grid-template-columns: 1fr;
   }
 
+  .hydrogen-addon-grid {
+    grid-template-columns: 1fr;
+  }
+
   .hydrogen-pricing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-client-meta,
+  .admin-membership-meta,
+  .admin-member-grid,
+  .admin-customer-form {
     grid-template-columns: 1fr;
   }
 

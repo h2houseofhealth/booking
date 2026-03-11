@@ -24,7 +24,10 @@
             <span id="profileAvatar" class="profile-avatar"></span>
             <span class="profile-meta">
               <strong id="userName"></strong>
-              <span class="role-chip" id="userRole"></span>
+              <span class="profile-badges">
+                <span class="role-chip" id="userRole"></span>
+                <span class="membership-badge" id="userMembershipBadge" hidden>★ Member</span>
+              </span>
             </span>
           </button>
           <button id="logoutBtn" class="btn btn-secondary">Logout</button>
@@ -68,23 +71,26 @@
           <span id="authSwitchText">Don't have an account?</span>
           <button type="button" id="authSwitchBtn" class="link-btn">Register</button>
         </p>
-        <p class="demo-cred">Admin login: <code>admin@h2health.local</code> / <code>Admin@12345</code></p>
       </section>
 
       <section id="memberChoiceGate" class="panel app-only user-only member-choice-gate" aria-label="Choose membership mode" hidden>
         <p class="auth-kicker">Continue</p>
         <h2>Choose How You Want To Continue</h2>
         <p class="membership-copy">
-          Select whether you want to continue as a member or a non-member. After that, the booking portal will open.
+          Choose whether you want to join as a member, continue with membership benefits, or continue as a non-member.
         </p>
         <div class="member-choice-grid">
+          <button id="joinAsMemberBtn" class="member-choice-card" type="button">
+            <strong>Join as Member</strong>
+            <span>Open the membership schemes first and continue to payment and services from there.</span>
+          </button>
           <button id="continueAsMemberBtn" class="member-choice-card" type="button">
             <strong>Continue as Member</strong>
-            <span>See membership subscription first, then continue to the booking portal.</span>
+            <span>Go directly to services with member pricing and membership-only access.</span>
           </button>
           <button id="continueAsNonMemberBtn" class="member-choice-card" type="button">
             <strong>Continue as Non-member</strong>
-            <span>Go directly into the regular booking portal without opening membership first.</span>
+            <span>Go directly to services with non-member access and regular pricing.</span>
           </button>
         </div>
       </section>
@@ -157,16 +163,15 @@
               </label>
             </div>
           </div>
-          <button class="btn btn-primary user-only" type="button" id="openBookingBtn">Book Slot</button>
         </div>
-        <p class="membership-copy">
-          Book in 3 steps: choose category, choose service, then pick a 1.5-hour slot (first: 9:30 AM - 11:00 AM, last:
-          7:30 PM - 9:00 PM). Only 1 IV add-on (IV Therapy or IV Shot) is allowed in the same time slot.
-        </p>
         <div id="adminClientMeta" class="admin-client-meta admin-only" hidden></div>
         <p id="adminCustomerMessage" class="membership-copy admin-only" hidden></p>
         <div id="serviceGrid" class="doctor-grid"></div>
         <p id="serviceEmpty" class="empty-state" hidden>No services configured.</p>
+        <p id="servicePageNote" class="service-page-note user-only">
+          ⚠️ Note: IV Therapy/IV Shots require a 2-week gap between sessions. (Whether taken separately or as an add-on
+          with Hydrogen Therapy) Hydrogen Therapy sessions can be taken up to 3 times per day.
+        </p>
         <div class="dialog-actions user-only">
           <button id="servicesBackBtn" class="btn btn-secondary" type="button">Back</button>
           <button id="servicesNextBtn" class="btn btn-primary" type="button">Next</button>
@@ -255,6 +260,26 @@
         </p>
         <div id="adminMembershipOrdersList" class="admin-membership-list"></div>
         <p id="adminMembershipEmptyState" class="empty-state">No paid memberships found.</p>
+      </section>
+
+      <section class="panel app-only admin-only" aria-label="Discount phones" hidden>
+        <div class="panel-head">
+          <h2>Discount Phones</h2>
+        </div>
+        <p class="membership-copy">Add phone numbers that should automatically receive a service discount.</p>
+        <form id="adminDiscountForm" class="admin-discount-form">
+          <label>
+            Phone Number
+            <input id="adminDiscountPhone" type="tel" placeholder="Enter phone number" required />
+          </label>
+          <label>
+            Discount %
+            <input id="adminDiscountPercent" type="number" min="1" max="100" step="1" placeholder="10" required />
+          </label>
+          <button id="adminDiscountSubmitBtn" class="btn btn-primary" type="submit">Add Discount</button>
+        </form>
+        <div id="adminDiscountList" class="admin-discount-list"></div>
+        <p id="adminDiscountEmptyState" class="empty-state">No discount phone numbers added.</p>
       </section>
     </main>
 

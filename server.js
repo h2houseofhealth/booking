@@ -28,7 +28,6 @@ const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
 const RAZORPAY_MODE = String(process.env.RAZORPAY_MODE || 'test').toLowerCase();
 const SENDGRID_API_KEY = String(process.env.SENDGRID_API_KEY || '').trim();
-const SENDGRID_OTP_TEMPLATE_ID = String(process.env.SENDGRID_OTP_TEMPLATE_ID || '').trim();
 const SENDGRID_FROM_EMAIL = String(
   process.env.SENDGRID_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER || ''
 ).trim();
@@ -429,7 +428,7 @@ app.post('/api/auth/register/start', async (req, res) => {
        created_at = datetime('now')`
   ).run(email, name, placeholderPasswordHash, otpHash, expiresAt);
 
-  const mailResult = await sendOtpEmail(email, otp);
+  const mailResult = await sendOtpEmail(email, otp, 'signup');
   if (!mailResult.ok) {
     return res.status(mailResult.statusCode || 500).json({ message: mailResult.message });
   }
@@ -655,7 +654,7 @@ app.post('/api/auth/password/forgot', async (req, res) => {
        created_at = datetime('now')`
   ).run(email, otpHash, expiresAt);
 
-  const mailResult = await sendOtpEmail(email, otp);
+  const mailResult = await sendOtpEmail(email, otp, 'password_reset');
   if (!mailResult.ok) {
     return res.status(mailResult.statusCode || 500).json({ message: mailResult.message });
   }
@@ -1354,6 +1353,7 @@ app.post('/api/admin/services', requireAuth, requireAdmin, (req, res) => {
       name: resolvedCustomer.user.name || '',
       email: resolvedCustomer.user.email || '',
       mobile: resolvedCustomer.user.mobile || '',
+      discountPercent: getDiscountPercentForPhone(resolvedCustomer.user.mobile || ''),
       membershipStatus: resolvedCustomer.user.membershipStatus || 'inactive',
       membershipExpiresAt: resolvedCustomer.user.membershipExpiresAt || null,
       membershipPeopleCount: resolvedCustomer.user.membershipPeopleCount ?? null,
@@ -1408,6 +1408,58 @@ app.get('/api/admin/membership-orders', requireAuth, requireAdmin, (_req, res) =
     });
 
   res.json({ orders });
+});
+
+app.get('/api/admin/discount-phones', requireAuth, requireAdmin, (_req, res) => {
+  const discountPhones = db
+    .prepare(
+      `SELECT id, phone_key AS phoneKey, phone_display AS phoneDisplay, discount_percent AS discountPercent, created_at AS createdAt
+       FROM admin_discount_phones
+       ORDER BY datetime(created_at) DESC, id DESC`
+    )
+    .all()
+    .map((row) => ({
+      id: Number(row.id),
+      phoneKey: row.phoneKey || '',
+      phoneDisplay: row.phoneDisplay || '',
+      discountPercent: Number(row.discountPercent || 0),
+      createdAt: row.createdAt || null,
+    }));
+
+  res.json({ discountPhones });
+});
+
+app.post('/api/admin/discount-phones', requireAuth, requireAdmin, (req, res) => {
+  const phoneDisplay = String(req.body?.phone || '').trim();
+  const phoneKey = normalizeDiscountPhoneKey(phoneDisplay);
+  const discountPercent = Number(req.body?.discountPercent || 0);
+
+  if (!phoneKey) {
+    return res.status(400).json({ message: 'Valid phone number is required.' });
+  }
+  if (!Number.isFinite(discountPercent) || discountPercent <= 0 || discountPercent > 100) {
+    return res.status(400).json({ message: 'discountPercent must be between 1 and 100.' });
+  }
+
+  db.prepare(
+    `INSERT INTO admin_discount_phones (phone_key, phone_display, discount_percent, created_at)
+     VALUES (?, ?, ?, datetime('now'))
+     ON CONFLICT(phone_key) DO UPDATE SET
+       phone_display = excluded.phone_display,
+       discount_percent = excluded.discount_percent`
+  ).run(phoneKey, phoneDisplay, discountPercent);
+
+  res.status(201).json({ message: 'Discount phone saved.' });
+});
+
+app.delete('/api/admin/discount-phones/:id', requireAuth, requireAdmin, (req, res) => {
+  const discountId = Number(req.params.id);
+  if (!Number.isInteger(discountId)) {
+    return res.status(400).json({ message: 'Invalid discount id.' });
+  }
+
+  db.prepare('DELETE FROM admin_discount_phones WHERE id = ?').run(discountId);
+  res.json({ message: 'Discount phone removed.' });
 });
 
 app.patch('/api/admin/doctors/:id/approval', requireAuth, requireAdmin, (req, res) => {
@@ -3555,6 +3607,35 @@ function getUserByEmail(email) {
     .get(normalizedEmail);
 }
 
+function normalizeDiscountPhoneKey(phone) {
+  const digits = String(phone || '').replace(/\D+/g, '');
+  if (digits.length < 7) return '';
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function getDiscountPercentForPhone(phone) {
+  const phoneKey = normalizeDiscountPhoneKey(phone);
+  if (!phoneKey) return 0;
+  const row = db
+    .prepare(
+      `SELECT discount_percent AS discountPercent
+       FROM admin_discount_phones
+       WHERE phone_key = ?`
+    )
+    .get(phoneKey);
+  const percent = Number(row?.discountPercent || 0);
+  if (!Number.isFinite(percent) || percent <= 0) return 0;
+  return Math.min(100, percent);
+}
+
+function applyPhoneDiscount(amountInr, phone) {
+  const baseAmount = Number(amountInr || 0);
+  if (!Number.isFinite(baseAmount) || baseAmount <= 0) return 0;
+  const discountPercent = getDiscountPercentForPhone(phone);
+  if (discountPercent <= 0) return baseAmount;
+  return Math.max(0, Math.round(baseAmount * (1 - discountPercent / 100)));
+}
+
 function resolveAdminCustomerContext({ userId, customerName, customerEmail, customerPhone, createIfMissing = false } = {}) {
   const normalizedName = String(customerName || '').trim();
   const normalizedEmail = String(customerEmail || '').trim().toLowerCase();
@@ -3852,11 +3933,7 @@ function getVisibleServicesForUser(user) {
   if (String(user?.role || '').toLowerCase() === 'admin') {
     return SERVICE_CATALOG;
   }
-  const membershipActive = isMembershipActiveForUser(user);
-  return SERVICE_CATALOG.filter((service) => {
-    if (!service?.membershipOnly) return true;
-    return membershipActive;
-  });
+  return SERVICE_CATALOG;
 }
 
 function isAddOnService(service) {
@@ -4303,7 +4380,7 @@ function validateBookingPayload(body, user) {
   }
 
   if (service.membershipOnly && !isMembershipActiveForUser(user)) {
-    return { error: 'This service is available only for active members.' };
+    return { error: 'This service is only for active members. It is free only for membership users.' };
   }
 
   const selectedDate = new Date(`${bookingDate}T00:00:00`);
@@ -4378,33 +4455,36 @@ function getEffectiveServicePriceInr(service, user) {
   const category = String(service.category || '').toUpperCase();
   const isHydrogen = category === 'HYDROGEN SESSION';
   const membershipActive = isMembershipActiveForUser(user);
+  const userPhone = user?.mobile || '';
 
   if (service.membershipOnly) {
     return membershipActive ? Number(service.priceInr || 0) : 0;
   }
 
   if (category === 'IV THERAPIES' || category === 'IV SHOTS') {
-    return Number(service.priceInr || 0);
+    return applyPhoneDiscount(Number(service.priceInr || 0), userPhone);
   }
 
   if (isHydrogen && membershipActive && Number(service.memberPriceInr) > 0) {
-    return Number(service.memberPriceInr);
+    return applyPhoneDiscount(Number(service.memberPriceInr), userPhone);
   }
 
   if (isHydrogen && Number(service.nonMemberPriceInr) > 0) {
-    return Number(service.nonMemberPriceInr);
+    return applyPhoneDiscount(Number(service.nonMemberPriceInr), userPhone);
   }
 
-  return Number(service.priceInr || 0);
+  return applyPhoneDiscount(Number(service.priceInr || 0), userPhone);
 }
 
 function toServiceResponse(service, user) {
   const membershipActive = isMembershipActiveForUser(user);
   const effectivePriceInr = getEffectiveServicePriceInr(service, user);
+  const discountPercent = getDiscountPercentForPhone(user?.mobile || '');
   return {
     ...service,
     effectivePriceInr,
     membershipActive,
+    discountPercent,
   };
 }
 
@@ -4813,10 +4893,10 @@ async function sendSignupConfirmationEmail(toEmail, name) {
   }
 }
 
-async function sendOtpEmail(toEmail, otp) {
+async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
   const normalizedToEmail = String(toEmail || '').trim().toLowerCase();
 
-  if (!SENDGRID_API_KEY || !SENDGRID_OTP_TEMPLATE_ID || !SENDGRID_FROM_EMAIL) {
+  if (!SENDGRID_API_KEY || !SENDGRID_FROM_EMAIL) {
     return {
       ok: false,
       statusCode: 500,
@@ -4824,15 +4904,33 @@ async function sendOtpEmail(toEmail, otp) {
     };
   }
 
+  const isPasswordReset = String(purpose || '').trim().toLowerCase() === 'password_reset';
+  const subject = isPasswordReset ? 'Password Reset Verification' : 'Sign Up Verification';
+  const heading = isPasswordReset ? 'Password Reset Verification' : 'Sign Up Verification';
+  const intro = isPasswordReset
+    ? 'Use the OTP below to continue resetting your password.'
+    : 'Use the OTP below to complete your sign up.';
+  const text = `${heading}\n\n${intro}\n\nOTP: ${String(otp)}\nValid for: ${OTP_TTL_MINUTES} minutes\n\nIf you did not request this, please ignore this email.`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">
+      <h2 style="margin: 0 0 16px;">${heading}</h2>
+      <p style="margin: 0 0 12px;">${intro}</p>
+      <p style="margin: 0 0 8px;">Your OTP is:</p>
+      <div style="display: inline-block; padding: 12px 18px; border-radius: 8px; background: #f3f4f6; font-size: 24px; font-weight: 700; letter-spacing: 4px;">
+        ${String(otp)}
+      </div>
+      <p style="margin: 16px 0 0;">This OTP is valid for ${OTP_TTL_MINUTES} minutes.</p>
+      <p style="margin: 12px 0 0; color: #6b7280;">If you did not request this, please ignore this email.</p>
+    </div>
+  `;
+
   try {
     await sgMail.send({
       to: normalizedToEmail,
       from: SENDGRID_FROM_EMAIL,
-      templateId: SENDGRID_OTP_TEMPLATE_ID,
-      dynamicTemplateData: {
-        otp: String(otp),
-        otpTtlMinutes: OTP_TTL_MINUTES,
-      },
+      subject,
+      text,
+      html,
     });
     return { ok: true };
   } catch (error) {
@@ -4948,8 +5046,18 @@ function migrate() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS admin_discount_phones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone_key TEXT NOT NULL UNIQUE,
+      phone_display TEXT NOT NULL,
+      discount_percent REAL NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_bookings_user_date
       ON bookings(user_id, booking_date, booking_time);
+    CREATE INDEX IF NOT EXISTS idx_admin_discount_phones_phone_key
+      ON admin_discount_phones(phone_key);
   `);
 
   if (!hasColumn('users', 'role')) {

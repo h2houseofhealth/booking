@@ -3,6 +3,7 @@ const state = {
   bookings: [],
   services: [],
   adminMembershipOrders: [],
+  adminDiscountPhones: [],
   adminResolvedCustomer: null,
   adminCustomerForm: {
     name: '',
@@ -81,6 +82,7 @@ const elements = {
   profileAvatar: document.getElementById('profileAvatar'),
   userName: document.getElementById('userName'),
   userRole: document.getElementById('userRole'),
+  userMembershipBadge: document.getElementById('userMembershipBadge'),
   logoutBtn: document.getElementById('logoutBtn'),
   appArea: document.getElementById('appArea'),
 
@@ -105,6 +107,7 @@ const elements = {
   userTabServices: document.getElementById('userTabServices'),
   userTabMembership: document.getElementById('userTabMembership'),
   userTabBookings: document.getElementById('userTabBookings'),
+  joinAsMemberBtn: document.getElementById('joinAsMemberBtn'),
   continueAsMemberBtn: document.getElementById('continueAsMemberBtn'),
   continueAsNonMemberBtn: document.getElementById('continueAsNonMemberBtn'),
   membershipSection: document.getElementById('membershipSection'),
@@ -115,6 +118,7 @@ const elements = {
   serviceGrid: document.getElementById('serviceGrid'),
   serviceEmpty: document.getElementById('serviceEmpty'),
   servicePanelLead: document.getElementById('servicePanelLead'),
+  servicePageNote: document.getElementById('servicePageNote'),
   adminCustomerName: document.getElementById('adminCustomerName'),
   adminCustomerEmail: document.getElementById('adminCustomerEmail'),
   adminCustomerPhone: document.getElementById('adminCustomerPhone'),
@@ -149,6 +153,12 @@ const elements = {
   adminEmptyState: document.getElementById('adminEmptyState'),
   adminMembershipOrdersList: document.getElementById('adminMembershipOrdersList'),
   adminMembershipEmptyState: document.getElementById('adminMembershipEmptyState'),
+  adminDiscountForm: document.getElementById('adminDiscountForm'),
+  adminDiscountPhone: document.getElementById('adminDiscountPhone'),
+  adminDiscountPercent: document.getElementById('adminDiscountPercent'),
+  adminDiscountSubmitBtn: document.getElementById('adminDiscountSubmitBtn'),
+  adminDiscountList: document.getElementById('adminDiscountList'),
+  adminDiscountEmptyState: document.getElementById('adminDiscountEmptyState'),
 
   openBookingBtn: document.getElementById('openBookingBtn'),
   dialog: document.getElementById('bookingDialog'),
@@ -230,6 +240,7 @@ function attachEvents() {
     state.bookings = [];
     state.services = [];
     state.adminMembershipOrders = [];
+    state.adminDiscountPhones = [];
     state.adminResolvedCustomer = null;
     state.adminCustomerForm = { name: '', email: '', phone: '' };
     state.postLoginChoice = '';
@@ -292,16 +303,34 @@ function attachEvents() {
   });
 
   elements.profileBtn.addEventListener('click', openProfileDialog);
-  elements.continueAsMemberBtn?.addEventListener('click', () => {
-    state.postLoginChoice = 'member';
+  elements.joinAsMemberBtn?.addEventListener('click', () => {
+    state.postLoginChoice = 'join-member';
     state.activeUserTab = 'membership';
     render();
     requestAnimationFrame(() => {
       document.querySelector('[aria-label="Membership"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
+  elements.continueAsMemberBtn?.addEventListener('click', () => {
+    if (!isCurrentUserMembershipActive()) {
+      state.postLoginChoice = 'join-member';
+      state.activeUserTab = 'membership';
+      render();
+      requestAnimationFrame(() => {
+        document.querySelector('[aria-label="Membership"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      alert('No active membership was found for this account. Join as member first to get membership pricing.');
+      return;
+    }
+    state.postLoginChoice = 'continue-member';
+    state.activeUserTab = 'services';
+    render();
+    requestAnimationFrame(() => {
+      document.querySelector('[aria-label="Services"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
   elements.continueAsNonMemberBtn?.addEventListener('click', () => {
-    state.postLoginChoice = 'non-member';
+    state.postLoginChoice = 'continue-non-member';
     state.activeUserTab = 'services';
     render();
     requestAnimationFrame(() => {
@@ -343,7 +372,7 @@ function attachEvents() {
   });
   elements.servicesBackBtn?.addEventListener('click', () => {
     resetServiceBrowserState();
-    if (state.postLoginChoice === 'member') {
+    if (state.postLoginChoice === 'join-member') {
       state.activeUserTab = 'membership';
       render();
       requestAnimationFrame(() => {
@@ -408,7 +437,12 @@ function attachEvents() {
     await submitMembershipCheckout();
   });
 
-  elements.openBookingBtn.addEventListener('click', () => openDialog());
+  elements.adminDiscountForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    await saveAdminDiscountPhone();
+  });
+
+  elements.openBookingBtn?.addEventListener('click', () => openDialog());
   elements.bookingForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     await upsertBooking();
@@ -684,6 +718,10 @@ async function refreshAdminCustomerContext() {
     await loadDashboardData();
     if (!isAdminCustomerFormReady()) {
       setAdminCustomerMessage('Booking page is ready. Enter customer details before saving the booking.');
+    } else if (Number(state.adminResolvedCustomer?.discountPercent || 0) > 0) {
+      setAdminCustomerMessage(
+        `Customer details loaded. A ${Number(state.adminResolvedCustomer.discountPercent)}% service discount will apply for this phone number.`
+      );
     } else if (state.adminResolvedCustomer?.membershipStatus === 'active') {
       setAdminCustomerMessage('Active membership found. Member pricing and membership-only services are loaded.');
     } else {
@@ -697,15 +735,17 @@ async function refreshAdminCustomerContext() {
 
 async function loadDashboardData() {
   if (state.user?.role === 'admin') {
-    const [bookingsResult, membershipOrdersResult, genericServicesResult] = await Promise.all([
+    const [bookingsResult, membershipOrdersResult, discountPhonesResult, genericServicesResult] = await Promise.all([
       api('/api/bookings'),
       api('/api/admin/membership-orders'),
+      api('/api/admin/discount-phones'),
       api('/api/services'),
     ]);
     state.bookings = bookingsResult.bookings || [];
     state.adminMembershipOrders = membershipOrdersResult.orders || [];
+    state.adminDiscountPhones = discountPhonesResult.discountPhones || [];
     state.membership = { plans: [], active: false, current: null };
-    state.services = (genericServicesResult.services || []).filter((service) => !service.membershipOnly);
+    state.services = genericServicesResult.services || [];
     state.adminResolvedCustomer = null;
 
     if (isAdminCustomerFormReady()) {
@@ -739,6 +779,7 @@ async function loadDashboardData() {
       current: membershipResult.current || null,
     };
     state.adminMembershipOrders = [];
+    state.adminDiscountPhones = [];
     state.adminResolvedCustomer = null;
     state.adminCustomerForm = { name: '', email: '', phone: '' };
   }
@@ -868,10 +909,12 @@ function populateServiceOptions(selectedService = '') {
   for (const service of state.services) {
     const option = document.createElement('option');
     option.value = service.name;
-    const isIncluded = Boolean(service.membershipOnly);
+    const isIncluded = Boolean(service.membershipOnly) && isCurrentUserMembershipActive();
     option.textContent = isIncluded
       ? `${service.name} - Included in Membership`
-      : `${service.name} - Rs. ${Number(service.effectivePriceInr ?? service.priceInr ?? 0).toLocaleString('en-IN')}`;
+      : service.membershipOnly
+        ? `${service.name} - Free for Members Only`
+        : `${service.name} - Rs. ${Number(service.effectivePriceInr ?? service.priceInr ?? 0).toLocaleString('en-IN')}`;
     option.dataset.category = service.category;
     elements.serviceName.appendChild(option);
   }
@@ -1375,6 +1418,11 @@ async function saveSingleSessionServiceBooking(serviceName) {
     alert('Set session date and time first.');
     return;
   }
+  const selectedService = getServiceCatalogEntry(serviceName);
+  if (selectedService?.membershipOnly && !isCurrentUserMembershipActive()) {
+    alert('This service is only for membership users. It is free only for active members.');
+    return;
+  }
   if (getBookingCategory(serviceName) === 'IV ADD-ON' && hasHydrogenPackageAddOnOnDateClient(effectiveBookingDate)) {
     alert(
       'A hydrogen package on this date already includes an IV add-on. Separate IV Therapy/IV Shot bookings are not allowed on the same day.'
@@ -1588,6 +1636,7 @@ function render() {
   elements.userName.textContent = state.user.name;
   elements.userRole.textContent = state.user.role;
   renderProfileAvatar();
+  renderProfileMembershipBadge();
   renderServicePanelContext();
 
   if (needsPostLoginChoice) {
@@ -1614,6 +1663,7 @@ function render() {
   if (isAdmin) {
     renderAdminRows(filtered);
     renderAdminMembershipOrders();
+    renderAdminDiscountPhones();
   } else {
     renderUserRows(filtered);
   }
@@ -1624,10 +1674,15 @@ function renderServicePanelContext() {
     if (state.user?.role === 'admin') {
       elements.servicePanelLead.textContent =
         'Enter customer details, then choose the service and slot. After booking, share the generated payment link.';
+      elements.servicePanelLead.hidden = false;
     } else {
-      elements.servicePanelLead.textContent =
-        'Choose a service category and save bookings into My Bookings. Any IV Therapy or IV Shot, including a hydrogen add-on, needs a 2-week gap before the next IV booking. Hydrogen without an add-on can still be booked on other days. Reach out to us if you still want to book sooner. Hydrogen is limited to 3 sessions per day.';
+      elements.servicePanelLead.textContent = '';
+      elements.servicePanelLead.hidden = true;
     }
+  }
+
+  if (elements.servicePageNote) {
+    elements.servicePageNote.hidden = state.user?.role === 'admin';
   }
 
   if (elements.adminCustomerName) elements.adminCustomerName.value = state.adminCustomerForm.name || '';
@@ -1650,6 +1705,7 @@ function renderServicePanelContext() {
       membershipStatus === 'active'
         ? `Active${resolvedCustomer?.membershipPeopleCount ? ` • ${resolvedCustomer.membershipPeopleCount} member${resolvedCustomer.membershipPeopleCount > 1 ? 's' : ''}` : ''}`
         : 'Inactive';
+    const activeDiscount = Number(resolvedCustomer?.discountPercent || 0);
     elements.adminClientMeta.hidden = false;
     elements.adminClientMeta.innerHTML = `
       <div class="admin-client-chip">
@@ -1668,8 +1724,36 @@ function renderServicePanelContext() {
         <strong>Valid Till</strong>
         <span>${resolvedCustomer?.membershipExpiresAt ? escapeHtml(new Date(resolvedCustomer.membershipExpiresAt).toLocaleDateString()) : '-'}</span>
       </div>
+      <div class="admin-client-chip">
+        <strong>Discount</strong>
+        <span>${activeDiscount > 0 ? `${activeDiscount}%` : '-'}</span>
+      </div>
     `;
   }
+}
+
+function isCurrentUserMembershipActive() {
+  if (state.user?.role !== 'user') return false;
+  if (state.membership?.active) return true;
+  const membershipStatus = String(state.user?.membershipStatus || '').trim().toLowerCase();
+  if (membershipStatus !== 'active') return false;
+  const expiresAt = state.user?.membershipExpiresAt ? new Date(state.user.membershipExpiresAt).getTime() : NaN;
+  return Number.isFinite(expiresAt) && expiresAt > Date.now();
+}
+
+function renderProfileMembershipBadge() {
+  if (!elements.userMembershipBadge) return;
+  const isActiveMember = isCurrentUserMembershipActive();
+  const isVisible = state.user?.role === 'user' && isActiveMember;
+  elements.userMembershipBadge.hidden = !isVisible;
+  if (!isVisible) {
+    elements.userMembershipBadge.removeAttribute('title');
+    return;
+  }
+  const expiresAt = state.user?.membershipExpiresAt ? new Date(state.user.membershipExpiresAt) : null;
+  elements.userMembershipBadge.textContent = '★ Member';
+  elements.userMembershipBadge.title =
+    expiresAt && !Number.isNaN(expiresAt.getTime()) ? `Membership active until ${expiresAt.toLocaleDateString()}` : 'Membership active';
 }
 
 function renderServices() {
@@ -1733,6 +1817,7 @@ function renderServices() {
   const selectedCategory = state.selectedServiceCategory;
   const selectedServices = grouped.get(selectedCategory) || [];
   const isHydrogenCategory = selectedCategory === 'HYDROGEN SESSION';
+  const isMembershipServicesCategory = selectedCategory === 'MEMBERSHIP SERVICES';
   const isSingleSessionCategory =
     selectedCategory === 'IV THERAPIES' ||
     selectedCategory === 'IV SHOTS' ||
@@ -1748,6 +1833,12 @@ function renderServices() {
       </div>
     </header>
   `;
+  if (isMembershipServicesCategory && !isCurrentUserMembershipActive()) {
+    const copy = section.querySelector('.service-section-copy');
+    if (copy) {
+      copy.textContent = 'Visible to all users. These services are free only if you joined as a member.';
+    }
+  }
 
   const backButton = document.createElement('button');
   backButton.type = 'button';
@@ -1827,7 +1918,7 @@ function renderServices() {
           <select class="hydrogen-plan-select"></select>
         </label>
         <label>
-          Add Extra Sessions (+n)
+          Add Extra Sessions
           <input class="hydrogen-extra-input" type="number" min="0" step="1" value="${extraSessions}" />
         </label>
       </div>
@@ -1933,7 +2024,6 @@ function renderServices() {
     card.innerHTML = `
       <div class="service-card-head">
         <h3>${escapeHtml(selectedService.name)}</h3>
-        <p class="service-card-subline">${isEditingHydrogenGroup ? 'Edit the full saved package and update all sessions' : 'Configure sessions and save booking'}</p>
       </div>
       <div class="service-price-panel">
         <p class="service-price-line">
@@ -2133,6 +2223,7 @@ function renderServices() {
 
     const effectivePrice = Number(selectedService.effectivePriceInr ?? selectedService.priceInr ?? 0);
     const isMembershipOnly = Boolean(selectedService.membershipOnly);
+    const hasMemberAccess = isCurrentUserMembershipActive();
     const selection = state.ivSelections[selectedService.name] || {};
     const activeSingleSessionEditId = String(state.singleSessionEditingBookingId || '').trim();
     const isEditingSingleSession =
@@ -2195,15 +2286,13 @@ function renderServices() {
     card.innerHTML = `
       <div class="service-card-head">
         <h3>${escapeHtml(selectedService.name)}</h3>
-        <p class="service-card-subline">${
-          isEditingSingleSession ? 'Update the booked session date and time' : 'Configure one session and save booking'
-        }</p>
       </div>
       <div class="service-price-panel">
         <p class="service-price-line">
           <span class="price-label">Your Price</span>
-          <strong>${isMembershipOnly ? 'Included in Membership' : `Rs. ${effectivePrice.toLocaleString('en-IN')}`}</strong>
+          <strong>${isMembershipOnly ? (hasMemberAccess ? 'Included in Membership' : 'Free for Members Only') : `Rs. ${effectivePrice.toLocaleString('en-IN')}`}</strong>
         </p>
+        ${isMembershipOnly && !hasMemberAccess ? '<p class="service-price-meta">Visible to all users, but booking is only available for active members.</p>' : ''}
       </div>
     `;
 
@@ -2351,6 +2440,7 @@ function renderServices() {
     card.className = 'doctor-card service-card';
     const effectivePrice = Number(service.effectivePriceInr ?? service.priceInr ?? 0);
     const isMembershipOnly = Boolean(service.membershipOnly);
+    const hasMemberAccess = isCurrentUserMembershipActive();
     const hasDualHydrogenPrices =
       String(service.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
       Number(service.memberPriceInr) > 0 &&
@@ -2361,12 +2451,11 @@ function renderServices() {
     card.innerHTML = `
       <div class="service-card-head">
         <h3>${escapeHtml(service.name)}</h3>
-        <p class="service-card-subline">${isSingleSessionCategory ? 'Set one session date and time below' : isHydrogenCategory ? 'Select date and slot below' : 'Select this plan to continue'}</p>
       </div>
       <div class="service-price-panel">
         <p class="service-price-line">
           <span class="price-label">Your Price</span>
-          <strong>${isMembershipOnly ? 'Included in Membership' : `Rs. ${effectivePrice.toLocaleString('en-IN')}`}</strong>
+          <strong>${isMembershipOnly ? (hasMemberAccess ? 'Included in Membership' : 'Free for Members Only') : `Rs. ${effectivePrice.toLocaleString('en-IN')}`}</strong>
         </p>
         ${
           hasDualHydrogenPrices
@@ -2381,6 +2470,7 @@ function renderServices() {
                </div>`
             : ''
         }
+        ${isMembershipOnly && !hasMemberAccess ? '<p class="service-price-meta">Visible to all users, but booking is only available for active members.</p>' : ''}
       </div>
     `;
 
@@ -2499,11 +2589,13 @@ function renderMembership() {
 
   if (elements.memberFlowLabel) {
     elements.memberFlowLabel.textContent =
-      state.postLoginChoice === 'member'
-        ? 'Member mode selected'
-        : state.postLoginChoice === 'non-member'
-          ? 'Membership is available if you want to switch later by signing in again.'
-          : '';
+      state.postLoginChoice === 'join-member'
+        ? 'Join as member selected'
+        : state.postLoginChoice === 'continue-member'
+          ? 'Active membership will be used for member pricing in services.'
+          : state.postLoginChoice === 'continue-non-member'
+            ? 'Non-member mode selected. Membership is available if you want to switch later.'
+            : '';
   }
 
   const current = state.membership.current || {};
@@ -2545,13 +2637,14 @@ function renderMembership() {
       <p>${escapeHtml(plan.peopleCount)} member${Number(plan.peopleCount) > 1 ? 's' : ''} • ${escapeHtml(
       plan.validityDays
     )} days • Selected: ${targetPeopleCount}</p>
+      <p class="membership-add-price-line">Add Person Price: Rs. ${addPersonPriceInr.toLocaleString('en-IN')} each</p>
       <p>${escapeHtml(plan.perks || '')}</p>
     `;
 
     const addControls = document.createElement('div');
     addControls.className = 'membership-add-controls';
     addControls.innerHTML = `
-      <span class="membership-add-label">Add Person: +${additionalPeople}</span>
+      <span class="membership-add-label">Add Person: +${additionalPeople}${additionalPeople > 0 ? ` • +Rs. ${(additionalPeople * addPersonPriceInr).toLocaleString('en-IN')}` : ''}</span>
     `;
     const decBtn = document.createElement('button');
     decBtn.type = 'button';
@@ -3137,6 +3230,77 @@ function renderAdminMembershipOrders() {
 
     elements.adminMembershipOrdersList.appendChild(card);
   }
+}
+
+function renderAdminDiscountPhones() {
+  if (!elements.adminDiscountList || !elements.adminDiscountEmptyState) return;
+
+  elements.adminDiscountList.innerHTML = '';
+  const items = Array.isArray(state.adminDiscountPhones) ? state.adminDiscountPhones : [];
+  if (!items.length) {
+    elements.adminDiscountEmptyState.hidden = false;
+    return;
+  }
+
+  elements.adminDiscountEmptyState.hidden = true;
+  items.forEach((item) => {
+    const row = document.createElement('article');
+    row.className = 'admin-discount-card';
+    row.innerHTML = `
+      <div>
+        <h3>${escapeHtml(item.phoneDisplay || item.phoneKey || '-')}</h3>
+        <p>${escapeHtml(String(item.discountPercent || 0))}% service discount</p>
+      </div>
+    `;
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'btn btn-secondary';
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', async () => {
+      await deleteAdminDiscountPhone(item.id);
+    });
+    row.appendChild(removeBtn);
+    elements.adminDiscountList.appendChild(row);
+  });
+}
+
+async function saveAdminDiscountPhone() {
+  const phone = String(elements.adminDiscountPhone?.value || '').trim();
+  const discountPercent = Number(elements.adminDiscountPercent?.value || 0);
+  if (!phone || !Number.isFinite(discountPercent) || discountPercent <= 0) {
+    alert('Enter a valid phone number and discount percentage.');
+    return;
+  }
+
+  const originalLabel = elements.adminDiscountSubmitBtn?.textContent || 'Add Discount';
+  if (elements.adminDiscountSubmitBtn) {
+    elements.adminDiscountSubmitBtn.disabled = true;
+    elements.adminDiscountSubmitBtn.textContent = 'Saving...';
+  }
+  try {
+    await api('/api/admin/discount-phones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, discountPercent }),
+    });
+    if (elements.adminDiscountPhone) elements.adminDiscountPhone.value = '';
+    if (elements.adminDiscountPercent) elements.adminDiscountPercent.value = '';
+    await loadDashboardData();
+    render();
+  } finally {
+    if (elements.adminDiscountSubmitBtn) {
+      elements.adminDiscountSubmitBtn.disabled = false;
+      elements.adminDiscountSubmitBtn.textContent = originalLabel;
+    }
+  }
+}
+
+async function deleteAdminDiscountPhone(discountId) {
+  const ok = confirm('Remove this discount phone number?');
+  if (!ok) return;
+  await api(`/api/admin/discount-phones/${encodeURIComponent(discountId)}`, { method: 'DELETE' });
+  await loadDashboardData();
+  render();
 }
 
 function cell(content) {

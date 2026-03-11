@@ -34,7 +34,6 @@ Open `http://localhost:3000`
   - `RAZORPAY_KEY_ID`
   - `RAZORPAY_KEY_SECRET`
   - `SENDGRID_API_KEY`
-  - `SENDGRID_OTP_TEMPLATE_ID`
   - `SENDGRID_FROM_EMAIL`
 - Optional mail / SES vars can also be filled if you use those flows.
 - One-click deploy URL for this repo:
@@ -87,7 +86,7 @@ Open `http://localhost:3000`
 - Set a strong `JWT_SECRET` in production.
 - Demo doctors are seeded only when `SEED_DEMO_DOCTORS=true`.
 - For OTP email delivery via SendGrid, configure:
-`SENDGRID_API_KEY`, `SENDGRID_OTP_TEMPLATE_ID`, `SENDGRID_FROM_EMAIL`
+`SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`
 - SMTP config is only used by SES verification-check email flow:
 `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
 - For SES sandbox recipient verification via API, configure:

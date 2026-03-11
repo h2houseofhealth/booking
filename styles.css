@@ -138,11 +138,17 @@ h1 {
 }
 
 .profile-meta {
+  display: grid;
+  gap: 0.12rem;
+  font-size: 0.86rem;
+  color: var(--ink);
+}
+
+.profile-badges {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.86rem;
-  color: var(--ink);
+  flex-wrap: wrap;
 }
 
 .role-chip {
@@ -153,6 +159,19 @@ h1 {
   text-transform: uppercase;
   font-size: 0.65rem;
   letter-spacing: 0.06em;
+}
+
+.membership-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(193, 142, 18, 0.26);
+  background: rgba(229, 178, 54, 0.16);
+  color: #8a6200;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .panel {
@@ -196,6 +215,17 @@ h1 {
   color: rgba(63, 45, 33, 0.82);
 }
 
+.service-page-note {
+  margin: 0.9rem 0 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(122, 78, 47, 0.18);
+  border-radius: 12px;
+  background: rgba(250, 243, 236, 0.82);
+  font-size: 0.88rem;
+  color: rgba(63, 45, 33, 0.88);
+  line-height: 1.5;
+}
+
 .membership-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -209,7 +239,7 @@ h1 {
 
 .member-choice-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.8rem;
 }
 
@@ -284,6 +314,11 @@ h1 {
 .membership-card p {
   margin: 0.35rem 0;
   font-size: 0.88rem;
+}
+
+.membership-add-price-line {
+  color: #7a4e2f;
+  font-weight: 600;
 }
 
 .membership-price {
@@ -971,6 +1006,41 @@ h1 {
   padding: 0.85rem;
 }
 
+.admin-discount-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(140px, 0.7fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+  margin-bottom: 0.9rem;
+}
+
+.admin-discount-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.admin-discount-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  border: 1px solid rgba(122, 78, 47, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.86);
+  padding: 0.85rem;
+}
+
+.admin-discount-card h3 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.admin-discount-card p {
+  margin: 0.2rem 0 0;
+  font-size: 0.84rem;
+  color: rgba(63, 45, 33, 0.76);
+}
+
 .admin-membership-head {
   display: flex;
   justify-content: space-between;
@@ -1460,6 +1530,10 @@ th {
   }
 
   .membership-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-discount-form {
     grid-template-columns: 1fr;
   }
 

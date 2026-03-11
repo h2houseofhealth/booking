@@ -1420,7 +1420,7 @@ async function saveSingleSessionServiceBooking(serviceName) {
   }
   const selectedService = getServiceCatalogEntry(serviceName);
   if (selectedService?.membershipOnly && !isCurrentUserMembershipActive()) {
-    alert('This service is only for membership users. It is free only for active members.');
+    alert('✨ An exclusive benefit for our members. Activate your membership to enjoy this service at no cost.');
     return;
   }
   if (getBookingCategory(serviceName) === 'IV ADD-ON' && hasHydrogenPackageAddOnOnDateClient(effectiveBookingDate)) {
@@ -2025,27 +2025,6 @@ function renderServices() {
       <div class="service-card-head">
         <h3>${escapeHtml(selectedService.name)}</h3>
       </div>
-      <div class="service-price-panel">
-        <p class="service-price-line">
-          <span class="price-label">Consolidated Price</span>
-          <strong>Rs. ${consolidatedAmount.toLocaleString('en-IN')}</strong>
-        </p>
-        <p class="service-price-meta">Package: Rs. ${Number(selectedService.effectivePriceInr || 0).toLocaleString(
-          'en-IN'
-        )} | Extra/session: Rs. ${extraSessionPrice.toLocaleString('en-IN')}</p>
-        <p class="service-price-meta">Membership payment is separate. This total is only for the session booking${
-          selectedAddOnService ? ' and optional IV add-on' : ''
-        }.</p>
-        ${isEditingHydrogenGroup ? '<p class="service-price-meta">Package size is locked during edit. Update session dates, times, and the optional add-on here.</p>' : ''}
-        <div class="hydrogen-pricing-grid">
-          <span class="hydrogen-pricing-head">No. of Services</span>
-          <span class="hydrogen-pricing-head">Non Member</span>
-          <span class="hydrogen-pricing-head">Member</span>
-          <span>${escapeHtml(formatSessionLabel(packageSessions))}</span>
-          <span>Rs. ${nonMemberPrice.toLocaleString('en-IN')}</span>
-          <span>Rs. ${memberPrice.toLocaleString('en-IN')}</span>
-        </div>
-      </div>
     `;
 
     const addOnPanel = document.createElement('div');
@@ -2070,9 +2049,9 @@ function renderServices() {
     const addOnNote = document.createElement('p');
     addOnNote.className = 'hydrogen-addon-note';
     addOnNote.textContent =
-      'Only 1 add-on can be booked in the same time slot. If more are needed, admin will add them after consultation.';
+      'Only one add-on can be booked in a single time slot. If you would like to book more sessions, please contact or visit H2 House of Health.';
     addOnPanel.appendChild(addOnNote);
-    card.appendChild(addOnPanel);
+    sidebar.appendChild(addOnPanel);
 
     const editor = document.createElement('div');
     editor.className = 'hydrogen-session-editor';
@@ -2292,7 +2271,7 @@ function renderServices() {
           <span class="price-label">Your Price</span>
           <strong>${isMembershipOnly ? (hasMemberAccess ? 'Included in Membership' : 'Free for Members Only') : `Rs. ${effectivePrice.toLocaleString('en-IN')}`}</strong>
         </p>
-        ${isMembershipOnly && !hasMemberAccess ? '<p class="service-price-meta">Visible to all users, but booking is only available for active members.</p>' : ''}
+        ${isMembershipOnly && !hasMemberAccess ? '<p class="service-price-meta">Booking is only available for active members.</p>' : ''}
       </div>
     `;
 
@@ -2470,7 +2449,7 @@ function renderServices() {
                </div>`
             : ''
         }
-        ${isMembershipOnly && !hasMemberAccess ? '<p class="service-price-meta">Visible to all users, but booking is only available for active members.</p>' : ''}
+        ${isMembershipOnly && !hasMemberAccess ? '<p class="service-price-meta">Booking is only available for active members.</p>' : ''}
       </div>
     `;
 

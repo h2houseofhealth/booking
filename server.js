@@ -4380,7 +4380,7 @@ function validateBookingPayload(body, user) {
   }
 
   if (service.membershipOnly && !isMembershipActiveForUser(user)) {
-    return { error: 'This service is only for active members. It is free only for membership users.' };
+    return { error: '✨ An exclusive benefit for our members. Activate your membership to enjoy this service at no cost.' };
   }
 
   const selectedDate = new Date(`${bookingDate}T00:00:00`);

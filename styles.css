@@ -262,6 +262,8 @@ h1 {
   font-weight: 700;
   color: var(--ink);
   cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .user-tab-btn.is-active {
@@ -276,10 +278,13 @@ h1 {
   background: rgba(255, 255, 255, 0.92);
   padding: 1rem;
   text-align: left;
+  color: var(--ink);
   cursor: pointer;
   display: grid;
   gap: 0.35rem;
   transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .member-choice-card:hover {
@@ -445,6 +450,8 @@ h1 {
   text-decoration: underline;
   cursor: pointer;
   font-weight: 600;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .stats-grid {
@@ -508,6 +515,7 @@ h1 {
   border: 1px solid rgba(122, 78, 47, 0.22);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.88);
+  color: var(--ink);
   padding: 0.85rem 0.95rem;
   cursor: pointer;
   display: flex;
@@ -515,6 +523,8 @@ h1 {
   align-items: center;
   gap: 0.8rem;
   transition: border-color 0.2s ease, background 0.2s ease;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .service-category-card:hover:not(:disabled) {
@@ -536,6 +546,7 @@ h1 {
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 0.04em;
+  color: var(--ink);
 }
 
 .service-category-meta {
@@ -1152,6 +1163,12 @@ button {
   font-family: inherit;
 }
 
+button {
+  color: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 input,
 select,
 textarea {
@@ -1175,6 +1192,8 @@ textarea:focus {
   padding: 0.62rem 0.9rem;
   cursor: pointer;
   font-weight: 600;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .btn-primary {
@@ -1197,6 +1216,7 @@ textarea:focus {
 
 .table-wrap {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 table {
@@ -1392,7 +1412,11 @@ th {
   border-radius: 8px;
   padding: 0.34rem 0.56rem;
   font-size: 0.78rem;
+  color: var(--ink);
+  text-decoration: none;
   cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .action-btn:hover {
@@ -1405,18 +1429,22 @@ th {
 
 .booking-dialog {
   width: min(620px, 94vw);
+  max-height: 92vh;
   border: 0;
   border-radius: 16px;
   padding: 0;
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.22);
+  overflow-y: auto;
 }
 
 .profile-dialog {
   width: min(560px, 94vw);
+  max-height: 92vh;
   border: 0;
   border-radius: 16px;
   padding: 0;
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.22);
+  overflow-y: auto;
 }
 
 .booking-dialog::backdrop {
@@ -1479,9 +1507,12 @@ th {
 .icon-btn {
   border: 0;
   background: transparent;
+  color: var(--ink);
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .form-grid {
@@ -1562,13 +1593,25 @@ th {
 }
 
 @media (max-width: 640px) {
+  body.auth-mode {
+    overflow: auto;
+  }
+
   .portal-header {
     flex-direction: column;
     align-items: flex-start;
   }
 
   .top-actions {
-    flex-wrap: wrap;
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .profile-btn,
+  .top-actions .btn {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .stats-grid,
@@ -1622,6 +1665,26 @@ th {
     grid-template-columns: 1fr;
   }
 
+  .admin-discount-card,
+  .admin-membership-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .action-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .action-btn {
+    width: 100%;
+    text-align: center;
+  }
+
+  table {
+    min-width: 680px;
+  }
+
   .hydrogen-pricing-grid > span {
     border-right: 0;
     text-align: left;
@@ -1650,5 +1713,12 @@ th {
   body.auth-mode .portal-header {
     text-align: left;
     justify-content: flex-start;
+  }
+
+  .booking-dialog,
+  .profile-dialog {
+    width: calc(100vw - 0.75rem);
+    max-width: calc(100vw - 0.75rem);
+    border-radius: 14px;
   }
 }

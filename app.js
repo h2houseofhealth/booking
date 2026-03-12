@@ -404,7 +404,11 @@ function attachEvents() {
     });
   });
   elements.bookingsPayAllBtn?.addEventListener('click', async () => {
-    await payAllUserBookings();
+    try {
+      await payAllUserBookings();
+    } catch (error) {
+      alert(error?.message || 'Unable to start payment right now.');
+    }
   });
   elements.closeProfileDialogBtn.addEventListener('click', closeProfileDialog);
   elements.cancelProfileBtn.addEventListener('click', closeProfileDialog);
@@ -1203,65 +1207,94 @@ async function payBooking(id) {
 }
 
 async function payAllUserBookings() {
-  const result = await api('/api/payments/create-cart-order', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
-  });
+  const payButton = elements.bookingsPayAllBtn;
+  const originalLabel = payButton?.textContent || 'Pay Now';
 
-  if (!window.Razorpay) {
-    throw new Error('Razorpay SDK not loaded');
+  if (payButton) {
+    payButton.disabled = true;
+    payButton.textContent = 'Starting payment...';
   }
 
-  const options = {
-    key: result.keyId,
-    amount: result.amount,
-    currency: result.currency || 'INR',
-    name: 'H2 House Of Health',
-    description: `My Bookings Payment`,
-    order_id: result.orderId,
-    prefill: {
-      name: result.user?.name || '',
-      email: result.user?.email || '',
-    },
-    theme: {
-      color: '#8b5e3c',
-    },
-    handler: async (response) => {
-      try {
-        const verifyResult = await api('/api/payments/verify-cart', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            razorpay_order_id: response.razorpay_order_id,
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_signature: response.razorpay_signature,
-          }),
-        });
-        await loadDashboardData();
-        render();
-        alert(
-          `Payment successful. ${Number(verifyResult.unitCount || 0)} item(s) paid in one checkout. Total paid: Rs. ${Number(
-            verifyResult.totalAmountInr || result.summary?.totalAmountInr || 0
-          ).toLocaleString('en-IN')}.`
-        );
-      } catch (error) {
-        await loadDashboardData();
-        render();
-        alert(error.message || 'Payment verification failed.');
-      }
-    },
-    modal: {
-      ondismiss: async () => {
-        await loadDashboardData();
-        render();
-        alert('Payment was canceled.');
-      },
-    },
-  };
+  try {
+    const result = await api('/api/payments/create-cart-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
 
-  const checkout = new window.Razorpay(options);
-  checkout.open();
+    if (!window.Razorpay) {
+      throw new Error('Razorpay SDK not loaded');
+    }
+
+    const options = {
+      key: result.keyId,
+      amount: result.amount,
+      currency: result.currency || 'INR',
+      name: 'H2 House Of Health',
+      description: `My Bookings Payment`,
+      order_id: result.orderId,
+      prefill: {
+        name: result.user?.name || '',
+        email: result.user?.email || '',
+      },
+      theme: {
+        color: '#8b5e3c',
+      },
+      handler: async (response) => {
+        try {
+          const verifyResult = await api('/api/payments/verify-cart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            }),
+          });
+          await loadDashboardData();
+          render();
+          alert(
+            `Payment successful. ${Number(verifyResult.unitCount || 0)} item(s) paid in one checkout. Total paid: Rs. ${Number(
+              verifyResult.totalAmountInr || result.summary?.totalAmountInr || 0
+            ).toLocaleString('en-IN')}.`
+          );
+        } catch (error) {
+          await loadDashboardData();
+          render();
+          alert(error.message || 'Payment verification failed.');
+        } finally {
+          if (payButton) {
+            payButton.disabled = false;
+            payButton.textContent = originalLabel;
+          }
+        }
+      },
+      modal: {
+        ondismiss: async () => {
+          await loadDashboardData();
+          render();
+          if (payButton) {
+            payButton.disabled = false;
+            payButton.textContent = originalLabel;
+          }
+          alert('Payment was canceled.');
+        },
+      },
+    };
+
+    try {
+      const checkout = new window.Razorpay(options);
+      checkout.open();
+    } catch (error) {
+      throw new Error(error?.message || 'Unable to open Razorpay checkout.');
+    }
+  } catch (error) {
+    if (payButton) {
+      payButton.disabled = false;
+      payButton.textContent = originalLabel;
+    }
+    throw error;
+  }
 }
 
 async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, addOnServiceName, addOnSessionIndex }) {

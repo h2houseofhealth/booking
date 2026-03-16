@@ -4,10 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Booking Management Portal</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" type="image/png" href="assets/brand/H2_icon.png" />
+    <link rel="stylesheet" href="styles.css?v=20260312-1" />
   </head>
   <body>
     <div class="background-shape shape-a"></div>
@@ -15,9 +13,9 @@
 
     <main class="portal">
       <header class="portal-header">
-        <div>
-          <p class="eyebrow">H2 House Of Health</p>
-          <h1>Booking Management Portal</h1>
+        <div class="brand-lockup">
+          <img class="brand-logo" src="assets/brand/H2_Logo.png" alt="H2 House of Health" />
+          <h1 class="sr-only">H2 House of Health Patient Booking Portal</h1>
         </div>
         <div class="top-actions" id="appArea" hidden>
           <button id="profileBtn" class="profile-btn" type="button">
@@ -35,6 +33,9 @@
       </header>
 
       <section id="authCard" class="auth-card panel" aria-label="Authentication">
+        <div class="auth-brand">
+          <img class="auth-logo" src="assets/brand/H2_Logo.png" alt="H2 House of Health" />
+        </div>
         <p class="auth-kicker">Secure Access</p>
         <h2 id="authTitle">Sign in to continue</h2>
         <p class="auth-lead">Book Hydrogen Sessions, IV Therapies, and IV Shots in one place.</p>
@@ -77,19 +78,19 @@
         <p class="auth-kicker">Continue</p>
         <h2>Choose How You Want To Continue</h2>
         <p class="membership-copy">
-          Choose whether you want to join as a member, continue with membership benefits, or continue as a non-member.
+          Choose whether you want to activate membership first, enter with member benefits, or continue with non-member access.
         </p>
         <div class="member-choice-grid">
           <button id="joinAsMemberBtn" class="member-choice-card" type="button">
-            <strong>Join as Member</strong>
-            <span>Open the membership schemes first and continue to payment and services from there.</span>
+            <strong>Join Membership</strong>
+            <span>Open the membership plans first, complete payment, then continue to services.</span>
           </button>
           <button id="continueAsMemberBtn" class="member-choice-card" type="button">
-            <strong>Continue as Member</strong>
+            <strong>Member Login</strong>
             <span>Go directly to services with member pricing and membership-only access.</span>
           </button>
           <button id="continueAsNonMemberBtn" class="member-choice-card" type="button">
-            <strong>Continue as Non-member</strong>
+            <strong>Non-member Login</strong>
             <span>Go directly to services with non-member access and regular pricing.</span>
           </button>
         </div>
@@ -130,10 +131,30 @@
           </div>
           <p id="membershipStatusText" class="membership-status"></p>
         </div>
-        <p class="membership-copy">
-          Hydrogen Sessions are the core focus. Membership includes Lab Tests, Oxidative Stress Marker Test, and Radiology
-          Services. These membership services are not available for non-members.
-        </p>
+        <section class="membership-hero" aria-label="Membership Highlights">
+          <div class="membership-hero-copy">
+            <span class="membership-hero-kicker">Wellness Access</span>
+            <h3>Structured membership plans built around hydrogen therapy, diagnostics, and long-term care.</h3>
+            <p class="membership-copy">
+              Choose the membership that fits your life. Every plan includes hydrogen access, diagnostics support,
+              and member-only wellness benefits across the 90-day membership period.
+            </p>
+          </div>
+          <div class="membership-hero-panel">
+            <div class="membership-hero-stat">
+              <strong>H2 Sessions</strong>
+              <span>Included in every 3-month plan</span>
+            </div>
+            <div class="membership-hero-stat">
+              <strong>Diagnostics</strong>
+              <span>Lab tests, oxidative stress markers, and radiology support</span>
+            </div>
+            <div class="membership-hero-stat">
+              <strong>Member Value</strong>
+              <span>Lower hydrogen prices and exclusive services</span>
+            </div>
+          </div>
+        </section>
         <div id="membershipPlans" class="membership-grid"></div>
         <div class="dialog-actions">
           <button id="membershipBackBtn" class="btn btn-secondary" type="button">Back</button>
@@ -223,6 +244,16 @@
           <p id="emptyState" class="empty-state">No bookings found.</p>
         </div>
         <div class="dialog-actions">
+          <div class="coupon-entry user-only">
+            <label>
+              Coupon Code
+              <div class="coupon-entry-row">
+                <input id="userCouponCode" type="text" placeholder="Enter coupon code" />
+                <button id="userApplyCouponBtn" class="btn btn-secondary" type="button">Apply</button>
+              </div>
+            </label>
+            <div id="userCouponPreview" class="coupon-preview" hidden></div>
+          </div>
           <div id="userCheckoutSummary" class="user-checkout-summary" hidden></div>
           <button id="bookingsPayAllBtn" class="btn btn-primary" type="button" hidden>Pay Now</button>
           <button id="bookingsBackBtn" class="btn btn-secondary" type="button">Back</button>
@@ -262,24 +293,40 @@
         <p id="adminMembershipEmptyState" class="empty-state">No paid memberships found.</p>
       </section>
 
-      <section class="panel app-only admin-only" aria-label="Exclusive discounts" hidden>
+      <section class="panel app-only admin-only" aria-label="Coupons" hidden>
         <div class="panel-head">
-          <h2>Exclusive Discounts</h2>
+          <h2>Coupons</h2>
         </div>
-        <p class="membership-copy">Add phone numbers that should automatically receive a service discount.</p>
-        <form id="adminDiscountForm" class="admin-discount-form">
+        <p class="membership-copy">Create single-use coupon codes for membership payments, service payments, or both.</p>
+        <form id="adminCouponForm" class="admin-discount-form">
           <label>
-            Phone Number
-            <input id="adminDiscountPhone" type="tel" placeholder="Enter phone number" required />
+            Recipient Email
+            <input id="adminCouponRecipientEmail" type="email" placeholder="user@example.com" />
+          </label>
+          <label>
+            Coupon Code
+            <input id="adminCouponCode" type="text" placeholder="Auto-generate" />
+          </label>
+          <label>
+            Description
+            <input id="adminCouponDescription" type="text" placeholder="Optional description" />
           </label>
           <label>
             Discount %
-            <input id="adminDiscountPercent" type="number" min="1" max="100" step="1" placeholder="10" required />
+            <input id="adminCouponValue" type="number" min="1" max="100" step="1" placeholder="10" required />
           </label>
-          <button id="adminDiscountSubmitBtn" class="btn btn-primary" type="submit">Add Discount</button>
+          <label>
+            Expires At
+            <input id="adminCouponExpiresAt" type="datetime-local" />
+          </label>
+          <div class="admin-coupon-actions">
+            <button id="adminCouponSubmitBtn" class="btn btn-primary" type="submit">Generate &amp; Send</button>
+            <button id="adminCouponSaveOnlyBtn" class="btn btn-secondary" type="button">Save Only</button>
+          </div>
         </form>
-        <div id="adminDiscountList" class="admin-discount-list"></div>
-        <p id="adminDiscountEmptyState" class="empty-state">No discount phone numbers added.</p>
+        <p class="membership-copy">Single-use coupon: valid for one redemption only.</p>
+        <div id="adminCouponList" class="admin-discount-list"></div>
+        <p id="adminCouponEmptyState" class="empty-state">No coupons created yet.</p>
       </section>
     </main>
 
@@ -372,6 +419,16 @@
           <button id="closeMembershipDialogBtn" class="icon-btn" type="button" aria-label="Close">×</button>
         </div>
         <p id="membershipPlanSummary" class="membership-checkout-summary"></p>
+        <div class="coupon-entry">
+          <label>
+            Coupon Code
+            <div class="coupon-entry-row">
+              <input id="membershipCouponCode" type="text" placeholder="Enter coupon code" />
+              <button id="membershipApplyCouponBtn" class="btn btn-secondary" type="button">Apply</button>
+            </div>
+          </label>
+          <div id="membershipCouponPreview" class="coupon-preview" hidden></div>
+        </div>
         <div id="membershipMembersGrid" class="membership-members-grid"></div>
         <div class="dialog-actions">
           <button class="btn btn-secondary" type="button" id="cancelMembershipBtn">Cancel</button>

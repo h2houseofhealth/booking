@@ -16,7 +16,7 @@ loadEnvFromFile(path.join(__dirname, '.env'));
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_super_secret_change_me';
-const IS_PRODUCTION = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+const IS_PRODUCTION = normalizeEnvValue(process.env.NODE_ENV).toLowerCase() === 'production';
 const TOKEN_COOKIE = 'booking_portal_token';
 const ALLOWED_SLOT_START_TIMES = ['09:30', '10:30', '11:30', '12:30', '13:30', '14:30', '15:30', '16:30', '17:30', '18:30', '19:30'];
 const MAX_BOOKINGS_PER_SLOT_HYDROGEN = 1;
@@ -24,28 +24,30 @@ const MAX_BOOKINGS_PER_SLOT_IV = 1;
 const MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER = 3;
 const IV_REBOOK_COOLDOWN_DAYS = 14;
 const OTP_TTL_MINUTES = 10;
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
-const RAZORPAY_MODE = String(process.env.RAZORPAY_MODE || 'test').toLowerCase();
-const SENDGRID_API_KEY = String(process.env.SENDGRID_API_KEY || '').trim();
-const SENDGRID_FROM_EMAIL = String(
+const BOOKING_HOLD_MINUTES = 10;
+const BOOKING_HOLD_CUTOFF_SQL = `datetime('now', '-${BOOKING_HOLD_MINUTES} minutes')`;
+const RAZORPAY_KEY_ID = normalizeEnvValue(process.env.RAZORPAY_KEY_ID);
+const RAZORPAY_KEY_SECRET = normalizeEnvValue(process.env.RAZORPAY_KEY_SECRET);
+const RAZORPAY_MODE = normalizeEnvValue(process.env.RAZORPAY_MODE || 'test').toLowerCase() || 'test';
+const SENDGRID_API_KEY = normalizeEnvValue(process.env.SENDGRID_API_KEY);
+const SENDGRID_FROM_EMAIL = normalizeEnvValue(
   process.env.SENDGRID_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER || ''
-).trim();
+);
 const AVATAR_MAX_SIZE_BYTES = 10 * 1024 * 1024;
-const SEED_DEMO_DOCTORS = String(process.env.SEED_DEMO_DOCTORS || 'false').toLowerCase() === 'true';
+const SEED_DEMO_DOCTORS = normalizeEnvValue(process.env.SEED_DEMO_DOCTORS || 'false').toLowerCase() === 'true';
 const SES_API_REGION = (
-  process.env.SES_API_REGION ||
-  process.env.AWS_REGION ||
-  regionFromSmtpHost(process.env.SMTP_HOST) ||
+  normalizeEnvValue(process.env.SES_API_REGION) ||
+  normalizeEnvValue(process.env.AWS_REGION) ||
+  regionFromSmtpHost(normalizeEnvValue(process.env.SMTP_HOST)) ||
   'ap-southeast-2'
 ).trim();
-const SES_API_ACCESS_KEY_ID = (process.env.SES_API_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || '').trim();
+const SES_API_ACCESS_KEY_ID = normalizeEnvValue(process.env.SES_API_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || '');
 const SES_API_SECRET_ACCESS_KEY = (
-  process.env.SES_API_SECRET_ACCESS_KEY ||
-  process.env.AWS_SECRET_ACCESS_KEY ||
+  normalizeEnvValue(process.env.SES_API_SECRET_ACCESS_KEY) ||
+  normalizeEnvValue(process.env.AWS_SECRET_ACCESS_KEY) ||
   ''
 ).trim();
-const SES_API_SESSION_TOKEN = (process.env.SES_API_SESSION_TOKEN || process.env.AWS_SESSION_TOKEN || '').trim();
+const SES_API_SESSION_TOKEN = normalizeEnvValue(process.env.SES_API_SESSION_TOKEN || process.env.AWS_SESSION_TOKEN || '');
 
 if (SENDGRID_API_KEY) {
   sgMail.setApiKey(SENDGRID_API_KEY);
@@ -256,7 +258,7 @@ const MEMBERSHIP_PLANS = [
     name: '1 Person Membership',
     peopleCount: 1,
     priceInr: 84000,
-    validityDays: 365,
+    validityDays: 90,
     h2SessionsIncluded: 16,
     perks:
       'Includes lab tests, oxidative stress marker test, radiology services, concierge primary care, and 16 H2 sessions.',
@@ -266,33 +268,31 @@ const MEMBERSHIP_PLANS = [
     name: '2 Person Membership',
     peopleCount: 2,
     priceInr: 160000,
-    validityDays: 365,
+    validityDays: 90,
     h2SessionsIncluded: 32,
-    perks:
-      'Family-focused plan with lab tests, oxidative stress marker test, radiology services, and hydrogen pricing benefits.',
+    perks: '',
   },
   {
     id: 'h2_four',
     name: '4 Person Membership',
     peopleCount: 4,
     priceInr: 288000,
-    validityDays: 365,
+    validityDays: 90,
     h2SessionsIncluded: 64,
-    perks:
-      'Best value for larger families with lab tests, oxidative stress marker test, radiology services, and full annual membership access.',
+    perks: '',
   },
   {
     id: 'h2_add_person',
     name: 'Add Person',
     peopleCount: 1,
     priceInr: 78000,
-    validityDays: 365,
+    validityDays: 90,
     h2SessionsIncluded: 16,
     perks:
       'Add one more member to an existing plan with lab tests, oxidative stress marker test, radiology services, and hydrogen pricing benefits.',
   },
 ];
-const MEMBERSHIP_VALIDITY_DAYS = Number(MEMBERSHIP_PLANS.find((plan) => plan.id === 'h2_single')?.validityDays || 365);
+const MEMBERSHIP_VALIDITY_DAYS = Number(MEMBERSHIP_PLANS.find((plan) => plan.id === 'h2_single')?.validityDays || 90);
 
 const app = express();
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
@@ -349,6 +349,26 @@ function loadEnvFromFile(filePath) {
 
     process.env[key] = value;
   }
+}
+
+function normalizeEnvValue(value) {
+  let normalized = String(value || '').trim();
+  if (
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"))
+  ) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+  return normalized;
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function getRazorpayConfigError() {
@@ -1005,10 +1025,13 @@ app.get('/api/services/availability', requireAuth, (req, res) => {
   });
 
   const availability = {};
+  const holds = {};
   for (const service of allServices) {
     availability[service.name] = {};
+    holds[service.name] = {};
     for (const slot of ALLOWED_SLOT_START_TIMES) {
       availability[service.name][slot] = 0;
+      holds[service.name][slot] = 0;
     }
   }
 
@@ -1017,7 +1040,10 @@ app.get('/api/services/availability', requireAuth, (req, res) => {
     const params = [bookingDate, ...allServices.map((service) => service.name)];
     const rows = db
       .prepare(
-        `SELECT service_name AS serviceName, booking_time AS bookingTime, COUNT(*) AS total
+        `SELECT service_name AS serviceName,
+                booking_time AS bookingTime,
+                SUM(CASE WHEN ${activeBookingSql()} THEN 1 ELSE 0 END) AS total,
+                SUM(CASE WHEN ${holdBookingSql()} THEN 1 ELSE 0 END) AS holdTotal
          FROM bookings
          WHERE booking_date = ?
            AND status IN ('pending', 'booked', 'confirmed')
@@ -1031,6 +1057,7 @@ app.get('/api/services/availability', requireAuth, (req, res) => {
       const bookingTime = String(row.bookingTime || '');
       if (!availability[serviceName] || !ALLOWED_SLOT_START_TIMES.includes(bookingTime)) continue;
       availability[serviceName][bookingTime] = Number(row.total || 0);
+      holds[serviceName][bookingTime] = Number(row.holdTotal || 0);
     }
   }
 
@@ -1043,6 +1070,8 @@ app.get('/api/services/availability', requireAuth, (req, res) => {
     ),
     slots: ALLOWED_SLOT_START_TIMES,
     availability,
+    holds,
+    holdMinutes: BOOKING_HOLD_MINUTES,
   });
 });
 
@@ -1059,6 +1088,38 @@ app.get('/api/membership/plans', requireAuth, (req, res) => {
     },
     plans: MEMBERSHIP_PLANS,
   });
+});
+
+app.post('/api/membership/preview-coupon', requireAuth, (req, res) => {
+  if (req.user.role !== 'user') {
+    return res.status(403).json({ message: 'Only users can preview membership coupons.' });
+  }
+
+  const planId = String(req.body?.planId || '').trim();
+  const plan = MEMBERSHIP_PLANS.find((item) => item.id === planId);
+  if (!plan) {
+    return res.status(400).json({ message: 'Invalid membership plan selected.' });
+  }
+
+  const additionalPeople = Number(req.body?.additionalPeople ?? 0);
+  if (!Number.isInteger(additionalPeople) || additionalPeople < 0) {
+    return res.status(400).json({ message: 'additionalPeople must be a non-negative integer' });
+  }
+
+  const addPersonPlan = MEMBERSHIP_PLANS.find((item) => item.id === 'h2_add_person');
+  const addPersonPriceInr = Number(addPersonPlan?.priceInr || 0);
+  const subtotalAmountPaise = Math.round((Number(plan.priceInr || 0) + additionalPeople * addPersonPriceInr) * 100);
+  const couponResult = validateCouponForUser({
+    code: req.body?.couponCode,
+    userId: req.user.id,
+    appliesTo: 'membership',
+    subtotalAmountPaise,
+  });
+  if (couponResult.error) {
+    return res.status(400).json({ message: couponResult.error });
+  }
+
+  return res.json({ coupon: serializeCouponPreview(couponResult) });
 });
 
 app.post('/api/membership/subscribe', requireAuth, (req, res) => {
@@ -1118,7 +1179,17 @@ app.post('/api/membership/create-order', requireAuth, async (req, res) => {
     planId === 'h2_add_person'
       ? Number(plan.priceInr || 0)
       : Number(plan.priceInr || 0) + additionalPeople * addPersonPriceInr;
-  const amountInPaise = Math.max(100, Math.round(totalAmountInr * 100));
+  const subtotalAmountPaise = Math.round(totalAmountInr * 100);
+  const couponResult = validateCouponForUser({
+    code: req.body?.couponCode,
+    userId: req.user.id,
+    appliesTo: 'membership',
+    subtotalAmountPaise,
+  });
+  if (couponResult.error) {
+    return res.status(400).json({ message: couponResult.error });
+  }
+  const amountInPaise = Math.max(100, Number(couponResult.finalAmountPaise || subtotalAmountPaise));
 
   const memberDetailsResult = normalizeMembershipMembers(req.body?.memberDetails, targetPeopleCount);
   if (memberDetailsResult.error) {
@@ -1135,14 +1206,26 @@ app.post('/api/membership/create-order', requireAuth, async (req, res) => {
         userId: String(req.user.id),
         planId: String(plan.id),
         peopleCount: String(targetPeopleCount),
+        couponCode: String(couponResult.couponCode || ''),
       },
     });
 
     db.prepare(
       `INSERT OR REPLACE INTO membership_payment_orders (
-        order_id, user_id, plan_id, people_count, member_details_json, amount_paise, status, payment_reference, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, datetime('now'))`
-    ).run(order.id, req.user.id, plan.id, targetPeopleCount, JSON.stringify(memberDetails), amountInPaise);
+        order_id, user_id, plan_id, people_count, member_details_json, original_amount_paise, discount_amount_paise, coupon_id, coupon_code, amount_paise, status, payment_reference, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, datetime('now'))`
+    ).run(
+      order.id,
+      req.user.id,
+      plan.id,
+      targetPeopleCount,
+      JSON.stringify(memberDetails),
+      Number(couponResult.originalAmountPaise || subtotalAmountPaise),
+      Number(couponResult.discountAmountPaise || 0),
+      couponResult.coupon?.id || null,
+      couponResult.couponCode || null,
+      amountInPaise
+    );
 
     return res.json({
       keyId: RAZORPAY_KEY_ID,
@@ -1159,6 +1242,7 @@ app.post('/api/membership/create-order', requireAuth, async (req, res) => {
         basePeopleCount,
         peopleCount: targetPeopleCount,
         validityDays: plan.validityDays,
+        coupon: serializeCouponPreview(couponResult),
       },
       members: memberDetails,
       user: {
@@ -1195,7 +1279,8 @@ app.post('/api/membership/verify', requireAuth, (req, res) => {
 
   const pendingOrder = db
     .prepare(
-      `SELECT order_id AS orderId, user_id AS userId, plan_id AS planId, people_count AS peopleCount, status
+      `SELECT order_id AS orderId, user_id AS userId, plan_id AS planId, people_count AS peopleCount, status,
+              coupon_id AS couponId, discount_amount_paise AS discountAmountPaise
        FROM membership_payment_orders
        WHERE order_id = ?`
     )
@@ -1269,6 +1354,16 @@ app.post('/api/membership/verify', requireAuth, (req, res) => {
          paid_at = datetime('now')
      WHERE order_id = ?`
   ).run(razorpayPaymentId, razorpayOrderId);
+
+  if (Number(pendingOrder.couponId || 0) > 0 && Number(pendingOrder.discountAmountPaise || 0) > 0) {
+    recordCouponRedemption({
+      couponId: Number(pendingOrder.couponId),
+      userId: req.user.id,
+      contextType: 'membership',
+      contextRef: razorpayOrderId,
+      discountAmountPaise: Number(pendingOrder.discountAmountPaise || 0),
+    });
+  }
 
   const profile = db.prepare(
     `SELECT id, name, role, age, gender, mobile, avatar_url AS avatarUrl,
@@ -1462,6 +1557,226 @@ app.delete('/api/admin/discount-phones/:id', requireAuth, requireAdmin, (req, re
   res.json({ message: 'Discount phone removed.' });
 });
 
+app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req, res) => {
+  const coupons = db
+    .prepare(
+      `SELECT id,
+              code,
+              description,
+              discount_type AS discountType,
+              discount_value AS discountValue,
+              applies_to AS appliesTo,
+              max_redemptions AS maxRedemptions,
+              per_user_limit AS perUserLimit,
+              expires_at AS expiresAt,
+              active,
+              recipient_email AS recipientEmail,
+              recipient_name AS recipientName,
+              emailed_at AS emailedAt,
+              email_status AS emailStatus,
+              email_error AS emailError,
+              created_at AS createdAt
+       FROM coupons
+       ORDER BY active DESC, datetime(created_at) DESC, id DESC`
+    )
+    .all()
+    .map((row) => {
+      const stats = getCouponRedemptionStats(row.id, -1);
+      return {
+        id: Number(row.id),
+        code: row.code || '',
+        description: row.description || '',
+        discountType: row.discountType || 'percent',
+        discountValue: Number(row.discountValue || 0),
+        appliesTo: row.appliesTo || 'all',
+        maxRedemptions: row.maxRedemptions == null ? null : Number(row.maxRedemptions),
+        perUserLimit: Number(row.perUserLimit || 1),
+        expiresAt: row.expiresAt || null,
+        active: Number(row.active || 0) === 1,
+        recipientEmail: row.recipientEmail || '',
+        recipientName: row.recipientName || '',
+        emailedAt: row.emailedAt || null,
+        emailStatus: row.emailStatus || '',
+        emailError: row.emailError || '',
+        createdAt: row.createdAt || null,
+        totalRedemptions: Number(stats.total || 0),
+      };
+    });
+
+  res.json({ coupons });
+});
+
+app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
+  let code = normalizeCouponCode(req.body?.code);
+  const description = String(req.body?.description || '').trim();
+  const discountType = String(req.body?.discountType || 'percent').trim().toLowerCase();
+  const discountValue = Number(req.body?.discountValue || 0);
+  const appliesTo = 'all';
+  const recipientEmail = String(req.body?.recipientEmail || '').trim().toLowerCase();
+  const sendEmail = req.body?.sendEmail !== false;
+  const singleUse = Boolean(req.body?.singleUse) || Boolean(recipientEmail);
+  const maxRedemptionsRaw = req.body?.maxRedemptions;
+  let maxRedemptions =
+    maxRedemptionsRaw === '' || maxRedemptionsRaw == null ? null : Number(maxRedemptionsRaw);
+  const expiresAt = String(req.body?.expiresAt || '').trim();
+
+  if (!code) {
+    code = generateUniqueCouponCode();
+  }
+  if (!['percent', 'flat'].includes(discountType)) {
+    return res.status(400).json({ message: 'discountType must be percent or flat.' });
+  }
+  if (!Number.isFinite(discountValue) || discountValue <= 0) {
+    return res.status(400).json({ message: 'discountValue must be greater than 0.' });
+  }
+  if (discountType === 'percent' && discountValue > 100) {
+    return res.status(400).json({ message: 'Percent coupons cannot exceed 100.' });
+  }
+  if (recipientEmail && !isValidEmail(recipientEmail)) {
+    return res.status(400).json({ message: 'recipientEmail must be a valid email.' });
+  }
+  if (sendEmail && !recipientEmail) {
+    return res.status(400).json({ message: 'recipientEmail is required to send the coupon.' });
+  }
+  if (singleUse) {
+    maxRedemptions = 1;
+  }
+  if (maxRedemptions != null && (!Number.isInteger(maxRedemptions) || maxRedemptions <= 0)) {
+    return res.status(400).json({ message: 'maxRedemptions must be a positive integer.' });
+  }
+  if (expiresAt && Number.isNaN(new Date(expiresAt).getTime())) {
+    return res.status(400).json({ message: 'expiresAt must be a valid date.' });
+  }
+
+  const recipient = recipientEmail ? getUserByEmail(recipientEmail) : null;
+  const recipientName = recipient?.name || '';
+  const initialEmailStatus = sendEmail ? 'pending' : 'draft';
+
+  db.prepare(
+    `INSERT INTO coupons (
+      code, description, discount_type, discount_value, applies_to, max_redemptions, per_user_limit, expires_at, active,
+      recipient_email, recipient_name, emailed_at, email_status, email_error, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1, ?, ?, NULL, ?, ?, datetime('now'))
+    ON CONFLICT(code) DO UPDATE SET
+      description = excluded.description,
+      discount_type = excluded.discount_type,
+      discount_value = excluded.discount_value,
+      applies_to = excluded.applies_to,
+      max_redemptions = excluded.max_redemptions,
+      per_user_limit = excluded.per_user_limit,
+      expires_at = excluded.expires_at,
+      recipient_email = excluded.recipient_email,
+      recipient_name = excluded.recipient_name,
+      email_status = excluded.email_status,
+      email_error = excluded.email_error,
+      active = 1`
+  ).run(
+    code,
+    description,
+    discountType,
+    discountValue,
+    appliesTo,
+    maxRedemptions,
+    expiresAt || null,
+    recipientEmail || null,
+    recipientName || null,
+    initialEmailStatus,
+    ''
+  );
+
+  let emailStatus = initialEmailStatus;
+  let emailMessage = '';
+  if (sendEmail && recipientEmail) {
+    const emailResult = await sendCouponEmail({
+      toEmail: recipientEmail,
+      recipientName,
+      code,
+      discountValue,
+      appliesTo,
+      expiresAt,
+    });
+    if (!emailResult.ok) {
+      emailStatus = 'failed';
+      emailMessage = emailResult.message || 'Unable to send email.';
+      db.prepare(
+        `UPDATE coupons
+         SET email_status = ?, email_error = ?, emailed_at = NULL
+         WHERE code = ?`
+      ).run(emailStatus, emailMessage, code);
+    } else {
+      emailStatus = 'sent';
+      db.prepare(
+        `UPDATE coupons
+         SET email_status = ?, email_error = '', emailed_at = datetime('now')
+         WHERE code = ?`
+      ).run(emailStatus, code);
+    }
+  }
+
+  res.status(201).json({
+    message: 'Coupon saved.',
+    code,
+    emailStatus,
+    emailMessage,
+  });
+});
+
+app.delete('/api/admin/coupons/:id', requireAuth, requireAdmin, (req, res) => {
+  const couponId = Number(req.params.id);
+  if (!Number.isInteger(couponId)) {
+    return res.status(400).json({ message: 'Invalid coupon id.' });
+  }
+
+  db.prepare('DELETE FROM coupons WHERE id = ?').run(couponId);
+  res.json({ message: 'Coupon removed.' });
+});
+
+app.post('/api/admin/coupons/:id/resend', requireAuth, requireAdmin, async (req, res) => {
+  const couponId = Number(req.params.id);
+  if (!Number.isInteger(couponId)) {
+    return res.status(400).json({ message: 'Invalid coupon id.' });
+  }
+
+  const coupon = getCouponById(couponId);
+  if (!coupon) {
+    return res.status(404).json({ message: 'Coupon not found.' });
+  }
+
+  const recipientEmail = String(req.body?.recipientEmail || coupon.recipientEmail || '').trim().toLowerCase();
+  if (!recipientEmail || !isValidEmail(recipientEmail)) {
+    return res.status(400).json({ message: 'Valid recipientEmail is required.' });
+  }
+
+  const recipient = getUserByEmail(recipientEmail);
+  const recipientName = recipient?.name || coupon.recipientName || '';
+  const emailResult = await sendCouponEmail({
+    toEmail: recipientEmail,
+    recipientName,
+    code: coupon.code,
+    discountValue: coupon.discountValue,
+    appliesTo: coupon.appliesTo,
+    expiresAt: coupon.expiresAt,
+  });
+
+  if (!emailResult.ok) {
+    const message = emailResult.message || 'Unable to send email.';
+    db.prepare(
+      `UPDATE coupons
+       SET recipient_email = ?, recipient_name = ?, email_status = ?, email_error = ?, emailed_at = NULL
+       WHERE id = ?`
+    ).run(recipientEmail, recipientName || null, 'failed', message, couponId);
+    return res.status(500).json({ message });
+  }
+
+  db.prepare(
+    `UPDATE coupons
+     SET recipient_email = ?, recipient_name = ?, email_status = ?, email_error = '', emailed_at = datetime('now')
+     WHERE id = ?`
+  ).run(recipientEmail, recipientName || null, 'sent', couponId);
+
+  res.json({ message: 'Coupon emailed.', emailStatus: 'sent' });
+});
+
 app.patch('/api/admin/doctors/:id/approval', requireAuth, requireAdmin, (req, res) => {
   const doctorId = Number(req.params.id);
   const approvalStatus = String(req.body?.approvalStatus || '').trim().toLowerCase();
@@ -1618,7 +1933,7 @@ app.get('/api/bookings', requireAuth, (req, res) => {
         .prepare(`${baseQuery} WHERE b.user_id = ? ORDER BY b.booking_date, b.booking_time`)
         .all(req.user.id);
 
-  res.json({ bookings: rows });
+  res.json({ bookings: rows.map(applyHoldMeta) });
 });
 
 app.get('/api/doctor/bookings', requireAuth, requireDoctor, (req, res) => {
@@ -1776,7 +2091,9 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'payment_pending', ?, ?, ?, datetime('now'))`
     );
     const countActiveForSlot = db.prepare(
-      `SELECT COUNT(*) AS total
+      `SELECT
+          SUM(CASE WHEN ${activeBookingSql()} THEN 1 ELSE 0 END) AS activeTotal,
+          SUM(CASE WHEN ${holdBookingSql()} THEN 1 ELSE 0 END) AS holdTotal
        FROM bookings
        WHERE service_name = ?
          AND booking_date = ?
@@ -1792,9 +2109,11 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
       for (const entry of entries) {
         const key = `${entry.bookingDate}|${entry.bookingTime}`;
         const alreadyInRequest = Number(inRequestCounter.get(key) || 0);
-        const existing = Number(countActiveForSlot.get(service.name, entry.bookingDate, entry.bookingTime)?.total || 0);
+        const slotStats = countActiveForSlot.get(service.name, entry.bookingDate, entry.bookingTime) || {};
+        const existing = Number(slotStats.activeTotal || 0);
+        const holdCount = Number(slotStats.holdTotal || 0);
         if (existing + alreadyInRequest >= maxPerSlot) {
-          throw new Error(`Slot full for ${entry.bookingDate} ${entry.bookingTime}`);
+          throw new Error(holdCount > 0 ? buildHoldSlotMessage() : `Slot full for ${entry.bookingDate} ${entry.bookingTime}`);
         }
         inRequestCounter.set(key, alreadyInRequest + 1);
 
@@ -1829,12 +2148,12 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
             'Only 1 IV add-on (IV Therapy or IV Shot) can be booked in the same time slot. Additional add-ons are handled by admin after consultation.'
           );
         }
-        const existingAddOn = Number(
-          countActiveForSlot.get(addOnService.name, addOnSlot.bookingDate, addOnSlot.bookingTime)?.total || 0
-        );
+        const addOnStats = countActiveForSlot.get(addOnService.name, addOnSlot.bookingDate, addOnSlot.bookingTime) || {};
+        const existingAddOn = Number(addOnStats.activeTotal || 0);
+        const holdAddOn = Number(addOnStats.holdTotal || 0);
         const addOnCapacity = getSlotCapacityForServiceName(addOnService.name);
         if (existingAddOn >= addOnCapacity) {
-          throw new Error(`Add-on slot full for ${addOnSlot.bookingDate} ${addOnSlot.bookingTime}`);
+          throw new Error(holdAddOn > 0 ? buildHoldSlotMessage() : `Add-on slot full for ${addOnSlot.bookingDate} ${addOnSlot.bookingTime}`);
         }
 
         insertBooking.run(
@@ -1980,7 +2299,9 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', ?, ?, datetime('now'))`
     );
     const countActiveForSlot = db.prepare(
-      `SELECT COUNT(*) AS total
+      `SELECT
+          SUM(CASE WHEN ${activeBookingSql()} THEN 1 ELSE 0 END) AS activeTotal,
+          SUM(CASE WHEN ${holdBookingSql()} THEN 1 ELSE 0 END) AS holdTotal
        FROM bookings
        WHERE service_name = ?
          AND booking_date = ?
@@ -1996,9 +2317,11 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
       for (const entry of entries) {
         const key = `${entry.bookingDate}|${entry.bookingTime}`;
         const alreadyInRequest = Number(inRequestCounter.get(key) || 0);
-        const existing = Number(countActiveForSlot.get(service.name, entry.bookingDate, entry.bookingTime)?.total || 0);
+        const slotStats = countActiveForSlot.get(service.name, entry.bookingDate, entry.bookingTime) || {};
+        const existing = Number(slotStats.activeTotal || 0);
+        const holdCount = Number(slotStats.holdTotal || 0);
         if (existing + alreadyInRequest >= maxPerSlot) {
-          throw new Error(`Slot full for ${entry.bookingDate} ${entry.bookingTime}`);
+          throw new Error(holdCount > 0 ? buildHoldSlotMessage() : `Slot full for ${entry.bookingDate} ${entry.bookingTime}`);
         }
         inRequestCounter.set(key, alreadyInRequest + 1);
 
@@ -2033,12 +2356,12 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
             'Only 1 IV add-on (IV Therapy or IV Shot) can be booked in the same time slot. Additional add-ons are handled by admin after consultation.'
           );
         }
-        const existingAddOn = Number(
-          countActiveForSlot.get(addOnService.name, addOnSlot.bookingDate, addOnSlot.bookingTime)?.total || 0
-        );
+        const addOnStats = countActiveForSlot.get(addOnService.name, addOnSlot.bookingDate, addOnSlot.bookingTime) || {};
+        const existingAddOn = Number(addOnStats.activeTotal || 0);
+        const holdAddOn = Number(addOnStats.holdTotal || 0);
         const addOnCapacity = getSlotCapacityForServiceName(addOnService.name);
         if (existingAddOn >= addOnCapacity) {
-          throw new Error(`Add-on slot full for ${addOnSlot.bookingDate} ${addOnSlot.bookingTime}`);
+          throw new Error(holdAddOn > 0 ? buildHoldSlotMessage() : `Add-on slot full for ${addOnSlot.bookingDate} ${addOnSlot.bookingTime}`);
         }
 
         const addOnResult = insertBooking.run(
@@ -2184,7 +2507,9 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', ?, ?, datetime('now'))`
     );
     const countActiveForSlot = db.prepare(
-      `SELECT COUNT(*) AS total
+      `SELECT
+          SUM(CASE WHEN ${activeBookingSql()} THEN 1 ELSE 0 END) AS activeTotal,
+          SUM(CASE WHEN ${holdBookingSql()} THEN 1 ELSE 0 END) AS holdTotal
        FROM bookings
        WHERE service_name = ?
          AND booking_date = ?
@@ -2200,9 +2525,11 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
       for (const entry of entries) {
         const key = `${entry.bookingDate}|${entry.bookingTime}`;
         const alreadyInRequest = Number(inRequestCounter.get(key) || 0);
-        const existing = Number(countActiveForSlot.get(service.name, entry.bookingDate, entry.bookingTime)?.total || 0);
+        const slotStats = countActiveForSlot.get(service.name, entry.bookingDate, entry.bookingTime) || {};
+        const existing = Number(slotStats.activeTotal || 0);
+        const holdCount = Number(slotStats.holdTotal || 0);
         if (existing + alreadyInRequest >= maxPerSlot) {
-          throw new Error(`Slot full for ${entry.bookingDate} ${entry.bookingTime}`);
+          throw new Error(holdCount > 0 ? buildHoldSlotMessage() : `Slot full for ${entry.bookingDate} ${entry.bookingTime}`);
         }
         inRequestCounter.set(key, alreadyInRequest + 1);
 
@@ -2237,12 +2564,12 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
             'Only 1 IV add-on (IV Therapy or IV Shot) can be booked in the same time slot. Additional add-ons are handled by admin after consultation.'
           );
         }
-        const existingAddOn = Number(
-          countActiveForSlot.get(addOnService.name, addOnSlot.bookingDate, addOnSlot.bookingTime)?.total || 0
-        );
+        const addOnStats = countActiveForSlot.get(addOnService.name, addOnSlot.bookingDate, addOnSlot.bookingTime) || {};
+        const existingAddOn = Number(addOnStats.activeTotal || 0);
+        const holdAddOn = Number(addOnStats.holdTotal || 0);
         const addOnCapacity = getSlotCapacityForServiceName(addOnService.name);
         if (existingAddOn >= addOnCapacity) {
-          throw new Error(`Add-on slot full for ${addOnSlot.bookingDate} ${addOnSlot.bookingTime}`);
+          throw new Error(holdAddOn > 0 ? buildHoldSlotMessage() : `Add-on slot full for ${addOnSlot.bookingDate} ${addOnSlot.bookingTime}`);
         }
 
         const addOnResult = insertBooking.run(
@@ -2433,7 +2760,9 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
   }
   const excludePlaceholders = excludeIds.map(() => '?').join(', ');
   const countActiveForSlot = db.prepare(
-    `SELECT COUNT(*) AS total
+    `SELECT
+        SUM(CASE WHEN ${activeBookingSql()} THEN 1 ELSE 0 END) AS activeTotal,
+        SUM(CASE WHEN ${holdBookingSql()} THEN 1 ELSE 0 END) AS holdTotal
      FROM bookings
      WHERE service_name = ?
        AND booking_date = ?
@@ -2446,9 +2775,11 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
   for (const slot of normalizedSlots) {
     const key = `${slot.bookingDate}|${slot.bookingTime}`;
     const alreadyInRequest = Number(inRequestCounter.get(key) || 0);
-    const existing = Number(countActiveForSlot.get(service.name, slot.bookingDate, slot.bookingTime, ...excludeIds)?.total || 0);
+    const slotStats = countActiveForSlot.get(service.name, slot.bookingDate, slot.bookingTime, ...excludeIds) || {};
+    const existing = Number(slotStats.activeTotal || 0);
+    const holdCount = Number(slotStats.holdTotal || 0);
     if (existing + alreadyInRequest >= getSlotCapacityForServiceName(service.name)) {
-      return res.status(409).json({ message: `Slot full for ${slot.bookingDate} ${slot.bookingTime}` });
+      return res.status(409).json({ message: holdCount > 0 ? buildHoldSlotMessage() : `Slot full for ${slot.bookingDate} ${slot.bookingTime}` });
     }
     inRequestCounter.set(key, alreadyInRequest + 1);
   }
@@ -2477,7 +2808,7 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
          WHERE user_id = ?
            AND booking_date = ?
            AND booking_time = ?
-           AND status IN ('pending', 'booked', 'confirmed')
+           AND ${activeBookingSql()}
            AND service_name IN (${addOnNamePlaceholders})
            ${excludePlaceholders ? `AND id NOT IN (${excludePlaceholders})` : ''}`
       )
@@ -2489,11 +2820,11 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
       });
     }
 
-    const existingAddOnSlotCount = Number(
-      countActiveForSlot.get(addOnService.name, addOnSlot.bookingDate, addOnSlot.bookingTime, ...excludeIds)?.total || 0
-    );
+    const addOnSlotStats = countActiveForSlot.get(addOnService.name, addOnSlot.bookingDate, addOnSlot.bookingTime, ...excludeIds) || {};
+    const existingAddOnSlotCount = Number(addOnSlotStats.activeTotal || 0);
+    const holdAddOn = Number(addOnSlotStats.holdTotal || 0);
     if (existingAddOnSlotCount >= getSlotCapacityForServiceName(addOnService.name)) {
-      return res.status(409).json({ message: `Add-on slot full for ${addOnSlot.bookingDate} ${addOnSlot.bookingTime}` });
+      return res.status(409).json({ message: holdAddOn > 0 ? buildHoldSlotMessage() : `Add-on slot full for ${addOnSlot.bookingDate} ${addOnSlot.bookingTime}` });
     }
     addOnSummary = {
       serviceName: addOnService.name,
@@ -2773,15 +3104,17 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
     }
   }
 
-  const slotCapacityReached = isSlotCapacityReached(
+  const slotStatus = getSlotCapacityStatus(
     payload.data.serviceName,
     payload.data.bookingDate,
     payload.data.bookingTime,
     bookingId
   );
-  if (slotCapacityReached) {
-    const maxPerSlot = getSlotCapacityForServiceName(payload.data.serviceName);
-    return res.status(409).json({ message: `This slot is full. Maximum ${maxPerSlot} bookings are allowed.` });
+  if (slotStatus.reached) {
+    const message = slotStatus.holdTotal > 0
+      ? buildHoldSlotMessage()
+      : `This slot is full. Maximum ${slotStatus.maxPerSlot} bookings are allowed.`;
+    return res.status(409).json({ message });
   }
 
   const nextStatus = req.user.role === 'admin'
@@ -2853,7 +3186,9 @@ app.get('/api/bookings/:id/payment-link', requireAuth, (req, res) => {
   }
 
   const booking = db
-    .prepare('SELECT id, user_id AS userId, payment_status AS paymentStatus, service_name AS serviceName FROM bookings WHERE id = ?')
+    .prepare(
+      'SELECT id, user_id AS userId, status, payment_status AS paymentStatus, service_name AS serviceName, created_at AS createdAt FROM bookings WHERE id = ?'
+    )
     .get(bookingId);
   if (!booking) {
     return res.status(404).json({ message: 'booking not found' });
@@ -2865,6 +3200,9 @@ app.get('/api/bookings/:id/payment-link', requireAuth, (req, res) => {
   const service = getServiceByName(booking.serviceName);
   if (!service || service.membershipOnly || booking.paymentStatus === 'paid') {
     return res.status(409).json({ message: 'payment link is not required for this booking' });
+  }
+  if (isHoldExpiredBooking(booking)) {
+    return res.status(409).json({ message: 'This booking hold has expired. Please book another slot.' });
   }
 
   return res.json({
@@ -2881,7 +3219,8 @@ app.get('/api/public/payments/booking', (req, res) => {
   const booking = db
     .prepare(
       `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, service_name AS serviceName,
-              booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus
+              booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus,
+              created_at AS createdAt
        FROM bookings
        WHERE id = ?`
     )
@@ -2900,13 +3239,27 @@ app.get('/api/public/payments/booking', (req, res) => {
     ? db
         .prepare(
           `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, service_name AS serviceName,
-                  booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus
+                  booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus,
+                  created_at AS createdAt
            FROM bookings
            WHERE booking_group_id = ?
            ORDER BY booking_date, booking_time, id`
         )
         .all(booking.bookingGroupId)
     : [booking];
+  const holdMetaEntries = groupBookings.map(applyHoldMeta);
+  const holdActiveEntries = holdMetaEntries.filter((entry) => entry.holdActive);
+  const holdExpired = holdMetaEntries.some((entry) => entry.holdExpired);
+  const holdActive = holdActiveEntries.length > 0;
+  const holdRemainingMinutes = holdActive
+    ? Math.min(...holdActiveEntries.map((entry) => Number(entry.holdRemainingMinutes || 0)).filter((value) => value > 0))
+    : 0;
+  const holdExpiresAt = holdActive
+    ? holdActiveEntries
+        .map((entry) => entry.holdExpiresAt)
+        .filter(Boolean)
+        .sort()[0] || ''
+    : '';
   const activeBookings = groupBookings.filter((entry) => entry.status !== 'cancelled');
   const pricingUser = {
     membershipStatus: bookingOwner?.membershipStatus || 'inactive',
@@ -2937,6 +3290,13 @@ app.get('/api/public/payments/booking', (req, res) => {
       bookingTime: booking.bookingTime,
     },
     summary,
+    hold: {
+      active: holdActive,
+      expired: holdExpired,
+      remainingMinutes: holdRemainingMinutes,
+      expiresAt: holdExpiresAt,
+      holdMinutes: BOOKING_HOLD_MINUTES,
+    },
     keyId: RAZORPAY_KEY_ID,
   });
 });
@@ -2954,7 +3314,8 @@ app.post('/api/public/payments/create-order', async (req, res) => {
   const booking = db
     .prepare(
       `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, status, payment_status AS paymentStatus,
-              service_name AS serviceName, booking_date AS bookingDate, booking_time AS bookingTime
+              service_name AS serviceName, booking_date AS bookingDate, booking_time AS bookingTime,
+              created_at AS createdAt
        FROM bookings
        WHERE id = ?`
     )
@@ -3001,6 +3362,9 @@ app.post('/api/public/payments/create-order', async (req, res) => {
 
   if (!payableBookings.length) {
     return res.status(409).json({ message: 'All bookings in this package are already paid or cancelled.' });
+  }
+  if (payableBookings.some((entry) => isHoldExpiredBooking(entry))) {
+    return res.status(409).json({ message: 'This booking hold has expired. Please book another slot.' });
   }
 
   const paymentSummary = booking.bookingGroupId
@@ -3135,6 +3499,40 @@ app.post('/api/public/payments/verify', (req, res) => {
   return res.json({ bookingId: access.bookingId, paid: true });
 });
 
+app.post('/api/payments/preview-cart-coupon', requireAuth, (req, res) => {
+  if (req.user.role !== 'user') {
+    return res.status(403).json({ message: 'forbidden' });
+  }
+
+  const pricingUser = {
+    membershipStatus: req.user.membershipStatus || 'inactive',
+    membershipExpiresAt: req.user.membershipExpiresAt || null,
+  };
+  const payableBookings = getPayableUserBookings(req.user.id);
+  if (!payableBookings.length) {
+    return res.status(409).json({ message: 'No unpaid payable bookings found.' });
+  }
+
+  let paymentSummary;
+  try {
+    paymentSummary = buildAggregatePaymentSummary(payableBookings, pricingUser);
+  } catch (error) {
+    return res.status(409).json({ message: error?.message || 'Unable to calculate payment total for current bookings.' });
+  }
+
+  const couponResult = validateCouponForUser({
+    code: req.body?.couponCode,
+    userId: req.user.id,
+    appliesTo: 'services',
+    subtotalAmountPaise: Math.round(Number(paymentSummary.totalAmountInr || 0) * 100),
+  });
+  if (couponResult.error) {
+    return res.status(400).json({ message: couponResult.error });
+  }
+
+  return res.json({ coupon: serializeCouponPreview(couponResult), summary: paymentSummary });
+});
+
 app.post('/api/payments/create-cart-order', requireAuth, async (req, res) => {
   if (!razorpay) {
     return res.status(503).json({ message: RAZORPAY_UNAVAILABLE_MESSAGE });
@@ -3159,7 +3557,17 @@ app.post('/api/payments/create-cart-order', requireAuth, async (req, res) => {
     return res.status(409).json({ message: error?.message || 'Unable to calculate payment total for current bookings.' });
   }
 
-  const amountInPaise = Math.max(100, Math.round(Number(paymentSummary.totalAmountInr || 0) * 100));
+  const subtotalAmountPaise = Math.round(Number(paymentSummary.totalAmountInr || 0) * 100);
+  const couponResult = validateCouponForUser({
+    code: req.body?.couponCode,
+    userId: req.user.id,
+    appliesTo: 'services',
+    subtotalAmountPaise,
+  });
+  if (couponResult.error) {
+    return res.status(400).json({ message: couponResult.error });
+  }
+  const amountInPaise = Math.max(100, Number(couponResult.finalAmountPaise || subtotalAmountPaise));
 
   try {
     const order = await razorpay.orders.create({
@@ -3169,10 +3577,25 @@ app.post('/api/payments/create-cart-order', requireAuth, async (req, res) => {
       notes: {
         userId: String(req.user.id),
         scope: 'cart',
+        couponCode: String(couponResult.couponCode || ''),
       },
     });
 
     const ids = payableBookings.map((entry) => Number(entry.id)).filter((id) => Number.isInteger(id));
+    db.prepare(
+      `INSERT OR REPLACE INTO cart_payment_orders (
+        order_id, user_id, original_amount_paise, discount_amount_paise, coupon_id, coupon_code, amount_paise, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))`
+    ).run(
+      order.id,
+      req.user.id,
+      Number(couponResult.originalAmountPaise || subtotalAmountPaise),
+      Number(couponResult.discountAmountPaise || 0),
+      couponResult.coupon?.id || null,
+      couponResult.couponCode || null,
+      amountInPaise
+    );
+
     db.prepare(
       `UPDATE bookings
        SET payment_status = CASE WHEN payment_status = 'unpaid' THEN 'payment_pending' ELSE payment_status END,
@@ -3186,6 +3609,7 @@ app.post('/api/payments/create-cart-order', requireAuth, async (req, res) => {
       amount: order.amount,
       currency: order.currency,
       summary: paymentSummary,
+      coupon: serializeCouponPreview(couponResult),
       user: {
         name: req.user.name,
         email: req.user.email,
@@ -3209,7 +3633,8 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
 
   const booking = db.prepare(
     `SELECT b.id, b.user_id AS userId, b.booking_group_id AS bookingGroupId, b.status, b.payment_status AS paymentStatus,
-            b.service_name AS serviceName, b.booking_date AS bookingDate, b.booking_time AS bookingTime
+            b.service_name AS serviceName, b.booking_date AS bookingDate, b.booking_time AS bookingTime,
+            b.created_at AS createdAt
      FROM bookings b
      WHERE b.id = ?`
   ).get(bookingId);
@@ -3259,7 +3684,8 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
                   booking_date AS bookingDate,
                   booking_time AS bookingTime,
                   status,
-                  payment_status AS paymentStatus
+                  payment_status AS paymentStatus,
+                  created_at AS createdAt
            FROM bookings
            WHERE booking_group_id = ?
            ORDER BY booking_date, booking_time, id`
@@ -3277,6 +3703,9 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
 
   if (!payableBookings.length) {
     return res.status(409).json({ message: 'All bookings in this package are already paid or cancelled.' });
+  }
+  if (payableBookings.some((entry) => isHoldExpiredBooking(entry))) {
+    return res.status(409).json({ message: 'This booking hold has expired. Please book another slot.' });
   }
 
   let paymentSummary;
@@ -3444,6 +3873,17 @@ app.post('/api/payments/verify-cart', requireAuth, (req, res) => {
     return res.status(400).json({ message: 'Invalid payment signature' });
   }
 
+  const cartOrder = db
+    .prepare(
+      `SELECT order_id AS orderId, user_id AS userId, coupon_id AS couponId, discount_amount_paise AS discountAmountPaise
+       FROM cart_payment_orders
+       WHERE order_id = ?`
+    )
+    .get(razorpayOrderId);
+  if (!cartOrder || Number(cartOrder.userId) !== Number(req.user.id)) {
+    return res.status(404).json({ message: 'Cart payment order not found.' });
+  }
+
   const matchedBookings = db
     .prepare(
       `SELECT id,
@@ -3485,6 +3925,24 @@ app.post('/api/payments/verify-cart', requireAuth, (req, res) => {
        AND status <> 'cancelled'
        AND payment_status <> 'paid'`
   ).run(razorpayOrderId, razorpayOrderId, razorpayPaymentId, razorpayPaymentId, req.user.id, razorpayOrderId);
+
+  db.prepare(
+    `UPDATE cart_payment_orders
+     SET status = 'paid',
+         payment_reference = ?,
+         paid_at = datetime('now')
+     WHERE order_id = ?`
+  ).run(razorpayPaymentId, razorpayOrderId);
+
+  if (Number(cartOrder.couponId || 0) > 0 && Number(cartOrder.discountAmountPaise || 0) > 0) {
+    recordCouponRedemption({
+      couponId: Number(cartOrder.couponId),
+      userId: req.user.id,
+      contextType: 'cart',
+      contextRef: razorpayOrderId,
+      discountAmountPaise: Number(cartOrder.discountAmountPaise || 0),
+    });
+  }
 
   return res.json({
     paid: true,
@@ -3636,6 +4094,239 @@ function applyPhoneDiscount(amountInr, phone) {
   return Math.max(0, Math.round(baseAmount * (1 - discountPercent / 100)));
 }
 
+function normalizeCouponCode(code) {
+  return String(code || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/[^A-Z0-9_-]/g, '');
+}
+
+function generateCouponCode(prefix = 'H2') {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(8);
+  const suffix = Array.from(bytes)
+    .map((value) => alphabet[value % alphabet.length])
+    .join('');
+  return prefix ? `${prefix}-${suffix}` : suffix;
+}
+
+function getCouponByCode(code) {
+  const normalizedCode = normalizeCouponCode(code);
+  if (!normalizedCode) return null;
+  const row = db
+    .prepare(
+      `SELECT id,
+              code,
+              description,
+              discount_type AS discountType,
+              discount_value AS discountValue,
+              applies_to AS appliesTo,
+              max_redemptions AS maxRedemptions,
+              per_user_limit AS perUserLimit,
+              expires_at AS expiresAt,
+              active,
+              recipient_email AS recipientEmail,
+              recipient_name AS recipientName,
+              emailed_at AS emailedAt,
+              email_status AS emailStatus,
+              email_error AS emailError,
+              created_at AS createdAt
+       FROM coupons
+       WHERE code = ?`
+    )
+    .get(normalizedCode);
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    code: row.code || '',
+    description: row.description || '',
+    discountType: row.discountType || 'percent',
+    discountValue: Number(row.discountValue || 0),
+    appliesTo: row.appliesTo || 'all',
+    maxRedemptions: row.maxRedemptions == null ? null : Number(row.maxRedemptions),
+    perUserLimit: Number(row.perUserLimit || 1),
+    expiresAt: row.expiresAt || null,
+    active: Number(row.active || 0) === 1,
+    recipientEmail: row.recipientEmail || '',
+    recipientName: row.recipientName || '',
+    emailedAt: row.emailedAt || null,
+    emailStatus: row.emailStatus || '',
+    emailError: row.emailError || '',
+    createdAt: row.createdAt || null,
+  };
+}
+
+function getCouponById(couponId) {
+  const id = Number(couponId);
+  if (!Number.isInteger(id)) return null;
+  const row = db
+    .prepare(
+      `SELECT id,
+              code,
+              description,
+              discount_type AS discountType,
+              discount_value AS discountValue,
+              applies_to AS appliesTo,
+              max_redemptions AS maxRedemptions,
+              per_user_limit AS perUserLimit,
+              expires_at AS expiresAt,
+              active,
+              recipient_email AS recipientEmail,
+              recipient_name AS recipientName,
+              emailed_at AS emailedAt,
+              email_status AS emailStatus,
+              email_error AS emailError,
+              created_at AS createdAt
+       FROM coupons
+       WHERE id = ?`
+    )
+    .get(id);
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    code: row.code || '',
+    description: row.description || '',
+    discountType: row.discountType || 'percent',
+    discountValue: Number(row.discountValue || 0),
+    appliesTo: row.appliesTo || 'all',
+    maxRedemptions: row.maxRedemptions == null ? null : Number(row.maxRedemptions),
+    perUserLimit: Number(row.perUserLimit || 1),
+    expiresAt: row.expiresAt || null,
+    active: Number(row.active || 0) === 1,
+    recipientEmail: row.recipientEmail || '',
+    recipientName: row.recipientName || '',
+    emailedAt: row.emailedAt || null,
+    emailStatus: row.emailStatus || '',
+    emailError: row.emailError || '',
+    createdAt: row.createdAt || null,
+  };
+}
+
+function generateUniqueCouponCode() {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const candidate = generateCouponCode('H2');
+    if (!getCouponByCode(candidate)) return candidate;
+  }
+  return generateCouponCode(`H2${Date.now().toString(36).toUpperCase()}`);
+}
+
+function getCouponRedemptionStats(couponId, userId) {
+  const totals = db
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS userTotal
+       FROM coupon_redemptions
+       WHERE coupon_id = ?`
+    )
+    .get(Number(userId), Number(couponId));
+  return {
+    total: Number(totals?.total || 0),
+    userTotal: Number(totals?.userTotal || 0),
+  };
+}
+
+function calculateCouponDiscountPaise(coupon, subtotalAmountPaise) {
+  const subtotal = Math.max(0, Math.round(Number(subtotalAmountPaise || 0)));
+  if (!coupon || subtotal <= 0) return 0;
+
+  let discountPaise = 0;
+  if (coupon.discountType === 'flat') {
+    discountPaise = Math.round(Number(coupon.discountValue || 0) * 100);
+  } else {
+    discountPaise = Math.round(subtotal * (Number(coupon.discountValue || 0) / 100));
+  }
+
+  if (!Number.isFinite(discountPaise) || discountPaise <= 0) return 0;
+  return Math.min(discountPaise, Math.max(0, subtotal - 100));
+}
+
+function validateCouponForUser({ code, userId, appliesTo, subtotalAmountPaise }) {
+  const normalizedCode = normalizeCouponCode(code);
+  if (!normalizedCode) {
+    return {
+      coupon: null,
+      couponCode: '',
+      discountAmountPaise: 0,
+      finalAmountPaise: Math.max(0, Math.round(Number(subtotalAmountPaise || 0))),
+      originalAmountPaise: Math.max(0, Math.round(Number(subtotalAmountPaise || 0))),
+    };
+  }
+
+  const coupon = getCouponByCode(normalizedCode);
+  if (!coupon || !coupon.active) {
+    return { error: 'Invalid coupon code.' };
+  }
+  if (coupon.expiresAt && new Date(coupon.expiresAt).getTime() <= Date.now()) {
+    return { error: 'This coupon has expired.' };
+  }
+  if (!['all', appliesTo].includes(String(coupon.appliesTo || 'all'))) {
+    return { error: 'This coupon is not valid for this payment.' };
+  }
+
+  const stats = getCouponRedemptionStats(coupon.id, userId);
+  if (Number.isFinite(coupon.maxRedemptions) && coupon.maxRedemptions > 0 && stats.total >= coupon.maxRedemptions) {
+    return { error: 'This coupon has reached its maximum usage limit.' };
+  }
+  if (Number(coupon.perUserLimit || 1) > 0 && stats.userTotal >= Number(coupon.perUserLimit || 1)) {
+    return { error: 'You have already used this coupon.' };
+  }
+
+  const originalAmountPaise = Math.max(0, Math.round(Number(subtotalAmountPaise || 0)));
+  const discountAmountPaise = calculateCouponDiscountPaise(coupon, originalAmountPaise);
+  if (discountAmountPaise <= 0) {
+    return { error: 'This coupon does not apply to the current payable amount.' };
+  }
+
+  return {
+    coupon,
+    couponCode: normalizedCode,
+    originalAmountPaise,
+    discountAmountPaise,
+    finalAmountPaise: Math.max(100, originalAmountPaise - discountAmountPaise),
+  };
+}
+
+function serializeCouponPreview(result) {
+  return {
+    code: result?.coupon?.code || result?.couponCode || '',
+    description: result?.coupon?.description || '',
+    discountType: result?.coupon?.discountType || '',
+    appliesTo: result?.coupon?.appliesTo || '',
+    originalAmountInr: Math.round(Number(result?.originalAmountPaise || 0) / 100),
+    discountAmountInr: Math.round(Number(result?.discountAmountPaise || 0) / 100),
+    payableAmountInr: Math.round(Number(result?.finalAmountPaise || 0) / 100),
+  };
+}
+
+function recordCouponRedemption({ couponId, userId, contextType, contextRef, discountAmountPaise }) {
+  if (!Number.isInteger(Number(couponId)) || !Number.isInteger(Number(userId))) return;
+  const normalizedContextRef = String(contextRef || '').trim();
+  const exists = db
+    .prepare(
+      `SELECT id
+       FROM coupon_redemptions
+       WHERE coupon_id = ?
+         AND user_id = ?
+         AND context_type = ?
+         AND context_ref = ?`
+    )
+    .get(Number(couponId), Number(userId), String(contextType || '').trim(), normalizedContextRef);
+  if (exists) return;
+
+  db.prepare(
+    `INSERT INTO coupon_redemptions (
+      coupon_id, user_id, context_type, context_ref, discount_amount_paise, created_at
+    ) VALUES (?, ?, ?, ?, ?, datetime('now'))`
+  ).run(
+    Number(couponId),
+    Number(userId),
+    String(contextType || '').trim(),
+    normalizedContextRef,
+    Math.max(0, Math.round(Number(discountAmountPaise || 0)))
+  );
+}
+
 function resolveAdminCustomerContext({ userId, customerName, customerEmail, customerPhone, createIfMissing = false } = {}) {
   const normalizedName = String(customerName || '').trim();
   const normalizedEmail = String(customerEmail || '').trim().toLowerCase();
@@ -3766,6 +4457,78 @@ function getRazorpayOrderErrorMessage(error, fallbackMessage) {
   return String(message || fallbackMessage || 'Razorpay request failed');
 }
 
+function parseSqliteDateToUtcMs(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return NaN;
+  if (raw.includes('T')) {
+    const parsed = Date.parse(raw);
+    return Number.isNaN(parsed) ? NaN : parsed;
+  }
+  const parsed = Date.parse(`${raw.replace(' ', 'T')}Z`);
+  return Number.isNaN(parsed) ? NaN : parsed;
+}
+
+function isHoldEligible(status, paymentStatus) {
+  const normalizedStatus = String(status || '').toLowerCase();
+  if (normalizedStatus !== 'pending') return false;
+  const normalizedPayment = String(paymentStatus || '').toLowerCase();
+  return normalizedPayment !== 'paid';
+}
+
+function getBookingHoldMeta(booking) {
+  if (!booking || !isHoldEligible(booking.status, booking.paymentStatus)) {
+    return {
+      holdActive: false,
+      holdExpired: false,
+      holdExpiresAt: '',
+      holdRemainingMinutes: 0,
+    };
+  }
+
+  const createdMs = parseSqliteDateToUtcMs(booking.createdAt);
+  if (!Number.isFinite(createdMs)) {
+    return {
+      holdActive: false,
+      holdExpired: false,
+      holdExpiresAt: '',
+      holdRemainingMinutes: 0,
+    };
+  }
+
+  const expiresMs = createdMs + BOOKING_HOLD_MINUTES * 60 * 1000;
+  const remainingMs = expiresMs - Date.now();
+  const holdExpired = remainingMs <= 0;
+  return {
+    holdActive: !holdExpired,
+    holdExpired,
+    holdExpiresAt: new Date(expiresMs).toISOString(),
+    holdRemainingMinutes: holdExpired ? 0 : Math.ceil(remainingMs / 60000),
+  };
+}
+
+function isHoldExpiredBooking(booking) {
+  return Boolean(getBookingHoldMeta(booking).holdExpired);
+}
+
+function applyHoldMeta(booking) {
+  const meta = getBookingHoldMeta(booking);
+  return { ...booking, ...meta };
+}
+
+function activeBookingSql(alias = '') {
+  const prefix = alias ? `${alias}.` : '';
+  return `(${prefix}status IN ('booked', 'confirmed') OR (${prefix}status = 'pending' AND (${prefix}payment_status = 'paid' OR ${prefix}created_at >= ${BOOKING_HOLD_CUTOFF_SQL})))`;
+}
+
+function holdBookingSql(alias = '') {
+  const prefix = alias ? `${alias}.` : '';
+  return `(${prefix}status = 'pending' AND COALESCE(${prefix}payment_status, '') <> 'paid' AND ${prefix}created_at >= ${BOOKING_HOLD_CUTOFF_SQL})`;
+}
+
+function buildHoldSlotMessage() {
+  return `This slot is currently on hold. Please try again in ${BOOKING_HOLD_MINUTES} minutes or choose another slot.`;
+}
+
 function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', includeAdminMeta = false } = {}) {
   const payload = validateBookingPayload(req.body, targetUser);
   if (payload.error) return res.status(400).json({ message: payload.error });
@@ -3810,10 +4573,12 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
     }
   }
 
-  const slotCapacityReached = isSlotCapacityReached(payload.data.serviceName, payload.data.bookingDate, payload.data.bookingTime);
-  if (slotCapacityReached) {
-    const maxPerSlot = getSlotCapacityForServiceName(payload.data.serviceName);
-    return res.status(409).json({ message: `This slot is full. Maximum ${maxPerSlot} bookings are allowed.` });
+  const slotStatus = getSlotCapacityStatus(payload.data.serviceName, payload.data.bookingDate, payload.data.bookingTime);
+  if (slotStatus.reached) {
+    const message = slotStatus.holdTotal > 0
+      ? buildHoldSlotMessage()
+      : `This slot is full. Maximum ${slotStatus.maxPerSlot} bookings are allowed.`;
+    return res.status(409).json({ message });
   }
 
   const result = db
@@ -3891,34 +4656,39 @@ function requireDoctor(req, res, next) {
   return next();
 }
 
-function isSlotCapacityReached(serviceName, bookingDate, bookingTime, excludeBookingId = null) {
+function getSlotCapacityStatus(serviceName, bookingDate, bookingTime, excludeBookingId = null) {
   const maxPerSlot = getSlotCapacityForServiceName(serviceName);
+  const params = [serviceName, bookingDate, bookingTime];
+  let excludeClause = '';
   if (excludeBookingId) {
-    const row = db
-      .prepare(
-        `SELECT COUNT(*) AS total
-         FROM bookings
-         WHERE service_name = ?
-           AND booking_date = ?
-           AND booking_time = ?
-           AND status IN ('pending', 'booked', 'confirmed')
-           AND id <> ?`
-      )
-      .get(serviceName, bookingDate, bookingTime, excludeBookingId);
-    return Number(row?.total || 0) >= maxPerSlot;
+    excludeClause = 'AND id <> ?';
+    params.push(excludeBookingId);
   }
-
   const row = db
     .prepare(
-      `SELECT COUNT(*) AS total
+      `SELECT
+          SUM(CASE WHEN ${activeBookingSql()} THEN 1 ELSE 0 END) AS activeTotal,
+          SUM(CASE WHEN ${holdBookingSql()} THEN 1 ELSE 0 END) AS holdTotal
        FROM bookings
        WHERE service_name = ?
          AND booking_date = ?
          AND booking_time = ?
-         AND status IN ('pending', 'booked', 'confirmed')`
+         AND status IN ('pending', 'booked', 'confirmed')
+         ${excludeClause}`
     )
-    .get(serviceName, bookingDate, bookingTime);
-  return Number(row?.total || 0) >= maxPerSlot;
+    .get(...params);
+  const activeTotal = Number(row?.activeTotal || 0);
+  const holdTotal = Number(row?.holdTotal || 0);
+  return {
+    maxPerSlot,
+    activeTotal,
+    holdTotal,
+    reached: activeTotal >= maxPerSlot,
+  };
+}
+
+function isSlotCapacityReached(serviceName, bookingDate, bookingTime, excludeBookingId = null) {
+  return getSlotCapacityStatus(serviceName, bookingDate, bookingTime, excludeBookingId).reached;
 }
 
 function getSlotCapacityForServiceName(serviceName) {
@@ -3971,7 +4741,7 @@ function hasConflictingAddOnBooking(userId, bookingDate, bookingTime, excludeBoo
          WHERE user_id = ?
            AND booking_date = ?
            AND booking_time = ?
-           AND status IN ('pending', 'booked', 'confirmed')
+           AND ${activeBookingSql()}
            AND service_name IN (${placeholders})
            AND id <> ?`
       )
@@ -3986,7 +4756,7 @@ function hasConflictingAddOnBooking(userId, bookingDate, bookingTime, excludeBoo
        WHERE user_id = ?
          AND booking_date = ?
          AND booking_time = ?
-         AND status IN ('pending', 'booked', 'confirmed')
+         AND ${activeBookingSql()}
          AND service_name IN (${placeholders})`
     )
     .get(userId, bookingDate, bookingTime, ...addOnNames);
@@ -4007,7 +4777,7 @@ function hasHydrogenPackageAddOnOnDate(userId, bookingDate, excludeBookingIds = 
        WHERE user_id = ?
          AND booking_date = ?
          AND booking_group_id IS NOT NULL
-         AND status IN ('pending', 'booked', 'confirmed')
+         AND ${activeBookingSql()}
          AND service_name IN (${placeholders})
          ${exclusion.clause}`
     )
@@ -4029,7 +4799,7 @@ function hasStandaloneIvBookingOnDate(userId, bookingDate, excludeBookingIds = [
        WHERE user_id = ?
          AND booking_date = ?
          AND (booking_group_id IS NULL OR booking_group_id = '')
-         AND status IN ('pending', 'booked', 'confirmed')
+         AND ${activeBookingSql()}
          AND service_name IN (${placeholders})
          ${exclusion.clause}`
     )
@@ -4061,7 +4831,7 @@ function findIvCooldownConflict(userId, serviceName, bookingDate, excludeBooking
        FROM bookings
        WHERE user_id = ?
          AND service_name IN (${placeholders})
-         AND status <> 'cancelled'
+         AND (status = 'completed' OR ${activeBookingSql()})
          ${exclusion.clause}
        ORDER BY booking_date ASC, booking_time ASC`
     )
@@ -4094,7 +4864,7 @@ function validateHydrogenDailySessionLimit(userId, slots, excludeBookingIds = []
       `SELECT booking_date AS bookingDate, COUNT(*) AS total
        FROM bookings
        WHERE user_id = ?
-         AND status IN ('pending', 'booked', 'confirmed', 'completed')
+         AND (status = 'completed' OR ${activeBookingSql()})
          AND service_name IN (${SERVICE_CATALOG.filter((item) => String(item.category || '').toUpperCase() === 'HYDROGEN SESSION')
            .map(() => '?')
            .join(', ')})
@@ -4218,7 +4988,8 @@ function getPayableUserBookings(userId) {
               booking_date AS bookingDate,
               booking_time AS bookingTime,
               status,
-              payment_status AS paymentStatus
+              payment_status AS paymentStatus,
+              created_at AS createdAt
        FROM bookings
        WHERE user_id = ?
          AND status <> 'cancelled'
@@ -4228,6 +4999,7 @@ function getPayableUserBookings(userId) {
     .all(userId);
 
   return rows.filter((entry) => {
+    if (isHoldExpiredBooking(entry)) return false;
     const service = getServiceByName(entry.serviceName);
     return service && !service.membershipOnly;
   });
@@ -4445,7 +5217,11 @@ function normalizeMembershipMembers(rawMembers, expectedCount) {
 function isMembershipActiveForUser(user) {
   if (!user) return false;
   if (String(user.membershipStatus || '').toLowerCase() !== 'active') return false;
-  const expiresAt = user.membershipExpiresAt ? new Date(user.membershipExpiresAt).getTime() : null;
+  const startedAt = user.membershipStartedAt ? new Date(user.membershipStartedAt).getTime() : null;
+  const storedExpiresAt = user.membershipExpiresAt ? new Date(user.membershipExpiresAt).getTime() : null;
+  const normalizedExpiresAt =
+    Number.isFinite(startedAt) && startedAt > 0 ? startedAt + MEMBERSHIP_VALIDITY_DAYS * 24 * 60 * 60 * 1000 : storedExpiresAt;
+  const expiresAt = Number.isFinite(normalizedExpiresAt) ? normalizedExpiresAt : null;
   if (!expiresAt) return false;
   return expiresAt > Date.now();
 }
@@ -4893,6 +5669,86 @@ async function sendSignupConfirmationEmail(toEmail, name) {
   }
 }
 
+async function sendCouponEmail({ toEmail, recipientName, code, discountValue, appliesTo, expiresAt }) {
+  const normalizedToEmail = String(toEmail || '').trim().toLowerCase();
+  if (!normalizedToEmail) {
+    return { ok: false, statusCode: 400, message: 'Recipient email is required.' };
+  }
+
+  const appliesLabel = 'all payments';
+  const expiryLabel = expiresAt ? new Date(expiresAt).toLocaleDateString('en-IN') : 'No expiry date';
+  const subject = `Your ${Number(discountValue || 0)}% off coupon`;
+  const greeting = recipientName ? `Hi ${recipientName},` : 'Hi,';
+  const text =
+    `${greeting}\n\n` +
+    `Here is your single-use coupon code: ${String(code || '').trim()}\n` +
+    `Discount: ${Number(discountValue || 0)}% off (${appliesLabel})\n` +
+    `Expiry: ${expiryLabel}\n\n` +
+    `Use this code at checkout. It can be redeemed only once.\n\n` +
+    `If you did not expect this email, please ignore it.`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">
+      <p style="margin: 0 0 12px;">${escapeHtml(greeting)}</p>
+      <p style="margin: 0 0 12px;">Here is your single-use coupon code:</p>
+      <div style="display: inline-block; padding: 10px 14px; border-radius: 8px; background: #f3f4f6; font-size: 20px; font-weight: 700; letter-spacing: 1px;">
+        ${escapeHtml(String(code || '').trim())}
+      </div>
+      <p style="margin: 12px 0 0;">Discount: ${escapeHtml(String(discountValue || 0))}% off (${escapeHtml(appliesLabel)})</p>
+      <p style="margin: 6px 0 0;">Expiry: ${escapeHtml(expiryLabel)}</p>
+      <p style="margin: 12px 0 0;">Use this code at checkout. It can be redeemed only once.</p>
+      <p style="margin: 12px 0 0; color: #6b7280;">If you did not expect this email, please ignore it.</p>
+    </div>
+  `;
+
+  if (SENDGRID_API_KEY && SENDGRID_FROM_EMAIL) {
+    try {
+      await sgMail.send({
+        to: normalizedToEmail,
+        from: SENDGRID_FROM_EMAIL,
+        subject,
+        text,
+        html,
+      });
+      return { ok: true };
+    } catch (error) {
+      console.error('Failed to send coupon email via SendGrid:', error);
+      return {
+        ok: false,
+        statusCode: 500,
+        message: 'Unable to send coupon email. Please try again.',
+      };
+    }
+  }
+
+  const transporter = getTransporter();
+  const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+  if (!transporter || !fromEmail) {
+    return {
+      ok: false,
+      statusCode: 500,
+      message: 'Email service is not configured. Please contact support.',
+    };
+  }
+
+  try {
+    await transporter.sendMail({
+      from: fromEmail,
+      to: normalizedToEmail,
+      subject,
+      text,
+      html,
+    });
+    return { ok: true };
+  } catch (error) {
+    console.error('Failed to send coupon email via SMTP:', error);
+    return {
+      ok: false,
+      statusCode: 500,
+      message: 'Unable to send coupon email. Please try again.',
+    };
+  }
+}
+
 async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
   const normalizedToEmail = String(toEmail || '').trim().toLowerCase();
 
@@ -5038,12 +5894,59 @@ function migrate() {
       plan_id TEXT NOT NULL,
       people_count INTEGER NOT NULL DEFAULT 1,
       member_details_json TEXT,
+      original_amount_paise INTEGER,
+      discount_amount_paise INTEGER NOT NULL DEFAULT 0,
+      coupon_id INTEGER REFERENCES coupons(id),
+      coupon_code TEXT,
       amount_paise INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
       payment_reference TEXT,
       paid_at TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS coupons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      description TEXT,
+      discount_type TEXT NOT NULL,
+      discount_value REAL NOT NULL,
+      applies_to TEXT NOT NULL DEFAULT 'all',
+      max_redemptions INTEGER,
+      per_user_limit INTEGER NOT NULL DEFAULT 1,
+      expires_at TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      recipient_email TEXT,
+      recipient_name TEXT,
+      emailed_at TEXT,
+      email_status TEXT,
+      email_error TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS coupon_redemptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      coupon_id INTEGER NOT NULL REFERENCES coupons(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      context_type TEXT NOT NULL,
+      context_ref TEXT NOT NULL,
+      discount_amount_paise INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS cart_payment_orders (
+      order_id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      original_amount_paise INTEGER NOT NULL,
+      discount_amount_paise INTEGER NOT NULL DEFAULT 0,
+      coupon_id INTEGER REFERENCES coupons(id),
+      coupon_code TEXT,
+      amount_paise INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      payment_reference TEXT,
+      paid_at TEXT,
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS admin_discount_phones (
@@ -5140,6 +6043,38 @@ function migrate() {
     db.exec('ALTER TABLE membership_payment_orders ADD COLUMN member_details_json TEXT');
   }
 
+  if (hasTable('membership_payment_orders') && !hasColumn('membership_payment_orders', 'original_amount_paise')) {
+    db.exec('ALTER TABLE membership_payment_orders ADD COLUMN original_amount_paise INTEGER');
+  }
+
+  if (hasTable('membership_payment_orders') && !hasColumn('membership_payment_orders', 'discount_amount_paise')) {
+    db.exec("ALTER TABLE membership_payment_orders ADD COLUMN discount_amount_paise INTEGER NOT NULL DEFAULT 0");
+  }
+
+  if (hasTable('membership_payment_orders') && !hasColumn('membership_payment_orders', 'coupon_id')) {
+    db.exec('ALTER TABLE membership_payment_orders ADD COLUMN coupon_id INTEGER REFERENCES coupons(id)');
+  }
+
+  if (hasTable('membership_payment_orders') && !hasColumn('membership_payment_orders', 'coupon_code')) {
+    db.exec('ALTER TABLE membership_payment_orders ADD COLUMN coupon_code TEXT');
+  }
+
+  if (hasTable('coupons') && !hasColumn('coupons', 'recipient_email')) {
+    db.exec('ALTER TABLE coupons ADD COLUMN recipient_email TEXT');
+  }
+  if (hasTable('coupons') && !hasColumn('coupons', 'recipient_name')) {
+    db.exec('ALTER TABLE coupons ADD COLUMN recipient_name TEXT');
+  }
+  if (hasTable('coupons') && !hasColumn('coupons', 'emailed_at')) {
+    db.exec('ALTER TABLE coupons ADD COLUMN emailed_at TEXT');
+  }
+  if (hasTable('coupons') && !hasColumn('coupons', 'email_status')) {
+    db.exec('ALTER TABLE coupons ADD COLUMN email_status TEXT');
+  }
+  if (hasTable('coupons') && !hasColumn('coupons', 'email_error')) {
+    db.exec('ALTER TABLE coupons ADD COLUMN email_error TEXT');
+  }
+
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_doctors_user_id
       ON doctors(user_id)
@@ -5158,6 +6093,15 @@ function migrate() {
 
     CREATE INDEX IF NOT EXISTS idx_bookings_group_id
       ON bookings(booking_group_id);
+
+    CREATE INDEX IF NOT EXISTS idx_coupons_code
+      ON coupons(code);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_coupon_redemptions_context
+      ON coupon_redemptions(coupon_id, user_id, context_type, context_ref);
+
+    CREATE INDEX IF NOT EXISTS idx_cart_payment_orders_user_status
+      ON cart_payment_orders(user_id, status, created_at);
   `);
 
   if (!hasColumn('bookings', 'payment_status')) {
@@ -5183,6 +6127,12 @@ function migrate() {
       ELSE 'unpaid'
     END
     WHERE payment_status IS NULL OR payment_status = '';
+  `);
+
+  db.exec(`
+    UPDATE membership_payment_orders
+    SET original_amount_paise = amount_paise
+    WHERE original_amount_paise IS NULL;
   `);
 
   db.exec("UPDATE users SET role = 'user' WHERE role IS NULL OR role = ''");

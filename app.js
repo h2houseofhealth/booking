@@ -4,6 +4,7 @@ const state = {
   services: [],
   adminMembershipOrders: [],
   adminDiscountPhones: [],
+  adminCoupons: [],
   adminResolvedCustomer: null,
   adminCustomerForm: {
     name: '',
@@ -19,6 +20,9 @@ const state = {
   },
   membershipAdditions: {},
   membershipCheckout: null,
+  membershipCouponPreview: null,
+  cartCouponCode: '',
+  cartCouponPreview: null,
   ivSelections: {},
   selectedServiceCategory: null,
   selectedSingleSessionServiceName: '',
@@ -35,6 +39,8 @@ const state = {
   selectedServiceDate: '',
   slotAvailability: {},
   slotCapacityByService: {},
+  slotHoldCounts: {},
+  bookingHoldMinutes: 10,
   slotAvailabilityLoading: false,
   filters: {
     search: '',
@@ -59,6 +65,7 @@ const SLOT_OPTIONS = [
 const BOOKING_WINDOW_DAYS = 60;
 const IV_REBOOK_COOLDOWN_DAYS = 14;
 const MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER = 3;
+const BOOKING_HOLD_MINUTES = 10;
 
 const elements = {
   authCard: document.getElementById('authCard'),
@@ -159,6 +166,24 @@ const elements = {
   adminDiscountSubmitBtn: document.getElementById('adminDiscountSubmitBtn'),
   adminDiscountList: document.getElementById('adminDiscountList'),
   adminDiscountEmptyState: document.getElementById('adminDiscountEmptyState'),
+  adminCouponForm: document.getElementById('adminCouponForm'),
+  adminCouponRecipientEmail: document.getElementById('adminCouponRecipientEmail'),
+  adminCouponCode: document.getElementById('adminCouponCode'),
+  adminCouponDescription: document.getElementById('adminCouponDescription'),
+  adminCouponType: document.getElementById('adminCouponType'),
+  adminCouponValue: document.getElementById('adminCouponValue'),
+  adminCouponMaxRedemptions: document.getElementById('adminCouponMaxRedemptions'),
+  adminCouponExpiresAt: document.getElementById('adminCouponExpiresAt'),
+  adminCouponSubmitBtn: document.getElementById('adminCouponSubmitBtn'),
+  adminCouponSaveOnlyBtn: document.getElementById('adminCouponSaveOnlyBtn'),
+  adminCouponList: document.getElementById('adminCouponList'),
+  adminCouponEmptyState: document.getElementById('adminCouponEmptyState'),
+  membershipCouponCode: document.getElementById('membershipCouponCode'),
+  membershipApplyCouponBtn: document.getElementById('membershipApplyCouponBtn'),
+  membershipCouponPreview: document.getElementById('membershipCouponPreview'),
+  userCouponCode: document.getElementById('userCouponCode'),
+  userApplyCouponBtn: document.getElementById('userApplyCouponBtn'),
+  userCouponPreview: document.getElementById('userCouponPreview'),
 
   openBookingBtn: document.getElementById('openBookingBtn'),
   dialog: document.getElementById('bookingDialog'),
@@ -241,6 +266,7 @@ function attachEvents() {
     state.services = [];
     state.adminMembershipOrders = [];
     state.adminDiscountPhones = [];
+    state.adminCoupons = [];
     state.adminResolvedCustomer = null;
     state.adminCustomerForm = { name: '', email: '', phone: '' };
     state.postLoginChoice = '';
@@ -249,6 +275,9 @@ function attachEvents() {
     state.membership = { plans: [], active: false, current: null };
     state.membershipAdditions = {};
     state.membershipCheckout = null;
+    state.membershipCouponPreview = null;
+    state.cartCouponCode = '';
+    state.cartCouponPreview = null;
     state.ivSelections = {};
     state.selectedServiceCategory = null;
     state.selectedSingleSessionServiceName = '';
@@ -440,10 +469,33 @@ function attachEvents() {
     event.preventDefault();
     await submitMembershipCheckout();
   });
+  elements.membershipApplyCouponBtn?.addEventListener('click', async () => {
+    await previewMembershipCoupon();
+  });
+  elements.membershipCouponCode?.addEventListener('input', () => {
+    state.membershipCouponPreview = null;
+    renderMembershipCouponPreview();
+    renderMembershipCheckoutSummary();
+  });
 
   elements.adminDiscountForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     await saveAdminDiscountPhone();
+  });
+  elements.adminCouponForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    await saveAdminCoupon({ sendEmail: true });
+  });
+  elements.adminCouponSaveOnlyBtn?.addEventListener('click', async () => {
+    await saveAdminCoupon({ sendEmail: false });
+  });
+  elements.userApplyCouponBtn?.addEventListener('click', async () => {
+    await previewCartCoupon();
+  });
+  elements.userCouponCode?.addEventListener('input', () => {
+    state.cartCouponPreview = null;
+    renderCartCouponPreview();
+    renderUserCheckoutSummary(state.bookings || []);
   });
 
   elements.openBookingBtn?.addEventListener('click', () => openDialog());
@@ -739,15 +791,17 @@ async function refreshAdminCustomerContext() {
 
 async function loadDashboardData() {
   if (state.user?.role === 'admin') {
-    const [bookingsResult, membershipOrdersResult, discountPhonesResult, genericServicesResult] = await Promise.all([
+    const [bookingsResult, membershipOrdersResult, discountPhonesResult, couponsResult, genericServicesResult] = await Promise.all([
       api('/api/bookings'),
       api('/api/admin/membership-orders'),
       api('/api/admin/discount-phones'),
+      api('/api/admin/coupons'),
       api('/api/services'),
     ]);
     state.bookings = bookingsResult.bookings || [];
     state.adminMembershipOrders = membershipOrdersResult.orders || [];
     state.adminDiscountPhones = discountPhonesResult.discountPhones || [];
+    state.adminCoupons = couponsResult.coupons || [];
     state.membership = { plans: [], active: false, current: null };
     state.services = genericServicesResult.services || [];
     state.adminResolvedCustomer = null;
@@ -784,8 +838,11 @@ async function loadDashboardData() {
     };
     state.adminMembershipOrders = [];
     state.adminDiscountPhones = [];
+    state.adminCoupons = [];
     state.adminResolvedCustomer = null;
     state.adminCustomerForm = { name: '', email: '', phone: '' };
+    state.membershipCouponPreview = null;
+    state.cartCouponPreview = null;
   }
 
   if (state.selectedServiceCategory) {
@@ -825,10 +882,13 @@ async function loadServiceAvailability() {
     if (requestId !== availabilityRequestId) return;
     state.slotAvailability = result.availability || {};
     state.slotCapacityByService = result.slotCapacityByService || {};
+    state.slotHoldCounts = result.holds || {};
+    state.bookingHoldMinutes = Number(result.holdMinutes || BOOKING_HOLD_MINUTES) || BOOKING_HOLD_MINUTES;
   } catch {
     if (requestId !== availabilityRequestId) return;
     state.slotAvailability = {};
     state.slotCapacityByService = {};
+    state.slotHoldCounts = {};
   } finally {
     if (requestId !== availabilityRequestId) return;
     state.slotAvailabilityLoading = false;
@@ -840,6 +900,7 @@ function refreshSelectedCategoryAvailability(bookingDate = '') {
   state.selectedServiceDate = bookingDate || getTodayIsoDate();
   state.slotAvailability = {};
   state.slotCapacityByService = {};
+  state.slotHoldCounts = {};
   state.slotAvailabilityLoading = true;
   render();
   loadServiceAvailability();
@@ -852,6 +913,7 @@ function resetServiceBrowserState() {
   state.selectedServiceDate = getTodayIsoDate();
   state.slotAvailability = {};
   state.slotCapacityByService = {};
+  state.slotHoldCounts = {};
   state.slotAvailabilityLoading = false;
 }
 
@@ -873,17 +935,24 @@ function populateAvailableTimeOptions(selectElement, serviceName, bookingDate, c
   selectElement.innerHTML = '';
 
   const serviceAvailability = state.slotAvailability[String(serviceName || '')] || {};
+  const serviceHolds = state.slotHoldCounts[String(serviceName || '')] || {};
   const capacity = Number(state.slotCapacityByService[String(serviceName || '')] || 1);
   const reservedDate = String(currentReservedSlot?.bookingDate || '').trim();
   const reservedTime = String(currentReservedSlot?.bookingTime || '').trim();
+  const holdMinutes = Number(state.bookingHoldMinutes || BOOKING_HOLD_MINUTES) || BOOKING_HOLD_MINUTES;
 
   for (const optionData of SLOT_OPTIONS) {
     const booked = Number(serviceAvailability[optionData.value] || 0);
+    const held = Number(serviceHolds[optionData.value] || 0);
     const isCurrentReserved = bookingDate === reservedDate && optionData.value === reservedTime;
     const isFull = booked >= capacity && !isCurrentReserved;
     const option = document.createElement('option');
     option.value = optionData.value;
-    option.textContent = isFull ? `${optionData.label} (Full)` : optionData.label;
+    option.textContent = isFull
+      ? held > 0
+        ? `${optionData.label} (On hold - try in ${holdMinutes} min)`
+        : `${optionData.label} (Full)`
+      : optionData.label;
     option.disabled = isFull;
     selectElement.appendChild(option);
   }
@@ -1209,6 +1278,7 @@ async function payBooking(id) {
 async function payAllUserBookings() {
   const payButton = elements.bookingsPayAllBtn;
   const originalLabel = payButton?.textContent || 'Pay Now';
+  const couponCode = String(elements.userCouponCode?.value || '').trim();
 
   if (payButton) {
     payButton.disabled = true;
@@ -1219,7 +1289,7 @@ async function payAllUserBookings() {
     const result = await api('/api/payments/create-cart-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ couponCode }),
     });
 
     if (!window.Razorpay) {
@@ -1252,6 +1322,9 @@ async function payAllUserBookings() {
             }),
           });
           await loadDashboardData();
+          state.cartCouponPreview = null;
+          if (elements.userCouponCode) elements.userCouponCode.value = '';
+          renderCartCouponPreview();
           render();
           alert(
             `Payment successful. ${Number(verifyResult.unitCount || 0)} item(s) paid in one checkout. Total paid: Rs. ${Number(
@@ -1692,11 +1765,15 @@ function render() {
   renderStats(filtered);
   renderMembership();
   renderServices();
+  renderMembershipCouponPreview();
+  renderMembershipCheckoutSummary();
+  renderCartCouponPreview();
 
   if (isAdmin) {
     renderAdminRows(filtered);
     renderAdminMembershipOrders();
     renderAdminDiscountPhones();
+    renderAdminCoupons();
   } else {
     renderUserRows(filtered);
   }
@@ -1770,8 +1847,21 @@ function isCurrentUserMembershipActive() {
   if (state.membership?.active) return true;
   const membershipStatus = String(state.user?.membershipStatus || '').trim().toLowerCase();
   if (membershipStatus !== 'active') return false;
-  const expiresAt = state.user?.membershipExpiresAt ? new Date(state.user.membershipExpiresAt).getTime() : NaN;
+  const startedAt = state.user?.membershipStartedAt ? new Date(state.user.membershipStartedAt).getTime() : NaN;
+  const storedExpiresAt = state.user?.membershipExpiresAt ? new Date(state.user.membershipExpiresAt).getTime() : NaN;
+  const expiresAt = Number.isFinite(startedAt)
+    ? startedAt + 90 * 24 * 60 * 60 * 1000
+    : storedExpiresAt;
   return Number.isFinite(expiresAt) && expiresAt > Date.now();
+}
+
+function getEffectiveMembershipExpiryDate(startedAtValue, expiresAtValue) {
+  const startedAt = startedAtValue ? new Date(startedAtValue).getTime() : NaN;
+  if (Number.isFinite(startedAt)) {
+    return new Date(startedAt + 90 * 24 * 60 * 60 * 1000);
+  }
+  const expiresAt = expiresAtValue ? new Date(expiresAtValue) : null;
+  return expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : null;
 }
 
 function renderProfileMembershipBadge() {
@@ -1783,7 +1873,7 @@ function renderProfileMembershipBadge() {
     elements.userMembershipBadge.removeAttribute('title');
     return;
   }
-  const expiresAt = state.user?.membershipExpiresAt ? new Date(state.user.membershipExpiresAt) : null;
+  const expiresAt = getEffectiveMembershipExpiryDate(state.user?.membershipStartedAt, state.user?.membershipExpiresAt);
   elements.userMembershipBadge.textContent = '★ Member';
   elements.userMembershipBadge.title =
     expiresAt && !Number.isNaN(expiresAt.getTime()) ? `Membership active until ${expiresAt.toLocaleDateString()}` : 'Membership active';
@@ -2617,9 +2707,10 @@ function renderMembership() {
     (state.membership.plans || []).find((plan) => String(plan.id) === String(current.plan || '')) ||
     null;
   const activePlanName = activePlan?.name || current.plan || 'Membership';
+  const effectiveExpiry = getEffectiveMembershipExpiryDate(current.startedAt, current.expiresAt);
   elements.membershipStatusText.textContent = active
     ? `Active plan: ${activePlanName}${currentPeopleCount > 0 ? ` • ${currentPeopleCount} member${currentPeopleCount > 1 ? 's' : ''}` : ''}${
-        current.expiresAt ? ` (valid till ${new Date(current.expiresAt).toLocaleDateString()})` : ''
+        effectiveExpiry ? ` (valid till ${effectiveExpiry.toLocaleDateString()})` : ''
       }`
     : 'No active membership';
 
@@ -2636,47 +2727,91 @@ function renderMembership() {
 
   elements.membershipPlans.innerHTML = '';
   for (const plan of plans) {
-    const additionalPeople = Math.max(0, Number(state.membershipAdditions?.[plan.id] || 0));
+    const isSinglePlan = String(plan.id) === 'h2_single';
+    const additionalPeople = isSinglePlan ? 0 : Math.max(0, Number(state.membershipAdditions?.[plan.id] || 0));
     const targetPeopleCount = Number(plan.peopleCount || 1) + additionalPeople;
     const estimatedAmountInr = Number(plan.priceInr || 0) + additionalPeople * addPersonPriceInr;
     const isCurrentBasePlan = active && String(current.plan || '') === String(plan.id);
+    const theme = getMembershipPlanTheme(plan);
+    const featureItems = getMembershipFeatureItems(plan);
 
     const card = document.createElement('article');
     card.className = 'membership-card';
+    if (theme.featured) card.classList.add('is-featured');
+    if (isCurrentBasePlan) card.classList.add('is-current');
+    const planPerks = String(plan.perks || '').trim();
     card.innerHTML = `
-      <h3>${escapeHtml(plan.name)}</h3>
-      <p class="membership-price">Rs. ${estimatedAmountInr.toLocaleString('en-IN')}</p>
-      <p>${escapeHtml(plan.peopleCount)} member${Number(plan.peopleCount) > 1 ? 's' : ''} • ${escapeHtml(
-      plan.validityDays
-    )} days • Selected: ${targetPeopleCount}</p>
-      <p class="membership-add-price-line">Add Person Price: Rs. ${addPersonPriceInr.toLocaleString('en-IN')} each</p>
-      <p>${escapeHtml(plan.perks || '')}</p>
+      <div class="membership-card-top">
+        <span class="membership-card-kicker">${escapeHtml(theme.kicker)}</span>
+        <span class="membership-card-pill">${escapeHtml(theme.pill)}</span>
+      </div>
+      <div class="membership-card-head">
+        <div>
+          <h3>${escapeHtml(plan.name)}</h3>
+          <p class="membership-card-subtitle">${escapeHtml(theme.subtitle)}</p>
+        </div>
+        <div class="membership-card-status-slot">
+          ${isCurrentBasePlan ? '<span class="membership-card-active">Current Plan</span>' : ''}
+        </div>
+      </div>
+      <div class="membership-card-price-block">
+        <p class="membership-price">Rs. ${estimatedAmountInr.toLocaleString('en-IN')}</p>
+        <p class="membership-price-caption">3-month access • ${escapeHtml(plan.validityDays)} days</p>
+      </div>
+      <div class="membership-card-metrics">
+        <div class="membership-card-metric">
+          <strong>${escapeHtml(plan.peopleCount)}</strong>
+          <span>Base Members</span>
+        </div>
+        <div class="membership-card-metric">
+          <strong>${escapeHtml(plan.h2SessionsIncluded || 0)}</strong>
+          <span>H2 Sessions</span>
+        </div>
+        <div class="membership-card-metric">
+          <strong>${escapeHtml(targetPeopleCount)}</strong>
+          <span>Selected Cover</span>
+        </div>
+      </div>
+      <ul class="membership-feature-list">
+        ${featureItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+      </ul>
+      ${
+        isSinglePlan
+          ? ''
+          : `<div class="membership-add-price-box">
+              <span class="membership-add-price-line">Add Person Price</span>
+              <strong>Rs. ${addPersonPriceInr.toLocaleString('en-IN')} each</strong>
+            </div>`
+      }
+      ${!isSinglePlan && planPerks ? `<p class="membership-plan-caption">${escapeHtml(planPerks)}</p>` : ''}
     `;
 
     const addControls = document.createElement('div');
     addControls.className = 'membership-add-controls';
-    addControls.innerHTML = `
-      <span class="membership-add-label">Add Person: +${additionalPeople}${additionalPeople > 0 ? ` • +Rs. ${(additionalPeople * addPersonPriceInr).toLocaleString('en-IN')}` : ''}</span>
-    `;
-    const decBtn = document.createElement('button');
-    decBtn.type = 'button';
-    decBtn.className = 'btn btn-secondary';
-    decBtn.textContent = '-';
-    decBtn.disabled = additionalPeople <= 0;
-    decBtn.addEventListener('click', () => {
-      state.membershipAdditions[plan.id] = Math.max(0, additionalPeople - 1);
-      renderMembership();
-    });
-    const incBtn = document.createElement('button');
-    incBtn.type = 'button';
-    incBtn.className = 'btn btn-secondary';
-    incBtn.textContent = '+ Add Person';
-    incBtn.addEventListener('click', () => {
-      state.membershipAdditions[plan.id] = Math.min(8, additionalPeople + 1);
-      renderMembership();
-    });
-    addControls.appendChild(decBtn);
-    addControls.appendChild(incBtn);
+    if (!isSinglePlan) {
+      addControls.innerHTML = `
+        <span class="membership-add-label">Add Person: +${additionalPeople}${additionalPeople > 0 ? ` • +Rs. ${(additionalPeople * addPersonPriceInr).toLocaleString('en-IN')}` : ''}</span>
+      `;
+      const decBtn = document.createElement('button');
+      decBtn.type = 'button';
+      decBtn.className = 'btn btn-secondary';
+      decBtn.textContent = '-';
+      decBtn.disabled = additionalPeople <= 0;
+      decBtn.addEventListener('click', () => {
+        state.membershipAdditions[plan.id] = Math.max(0, additionalPeople - 1);
+        renderMembership();
+      });
+      const incBtn = document.createElement('button');
+      incBtn.type = 'button';
+      incBtn.className = 'btn btn-secondary';
+      incBtn.textContent = '+ Add Person';
+      incBtn.addEventListener('click', () => {
+        state.membershipAdditions[plan.id] = Math.min(8, additionalPeople + 1);
+        renderMembership();
+      });
+      addControls.appendChild(decBtn);
+      addControls.appendChild(incBtn);
+    }
 
     const button = document.createElement('button');
     button.type = 'button';
@@ -2687,10 +2822,52 @@ function renderMembership() {
       openMembershipCheckoutDialog(plan, additionalPeople);
     });
 
-    card.appendChild(addControls);
-    card.appendChild(button);
+    if (!isSinglePlan) {
+      card.appendChild(addControls);
+    }
+    const actionWrap = document.createElement('div');
+    actionWrap.className = 'membership-card-actions';
+    actionWrap.appendChild(button);
+    card.appendChild(actionWrap);
     elements.membershipPlans.appendChild(card);
   }
+}
+
+function getMembershipPlanTheme(plan) {
+  const planId = String(plan?.id || '');
+  if (planId === 'h2_two') {
+    return {
+      kicker: 'Most Popular',
+      pill: 'Duo Care',
+      subtitle: 'Balanced membership for two people with stronger shared value.',
+      featured: true,
+    };
+  }
+  if (planId === 'h2_four') {
+    return {
+      kicker: 'Group Plan',
+      pill: 'Best Value',
+      subtitle: 'Tailored for groups seeking hydrogen therapy with complete diagnostic support.',
+      featured: false,
+    };
+  }
+  return {
+    kicker: 'Starter Plan',
+    pill: 'Individual Care',
+    subtitle: 'Best for one person starting a structured wellness plan.',
+    featured: false,
+  };
+}
+
+function getMembershipFeatureItems(plan) {
+  const sessions = Number(plan?.h2SessionsIncluded || 0);
+  return [
+    `${sessions} hydrogen session${sessions === 1 ? '' : 's'} included`,
+    'Lab Tests included',
+    'Oxidative Stress Marker Test included',
+    'Radiology Services included',
+    'Member pricing across eligible services',
+  ];
 }
 
 function getMembershipAddPersonPriceInr() {
@@ -2721,15 +2898,16 @@ function openMembershipCheckoutDialog(plan, additionalPeople) {
     estimatedAmountInr,
     members,
   };
+  state.membershipCouponPreview = null;
+  if (elements.membershipCouponCode) {
+    elements.membershipCouponCode.value = '';
+  }
 
   if (elements.membershipDialogTitle) {
     elements.membershipDialogTitle.textContent = `Membership Details • ${plan.name}`;
   }
-  if (elements.membershipPlanSummary) {
-    elements.membershipPlanSummary.textContent = `Members: ${targetPeopleCount} • Estimated Amount: Rs. ${estimatedAmountInr.toLocaleString(
-      'en-IN'
-    )}`;
-  }
+  renderMembershipCheckoutSummary();
+  renderMembershipCouponPreview();
 
   elements.membershipMembersGrid.innerHTML = '';
   for (let i = 0; i < members.length; i += 1) {
@@ -2790,6 +2968,118 @@ function collectMembershipMemberDetails() {
   return members;
 }
 
+function renderMembershipCheckoutSummary() {
+  if (!elements.membershipPlanSummary || !state.membershipCheckout) return;
+  const targetPeopleCount = Number(state.membershipCheckout.targetPeopleCount || 0);
+  const estimatedAmountInr = Number(state.membershipCheckout.estimatedAmountInr || 0);
+  const preview = state.membershipCouponPreview;
+
+  if (preview) {
+    const original = Number(preview.originalAmountInr || estimatedAmountInr || 0);
+    const discount = Number(preview.discountAmountInr || 0);
+    const payable = Number(preview.payableAmountInr || Math.max(0, original - discount));
+    elements.membershipPlanSummary.textContent =
+      `Members: ${targetPeopleCount} • Estimated: Rs. ${original.toLocaleString('en-IN')}` +
+      ` • Coupon: -Rs. ${discount.toLocaleString('en-IN')}` +
+      ` • Payable: Rs. ${payable.toLocaleString('en-IN')}`;
+    return;
+  }
+
+  elements.membershipPlanSummary.textContent = `Members: ${targetPeopleCount} • Estimated Amount: Rs. ${estimatedAmountInr.toLocaleString(
+    'en-IN'
+  )}`;
+}
+
+function renderCouponPreview(preview, target) {
+  if (!target) return;
+  if (!preview) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+
+  const description = String(preview.description || '').trim();
+  const original = Number(preview.originalAmountInr || 0);
+  const discount = Number(preview.discountAmountInr || 0);
+  const payable = Number(preview.payableAmountInr || 0);
+  target.hidden = false;
+  target.innerHTML = `
+    <strong>${escapeHtml(preview.code || '')}</strong>
+    ${description ? `<span>${escapeHtml(description)}</span>` : ''}
+    <span>Discount: Rs. ${discount.toLocaleString('en-IN')} off</span>
+    <span>Payable: Rs. ${payable.toLocaleString('en-IN')} (was Rs. ${original.toLocaleString('en-IN')})</span>
+  `;
+}
+
+function renderMembershipCouponPreview() {
+  renderCouponPreview(state.membershipCouponPreview, elements.membershipCouponPreview);
+}
+
+function renderCartCouponPreview() {
+  renderCouponPreview(state.cartCouponPreview, elements.userCouponPreview);
+}
+
+async function previewMembershipCoupon() {
+  if (!state.membershipCheckout) {
+    alert('Select a membership plan first.');
+    return;
+  }
+  const couponCode = String(elements.membershipCouponCode?.value || '').trim();
+  if (!couponCode) {
+    state.membershipCouponPreview = null;
+    renderMembershipCouponPreview();
+    renderMembershipCheckoutSummary();
+    return;
+  }
+
+  try {
+    const result = await api('/api/membership/preview-coupon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        planId: state.membershipCheckout.planId,
+        additionalPeople: state.membershipCheckout.additionalPeople,
+        couponCode,
+      }),
+    });
+    state.membershipCouponPreview = result.coupon || null;
+    renderMembershipCouponPreview();
+    renderMembershipCheckoutSummary();
+  } catch (error) {
+    state.membershipCouponPreview = null;
+    renderMembershipCouponPreview();
+    renderMembershipCheckoutSummary();
+    alert(error.message || 'Unable to apply this coupon.');
+  }
+}
+
+async function previewCartCoupon() {
+  const couponCode = String(elements.userCouponCode?.value || '').trim();
+  state.cartCouponCode = couponCode;
+  if (!couponCode) {
+    state.cartCouponPreview = null;
+    renderCartCouponPreview();
+    renderUserCheckoutSummary(state.bookings || []);
+    return;
+  }
+
+  try {
+    const result = await api('/api/payments/preview-cart-coupon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ couponCode }),
+    });
+    state.cartCouponPreview = result.coupon || null;
+    renderCartCouponPreview();
+    renderUserCheckoutSummary(state.bookings || []);
+  } catch (error) {
+    state.cartCouponPreview = null;
+    renderCartCouponPreview();
+    renderUserCheckoutSummary(state.bookings || []);
+    alert(error.message || 'Unable to apply this coupon.');
+  }
+}
+
 async function submitMembershipCheckout() {
   if (!state.membershipCheckout) return;
   const plan = (state.membership.plans || []).find((item) => String(item.id) === String(state.membershipCheckout.planId));
@@ -2807,10 +3097,11 @@ async function submitMembershipCheckout() {
 }
 
 async function activateMembershipWithPayment(plan, additionalPeople = 0, memberDetails = []) {
+  const couponCode = state.membershipCouponPreview?.code || String(elements.membershipCouponCode?.value || '').trim();
   const order = await api('/api/membership/create-order', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ planId: plan.id, additionalPeople, memberDetails }),
+    body: JSON.stringify({ planId: plan.id, additionalPeople, memberDetails, couponCode }),
   });
 
   if (!window.Razorpay) {
@@ -2847,6 +3138,10 @@ async function activateMembershipWithPayment(plan, additionalPeople = 0, memberD
         });
         state.user = { ...state.user, ...(result.profile || {}) };
         await loadDashboardData();
+        state.membershipCouponPreview = null;
+        if (elements.membershipCouponCode) elements.membershipCouponCode.value = '';
+        renderMembershipCouponPreview();
+        renderMembershipCheckoutSummary();
         state.activeUserTab = 'services';
         render();
         requestAnimationFrame(() => {
@@ -2983,17 +3278,52 @@ function renderUserCheckoutSummary(bookings) {
     elements.userCheckoutSummary.innerHTML = '';
     elements.bookingsPayAllBtn.hidden = true;
     elements.bookingsPayAllBtn.disabled = true;
+    state.cartCouponPreview = null;
+    renderCartCouponPreview();
     return;
   }
 
+  const coupon = state.cartCouponPreview;
+  const payableAmountInr = Number(coupon?.payableAmountInr || summary.totalAmountInr || 0);
+  const discountAmountInr = Number(coupon?.discountAmountInr || 0);
   elements.userCheckoutSummary.hidden = false;
   elements.userCheckoutSummary.innerHTML = `
     <strong>${summary.unitCount} item${summary.unitCount === 1 ? '' : 's'} ready for one payment</strong>
-    <span>Total payable: Rs. ${summary.totalAmountInr.toLocaleString('en-IN')}</span>
+    ${
+      coupon
+        ? `<span>Subtotal: Rs. ${summary.totalAmountInr.toLocaleString('en-IN')}</span>
+           <span>Coupon Savings: -Rs. ${discountAmountInr.toLocaleString('en-IN')}</span>
+           <span>Total payable: Rs. ${payableAmountInr.toLocaleString('en-IN')}</span>`
+        : `<span>Total payable: Rs. ${summary.totalAmountInr.toLocaleString('en-IN')}</span>`
+    }
   `;
   elements.bookingsPayAllBtn.hidden = false;
   elements.bookingsPayAllBtn.disabled = false;
   elements.bookingsPayAllBtn.textContent = `Pay Now`;
+}
+
+function buildHoldNotice(entries = []) {
+  const normalized = Array.isArray(entries) ? entries : [];
+  const activeEntries = normalized.filter((entry) => entry?.holdActive);
+  if (activeEntries.length) {
+    const minutes = Math.min(
+      ...activeEntries
+        .map((entry) => Number(entry?.holdRemainingMinutes || 0))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    );
+    const safeMinutes = minutes || Number(state.bookingHoldMinutes || BOOKING_HOLD_MINUTES) || BOOKING_HOLD_MINUTES;
+    return {
+      tone: 'hold',
+      text: `On hold: complete payment within ${safeMinutes} minute${safeMinutes === 1 ? '' : 's'} to keep this booking.`,
+    };
+  }
+
+  const expired = normalized.some((entry) => entry?.holdExpired);
+  if (expired) {
+    return { tone: 'expired', text: 'Hold expired. Please book this slot again.' };
+  }
+
+  return null;
 }
 
 function buildUserBookingRows(bookings, allBookings = bookings) {
@@ -3315,6 +3645,205 @@ async function deleteAdminDiscountPhone(discountId) {
   render();
 }
 
+function generateAdminCouponCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const size = 8;
+  let suffix = '';
+  if (window.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(size);
+    window.crypto.getRandomValues(bytes);
+    suffix = Array.from(bytes)
+      .map((value) => alphabet[value % alphabet.length])
+      .join('');
+  } else {
+    for (let i = 0; i < size; i += 1) {
+      suffix += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+  }
+  return `H2-${suffix}`;
+}
+
+function isLikelyEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+function renderAdminCoupons() {
+  if (!elements.adminCouponList || !elements.adminCouponEmptyState) return;
+
+  elements.adminCouponList.innerHTML = '';
+  const items = Array.isArray(state.adminCoupons) ? state.adminCoupons : [];
+  if (!items.length) {
+    elements.adminCouponEmptyState.hidden = false;
+    return;
+  }
+
+  elements.adminCouponEmptyState.hidden = true;
+  items.forEach((item) => {
+    const row = document.createElement('article');
+    row.className = 'admin-discount-card';
+    const discountLabel =
+      item.discountType === 'flat'
+        ? `Rs. ${Number(item.discountValue || 0).toLocaleString('en-IN')} off`
+        : `${Number(item.discountValue || 0)}% off`;
+    const maxRedemptions = item.maxRedemptions == null ? '∞' : String(item.maxRedemptions);
+    const expiresText = item.expiresAt ? formatDateOnly(item.expiresAt) : 'No expiry';
+    const recipientLabel = item.recipientEmail
+      ? `${item.recipientName ? `${item.recipientName} • ` : ''}${item.recipientEmail}`
+      : 'No recipient';
+    const emailStatus = item.emailStatus ? item.emailStatus.toUpperCase() : 'N/A';
+    const emailedAtText = item.emailedAt ? formatDateOnly(item.emailedAt) : '-';
+    row.innerHTML = `
+      <div>
+        <h3>${escapeHtml(item.code || '-')}</h3>
+        <p>${escapeHtml(discountLabel)}</p>
+        ${item.description ? `<p>${escapeHtml(item.description)}</p>` : ''}
+        <p>Recipient: ${escapeHtml(recipientLabel)}</p>
+        <p>Email: ${escapeHtml(emailStatus)} • Last sent: ${escapeHtml(emailedAtText)}</p>
+        ${item.emailStatus === 'failed' && item.emailError ? `<p>${escapeHtml(item.emailError)}</p>` : ''}
+        <p>Uses: ${escapeHtml(String(item.totalRedemptions || 0))}/${escapeHtml(maxRedemptions)}</p>
+        <p>Expires: ${escapeHtml(expiresText)}</p>
+      </div>
+    `;
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'btn btn-secondary';
+    copyBtn.textContent = 'Copy';
+    copyBtn.addEventListener('click', () => {
+      copyTextToClipboard(item.code || '');
+      alert('Coupon code copied.');
+    });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'btn btn-secondary';
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', async () => {
+      await deleteAdminCoupon(item.id);
+    });
+
+    const resendBtn = document.createElement('button');
+    resendBtn.type = 'button';
+    resendBtn.className = 'btn btn-secondary';
+    resendBtn.textContent = item.emailStatus === 'sent' ? 'Resend' : 'Send';
+    resendBtn.disabled = !item.recipientEmail;
+    resendBtn.addEventListener('click', async () => {
+      await resendAdminCoupon(item.id);
+    });
+
+    row.appendChild(copyBtn);
+    row.appendChild(resendBtn);
+    row.appendChild(removeBtn);
+    elements.adminCouponList.appendChild(row);
+  });
+}
+
+async function saveAdminCoupon({ sendEmail = true } = {}) {
+  const recipientEmail = String(elements.adminCouponRecipientEmail?.value || '').trim();
+  let code = String(elements.adminCouponCode?.value || '').trim().toUpperCase();
+  const description = String(elements.adminCouponDescription?.value || '').trim();
+  const discountValue = Number(elements.adminCouponValue?.value || 0);
+  const appliesTo = 'all';
+  const expiresAt = String(elements.adminCouponExpiresAt?.value || '').trim();
+
+  if (recipientEmail && !isLikelyEmail(recipientEmail)) {
+    alert('Enter a valid recipient email.');
+    return;
+  }
+  if (sendEmail && !recipientEmail) {
+    alert('Recipient email is required to send a coupon.');
+    return;
+  }
+  if (!Number.isFinite(discountValue) || discountValue <= 0 || discountValue > 100) {
+    alert('Enter a valid discount percentage between 1 and 100.');
+    return;
+  }
+  if (!code) {
+    code = generateAdminCouponCode();
+    if (elements.adminCouponCode) {
+      elements.adminCouponCode.value = code;
+    }
+  }
+
+  const originalLabel = elements.adminCouponSubmitBtn?.textContent || 'Generate & Send';
+  const saveOnlyLabel = elements.adminCouponSaveOnlyBtn?.textContent || 'Save Only';
+  if (elements.adminCouponSubmitBtn) {
+    elements.adminCouponSubmitBtn.disabled = true;
+    elements.adminCouponSubmitBtn.textContent = sendEmail ? 'Sending...' : originalLabel;
+  }
+  if (elements.adminCouponSaveOnlyBtn) {
+    elements.adminCouponSaveOnlyBtn.disabled = true;
+    elements.adminCouponSaveOnlyBtn.textContent = sendEmail ? saveOnlyLabel : 'Saving...';
+  }
+
+  try {
+    const result = await api('/api/admin/coupons', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code,
+        description,
+        discountType: 'percent',
+        discountValue,
+        appliesTo,
+        maxRedemptions: 1,
+        expiresAt,
+        recipientEmail,
+        singleUse: true,
+        sendEmail,
+      }),
+    });
+
+    if (elements.adminCouponCode) elements.adminCouponCode.value = '';
+    if (elements.adminCouponDescription) elements.adminCouponDescription.value = '';
+    if (elements.adminCouponValue) elements.adminCouponValue.value = '';
+    if (elements.adminCouponExpiresAt) elements.adminCouponExpiresAt.value = '';
+    if (elements.adminCouponRecipientEmail) elements.adminCouponRecipientEmail.value = '';
+
+    await loadDashboardData();
+    render();
+
+    const sentCode = result.code || code;
+    if (!sendEmail) {
+      alert(`Coupon ${sentCode} saved.`);
+    } else if (result.emailStatus === 'failed') {
+      alert(`Coupon ${sentCode} was created, but the email could not be sent. ${result.emailMessage || ''}`.trim());
+    } else {
+      alert(`Coupon ${sentCode} sent to ${recipientEmail}.`);
+    }
+  } finally {
+    if (elements.adminCouponSubmitBtn) {
+      elements.adminCouponSubmitBtn.disabled = false;
+      elements.adminCouponSubmitBtn.textContent = originalLabel;
+    }
+    if (elements.adminCouponSaveOnlyBtn) {
+      elements.adminCouponSaveOnlyBtn.disabled = false;
+      elements.adminCouponSaveOnlyBtn.textContent = saveOnlyLabel;
+    }
+  }
+}
+
+async function deleteAdminCoupon(couponId) {
+  const ok = confirm('Remove this coupon?');
+  if (!ok) return;
+  await api(`/api/admin/coupons/${encodeURIComponent(couponId)}`, { method: 'DELETE' });
+  await loadDashboardData();
+  render();
+}
+
+async function resendAdminCoupon(couponId) {
+  const ok = confirm('Resend this coupon email?');
+  if (!ok) return;
+  await api(`/api/admin/coupons/${encodeURIComponent(couponId)}/resend`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  await loadDashboardData();
+  render();
+  alert('Coupon email sent.');
+}
+
 function cell(content) {
   const td = document.createElement('td');
   td.textContent = content;
@@ -3339,10 +3868,15 @@ function userBookingServiceCell(row) {
 
   const metaLines = Array.isArray(row.serviceMetaLines) ? row.serviceMetaLines : [];
   for (const line of metaLines) {
-    const text = String(line || '').trim();
+    const text = typeof line === 'object' && line !== null
+      ? String(line.text || '').trim()
+      : String(line || '').trim();
     if (!text) continue;
     const meta = document.createElement('div');
     meta.className = 'booking-service-meta';
+    if (typeof line === 'object' && line !== null && line.tone) {
+      meta.classList.add(`is-${String(line.tone).trim()}`);
+    }
     meta.textContent = text;
     wrap.appendChild(meta);
   }
@@ -3450,6 +3984,7 @@ function findIvCooldownConflictClient(serviceName, bookingDate, excludeBookingId
 
   return getCurrentContextBookings().find((booking) => {
     if (booking.status === 'cancelled') return false;
+    if (booking.holdExpired) return false;
     if (excludeBookingId && String(booking.id) === String(excludeBookingId)) return false;
     if (excludeGroupId && String(booking.bookingGroupId || '') === String(excludeGroupId)) return false;
     if (getBookingCategory(booking.serviceName) !== 'IV ADD-ON') return false;
@@ -3466,6 +4001,7 @@ function findHydrogenDailyLimitConflictClient(slots = [], excludeGroupId = '') {
   const existingByDate = new Map();
   getCurrentContextBookings().forEach((booking) => {
     if (booking.status === 'cancelled') return;
+    if (booking.holdExpired) return;
     if (excludeGroupId && booking.bookingGroupId === excludeGroupId) return;
     if (getBookingCategory(booking.serviceName) !== 'HYDROGEN SESSION') return;
     existingByDate.set(booking.bookingDate, Number(existingByDate.get(booking.bookingDate) || 0) + 1);
@@ -3497,6 +4033,7 @@ function hasHydrogenPackageAddOnOnDateClient(bookingDate, excludeGroupId = '') {
     if (!booking.bookingGroupId) return false;
     if (excludeGroupId && booking.bookingGroupId === excludeGroupId) return false;
     if (booking.status === 'cancelled') return false;
+    if (booking.holdExpired) return false;
     return getBookingCategory(booking.serviceName) === 'IV ADD-ON';
   });
 }
@@ -3508,6 +4045,7 @@ function hasStandaloneIvOnDateClient(bookingDate, excludeGroupId = '') {
   return getCurrentContextBookings().some((booking) => {
     if (booking.bookingDate !== targetDate) return false;
     if (booking.status === 'cancelled') return false;
+    if (booking.holdExpired) return false;
     if (excludeGroupId && booking.bookingGroupId === excludeGroupId) return false;
     if (booking.bookingGroupId) return false;
     return getBookingCategory(booking.serviceName) === 'IV ADD-ON';

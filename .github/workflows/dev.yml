@@ -26,7 +26,7 @@ jobs:
       - name: Validate deploy config
         run: |
           if [ -z "${{ vars.PAGES_DEV_REPO }}" ]; then
-            echo "Missing repo variable: PAGES_DEV_REPO (expected format: owner/booking-dev)"
+            echo "Missing repo variable: PAGES_DEV_REPO"
             exit 1
           fi
           if [ -z "${{ secrets.GH_PAGES_PAT }}" ]; then
@@ -38,42 +38,18 @@ jobs:
       - name: Normalize target repo value
         id: normalize_repo
         run: |
-          set -euo pipefail
           RAW='${{ vars.PAGES_DEV_REPO }}'
-          CLEAN="$(printf '%s' "$RAW" | tr -d '[:space:]')"
-          CLEAN="${CLEAN#git@github.com:}"
-          CLEAN="${CLEAN#ssh://git@github.com/}"
-          CLEAN="${CLEAN#https://github.com/}"
-          CLEAN="${CLEAN#http://github.com/}"
-          CLEAN="${CLEAN#git://github.com/}"
-          CLEAN="${CLEAN#github.com:}"
-          CLEAN="${CLEAN#github.com/}"
-          CLEAN="${CLEAN%.git}"
-          CLEAN="${CLEAN%/}"
-
-          while [[ "$CLEAN" == /* || "$CLEAN" == :* ]]; do
-            CLEAN="${CLEAN#/}"
-            CLEAN="${CLEAN#:}"
-          done
-
-          echo "Clean repo = $CLEAN"
-
-          if [[ ! "$CLEAN" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
-            echo "Invalid repo format"
-            exit 1
-          fi
-
+          CLEAN=$(echo "$RAW" | tr -d '[:space:]')
+          CLEAN=${CLEAN#https://github.com/}
+          CLEAN=${CLEAN%.git}
           echo "repo=$CLEAN" >> "$GITHUB_OUTPUT"
 
-      # ✅ BUILD FULL PROJECT (not just index.html)
+      # ✅ FIXED BUILD (no recursion)
       - name: Build deploy artifact
         run: |
-          mkdir -p dist
-          cp -R . dist
-          rm -rf dist/.git
-          rm -rf dist/.github
+          mkdir dist
+          rsync -av --exclude='.git' --exclude='.github' ./ dist/
 
-      # OPTIONAL CNAME SUPPORT
       - name: Copy CNAME if exists
         if: ${{ hashFiles('CNAME') != '' }}
         run: cp CNAME dist/CNAME
@@ -82,45 +58,39 @@ jobs:
         if: ${{ vars.PAGES_DEV_DOMAIN != '' }}
         run: echo "${{ vars.PAGES_DEV_DOMAIN }}" > dist/CNAME
 
-      # ✅ DEPLOY WITH TOKEN (FIXED)
+      # ✅ FIXED DEPLOY
       - name: Push to booking-dev (gh-pages)
         env:
           GH_PAGES_PAT: ${{ secrets.GH_PAGES_PAT }}
         run: |
-          set -euo pipefail
+          set -e
 
           TARGET_REPO='${{ steps.normalize_repo.outputs.repo }}'
           WORK_DIR=$(mktemp -d)
 
           REMOTE_URL="https://x-access-token:${GH_PAGES_PAT}@github.com/${TARGET_REPO}.git"
 
-          echo "Cloning repo..."
+          echo "Cloning..."
           git clone "$REMOTE_URL" "$WORK_DIR"
           cd "$WORK_DIR"
 
-          # switch/create gh-pages branch
+          # ✅ FIXED BRANCH HANDLING
           if git show-ref --verify --quiet refs/heads/gh-pages; then
-            git switch gh-pages
+            git checkout gh-pages
           else
-            git switch --orphan gh-pages
+            git checkout -b gh-pages
           fi
 
           # clean old files
           find . -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
 
-          # copy new build
+          # copy new files
           cp -R "$GITHUB_WORKSPACE/dist/." .
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add -A
-
-          if git diff --cached --quiet; then
-            echo "No changes to deploy"
-            exit 0
-          fi
-
-          git commit -m "Deploy DEV from ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
+          git commit -m "Deploy DEV from ${GITHUB_REPOSITORY}@${GITHUB_SHA}" || echo "No changes"
 
           git push origin gh-pages --force

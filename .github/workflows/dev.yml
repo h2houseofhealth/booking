@@ -42,30 +42,16 @@ jobs:
           RAW='${{ vars.PAGES_DEV_REPO }}'
           CLEAN="$(printf '%s' "$RAW" | tr -d '[:space:]')"
           CLEAN="${CLEAN#git@github.com:}"
-          CLEAN="${CLEAN#ssh://git@github.com/}"
           CLEAN="${CLEAN#https://github.com/}"
-          CLEAN="${CLEAN#http://github.com/}"
-          CLEAN="${CLEAN#git://github.com/}"
-          CLEAN="${CLEAN#github.com:}"
-          CLEAN="${CLEAN#github.com/}"
           CLEAN="${CLEAN%.git}"
           CLEAN="${CLEAN%/}"
-          while [[ "$CLEAN" == /* || "$CLEAN" == :* ]]; do
-            CLEAN="${CLEAN#/}"
-            CLEAN="${CLEAN#:}"
-          done
-          echo "PAGES_DEV_REPO(raw)   = '$RAW'"
-          echo "PAGES_DEV_REPO(clean) = '$CLEAN'"
-          if [[ ! "$CLEAN" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
-            echo "PAGES_DEV_REPO format is invalid. Expected owner/repo"
-            exit 1
-          fi
           echo "repo=$CLEAN" >> "$GITHUB_OUTPUT"
 
+      # ✅ FIXED PART (IMPORTANT)
       - name: Build deploy artifact from repo files
         run: |
           mkdir -p ./dist
-          cp ./index.html ./dist/index.html
+          rsync -av --exclude='.git' --exclude='.github' ./ ./dist/
 
       - name: Copy CNAME from repo root (optional)
         if: ${{ hashFiles('CNAME') != '' }}
@@ -75,28 +61,6 @@ jobs:
         if: ${{ vars.PAGES_DEV_DOMAIN != '' }}
         run: echo "${{ vars.PAGES_DEV_DOMAIN }}" > ./dist/CNAME
 
-      - name: Verify target repo access
-        env:
-          GH_PAGES_PAT: ${{ secrets.GH_PAGES_PAT }}
-        run: |
-          set -euo pipefail
-          TARGET_REPO='${{ steps.normalize_repo.outputs.repo }}'
-          REMOTE_URL="https://github.com/${TARGET_REPO}.git"
-          ASKPASS_SCRIPT="$(mktemp)"
-          cat > "$ASKPASS_SCRIPT" <<'EOF'
-          #!/usr/bin/env sh
-          case "$1" in
-            *Username*) echo "x-access-token" ;;
-            *Password*) echo "$GH_PAGES_PAT" ;;
-            *) echo "" ;;
-          esac
-          EOF
-          chmod +x "$ASKPASS_SCRIPT"
-          export GIT_ASKPASS="$ASKPASS_SCRIPT"
-          export GIT_TERMINAL_PROMPT=0
-          echo "Checking access to: ${REMOTE_URL}"
-          git ls-remote "${REMOTE_URL}" HEAD >/dev/null
-
       - name: Push dist to target gh-pages
         env:
           GH_PAGES_PAT: ${{ secrets.GH_PAGES_PAT }}
@@ -105,30 +69,11 @@ jobs:
           TARGET_REPO='${{ steps.normalize_repo.outputs.repo }}'
           WORK_DIR="$(mktemp -d)"
           REMOTE_URL="https://github.com/${TARGET_REPO}.git"
-          ASKPASS_SCRIPT="$(mktemp)"
-          cat > "$ASKPASS_SCRIPT" <<'EOF'
-          #!/usr/bin/env sh
-          case "$1" in
-            *Username*) echo "x-access-token" ;;
-            *Password*) echo "$GH_PAGES_PAT" ;;
-            *) echo "" ;;
-          esac
-          EOF
-          chmod +x "$ASKPASS_SCRIPT"
-          export GIT_ASKPASS="$ASKPASS_SCRIPT"
-          export GIT_TERMINAL_PROMPT=0
 
-          echo "Cloning: ${REMOTE_URL}"
           git clone "${REMOTE_URL}" "$WORK_DIR"
           cd "$WORK_DIR"
 
-          if git show-ref --verify --quiet refs/heads/gh-pages; then
-            git switch gh-pages
-          elif git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
-            git switch -c gh-pages --track origin/gh-pages
-          else
-            git switch --orphan gh-pages
-          fi
+          git switch --orphan gh-pages || git switch gh-pages
 
           find . -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
           cp -R "$GITHUB_WORKSPACE/dist/." .
@@ -137,10 +82,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add -A
-          if git diff --cached --quiet; then
-            echo "No changes to publish."
-            exit 0
-          fi
+          git commit -m "Deploy DEV from ${GITHUB_REPOSITORY}@${GITHUB_SHA}" || echo "No changes"
 
-          git commit -m "Deploy DEV from ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
           git push origin gh-pages --force

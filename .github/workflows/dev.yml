@@ -42,46 +42,85 @@ jobs:
           RAW='${{ vars.PAGES_DEV_REPO }}'
           CLEAN="$(printf '%s' "$RAW" | tr -d '[:space:]')"
           CLEAN="${CLEAN#git@github.com:}"
+          CLEAN="${CLEAN#ssh://git@github.com/}"
           CLEAN="${CLEAN#https://github.com/}"
+          CLEAN="${CLEAN#http://github.com/}"
+          CLEAN="${CLEAN#git://github.com/}"
+          CLEAN="${CLEAN#github.com:}"
+          CLEAN="${CLEAN#github.com/}"
           CLEAN="${CLEAN%.git}"
           CLEAN="${CLEAN%/}"
+
+          while [[ "$CLEAN" == /* || "$CLEAN" == :* ]]; do
+            CLEAN="${CLEAN#/}"
+            CLEAN="${CLEAN#:}"
+          done
+
+          echo "Clean repo = $CLEAN"
+
+          if [[ ! "$CLEAN" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "Invalid repo format"
+            exit 1
+          fi
+
           echo "repo=$CLEAN" >> "$GITHUB_OUTPUT"
 
-      # ✅ FIXED PART (IMPORTANT)
-      - name: Build deploy artifact from repo files
+      # ✅ BUILD FULL PROJECT (not just index.html)
+      - name: Build deploy artifact
         run: |
-          mkdir -p ./dist
-          rsync -av --exclude='.git' --exclude='.github' ./ ./dist/
+          mkdir -p dist
+          cp -R . dist
+          rm -rf dist/.git
+          rm -rf dist/.github
 
-      - name: Copy CNAME from repo root (optional)
+      # OPTIONAL CNAME SUPPORT
+      - name: Copy CNAME if exists
         if: ${{ hashFiles('CNAME') != '' }}
-        run: cp ./CNAME ./dist/CNAME
+        run: cp CNAME dist/CNAME
 
-      - name: Create CNAME from variable (optional override)
+      - name: Create CNAME from variable
         if: ${{ vars.PAGES_DEV_DOMAIN != '' }}
-        run: echo "${{ vars.PAGES_DEV_DOMAIN }}" > ./dist/CNAME
+        run: echo "${{ vars.PAGES_DEV_DOMAIN }}" > dist/CNAME
 
-      - name: Push dist to target gh-pages
+      # ✅ DEPLOY WITH TOKEN (FIXED)
+      - name: Push to booking-dev (gh-pages)
         env:
           GH_PAGES_PAT: ${{ secrets.GH_PAGES_PAT }}
         run: |
           set -euo pipefail
-          TARGET_REPO='${{ steps.normalize_repo.outputs.repo }}'
-          WORK_DIR="$(mktemp -d)"
-          REMOTE_URL="https://github.com/${TARGET_REPO}.git"
 
-          git clone "${REMOTE_URL}" "$WORK_DIR"
+          TARGET_REPO='${{ steps.normalize_repo.outputs.repo }}'
+          WORK_DIR=$(mktemp -d)
+
+          REMOTE_URL="https://x-access-token:${GH_PAGES_PAT}@github.com/${TARGET_REPO}.git"
+
+          echo "Cloning repo..."
+          git clone "$REMOTE_URL" "$WORK_DIR"
           cd "$WORK_DIR"
 
-          git switch --orphan gh-pages || git switch gh-pages
+          # switch/create gh-pages branch
+          if git show-ref --verify --quiet refs/heads/gh-pages; then
+            git switch gh-pages
+          else
+            git switch --orphan gh-pages
+          fi
 
+          # clean old files
           find . -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
+
+          # copy new build
           cp -R "$GITHUB_WORKSPACE/dist/." .
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add -A
-          git commit -m "Deploy DEV from ${GITHUB_REPOSITORY}@${GITHUB_SHA}" || echo "No changes"
+
+          if git diff --cached --quiet; then
+            echo "No changes to deploy"
+            exit 0
+          fi
+
+          git commit -m "Deploy DEV from ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
 
           git push origin gh-pages --force

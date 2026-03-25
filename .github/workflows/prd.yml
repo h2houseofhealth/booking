@@ -1,1 +1,49 @@
+name: Deploy PRD
 
+on:
+  push:
+    branches:
+      - prd
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          mkdir dist
+          cp -R . dist
+          rm -rf dist/.git
+          rm -rf dist/.github
+
+      - name: Deploy to booking-prd
+        env:
+          GH_PAGES_PAT: ${{ secrets.GH_PAGES_PAT }}
+        run: |
+          TARGET_REPO="h2houseofhealth/booking-prd"
+          WORK_DIR=$(mktemp -d)
+
+          git clone https://x-access-token:${GH_PAGES_PAT}@github.com/$TARGET_REPO.git $WORK_DIR
+          cd $WORK_DIR
+
+          git switch gh-pages || git switch --orphan gh-pages
+
+          find . -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
+
+          cp -R $GITHUB_WORKSPACE/dist/. .
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add .
+          git commit -m "Deploy PRD" || echo "No changes"
+
+          git push origin gh-pages --force

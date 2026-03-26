@@ -26,6 +26,7 @@ const IV_REBOOK_COOLDOWN_DAYS = 14;
 const OTP_TTL_MINUTES = 10;
 const BOOKING_HOLD_MINUTES = 10;
 const BOOKING_HOLD_CUTOFF_SQL = `datetime('now', '-${BOOKING_HOLD_MINUTES} minutes')`;
+const ADMIN_DISCOUNT_GATE_PASSWORD = normalizeEnvValue(process.env.ADMIN_DISCOUNT_GATE_PASSWORD || 'H2-FOUNDERS-2026');
 const RAZORPAY_KEY_ID = normalizeEnvValue(process.env.RAZORPAY_KEY_ID);
 const RAZORPAY_KEY_SECRET = normalizeEnvValue(process.env.RAZORPAY_KEY_SECRET);
 const RAZORPAY_MODE = normalizeEnvValue(process.env.RAZORPAY_MODE || 'test').toLowerCase() || 'test';
@@ -1420,6 +1421,60 @@ app.get('/api/admin/users', requireAuth, requireAdmin, (_req, res) => {
     .all();
 
   res.json({ users });
+});
+
+app.post('/api/admin/discount-access', requireAuth, requireAdmin, (req, res) => {
+  const password = String(req.body?.password || '').trim();
+  if (!password) {
+    return res.status(400).json({ message: 'Password is required.' });
+  }
+  if (password !== ADMIN_DISCOUNT_GATE_PASSWORD) {
+    return res.status(401).json({ message: 'Invalid discount password.' });
+  }
+  return res.json({ ok: true });
+});
+
+app.patch('/api/admin/users/:id', requireAuth, requireAdmin, (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId)) {
+    return res.status(400).json({ message: 'Invalid user id.' });
+  }
+
+  const existing = db
+    .prepare('SELECT id, name, email, mobile FROM users WHERE id = ?')
+    .get(userId);
+  if (!existing) {
+    return res.status(404).json({ message: 'User not found.' });
+  }
+
+  const nextEmailRaw = String(req.body?.email || '').trim().toLowerCase();
+  const nextMobileRaw = String(req.body?.mobile || '').trim();
+  const nextEmail = nextEmailRaw || existing.email;
+  const nextMobile = nextMobileRaw || '';
+
+  if (!nextEmail || !isValidEmail(nextEmail)) {
+    return res.status(400).json({ message: 'A valid email address is required.' });
+  }
+
+  if (nextEmail !== existing.email) {
+    const emailConflict = db
+      .prepare('SELECT id FROM users WHERE email = ? AND id <> ?')
+      .get(nextEmail, userId);
+    if (emailConflict) {
+      return res.status(409).json({ message: 'That email is already in use.' });
+    }
+  }
+
+  db.prepare('UPDATE users SET email = ?, mobile = ? WHERE id = ?').run(nextEmail, nextMobile || null, userId);
+
+  return res.json({
+    user: {
+      id: userId,
+      name: existing.name,
+      email: nextEmail,
+      mobile: nextMobile,
+    },
+  });
 });
 
 app.post('/api/admin/services', requireAuth, requireAdmin, (req, res) => {

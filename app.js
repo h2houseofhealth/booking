@@ -4,6 +4,7 @@ const state = {
   services: [],
   adminMembershipOrders: [],
   adminDiscountPhones: [],
+  adminUsers: [],
   adminCoupons: [],
   adminResolvedCustomer: null,
   adminCustomerForm: {
@@ -42,6 +43,9 @@ const state = {
   slotHoldCounts: {},
   bookingHoldMinutes: 10,
   slotAvailabilityLoading: false,
+  adminDiscountUnlocked: false,
+  adminDiscountSearch: '',
+  adminDiscountSelectedUserId: '',
   filters: {
     search: '',
     status: 'all',
@@ -161,11 +165,19 @@ const elements = {
   adminMembershipOrdersList: document.getElementById('adminMembershipOrdersList'),
   adminMembershipEmptyState: document.getElementById('adminMembershipEmptyState'),
   adminDiscountForm: document.getElementById('adminDiscountForm'),
+  adminDiscountEmail: document.getElementById('adminDiscountEmail'),
   adminDiscountPhone: document.getElementById('adminDiscountPhone'),
   adminDiscountPercent: document.getElementById('adminDiscountPercent'),
   adminDiscountSubmitBtn: document.getElementById('adminDiscountSubmitBtn'),
   adminDiscountList: document.getElementById('adminDiscountList'),
   adminDiscountEmptyState: document.getElementById('adminDiscountEmptyState'),
+  adminDiscountGateBtn: document.getElementById('adminDiscountGateBtn'),
+  adminDiscountGateMessage: document.getElementById('adminDiscountGateMessage'),
+  adminDiscountPanel: document.getElementById('adminDiscountPanel'),
+  adminDiscountUsersList: document.getElementById('adminDiscountUsersList'),
+  adminDiscountUsersEmpty: document.getElementById('adminDiscountUsersEmpty'),
+  adminDiscountUserSearch: document.getElementById('adminDiscountUserSearch'),
+  adminDiscountUserSelect: document.getElementById('adminDiscountUserSelect'),
   adminCouponForm: document.getElementById('adminCouponForm'),
   adminCouponRecipientEmail: document.getElementById('adminCouponRecipientEmail'),
   adminCouponCode: document.getElementById('adminCouponCode'),
@@ -266,6 +278,7 @@ function attachEvents() {
     state.services = [];
     state.adminMembershipOrders = [];
     state.adminDiscountPhones = [];
+    state.adminUsers = [];
     state.adminCoupons = [];
     state.adminResolvedCustomer = null;
     state.adminCustomerForm = { name: '', email: '', phone: '' };
@@ -279,6 +292,9 @@ function attachEvents() {
     state.cartCouponCode = '';
     state.cartCouponPreview = null;
     state.ivSelections = {};
+    state.adminDiscountUnlocked = false;
+    state.adminDiscountSearch = '';
+    state.adminDiscountSelectedUserId = '';
     state.selectedServiceCategory = null;
     state.selectedSingleSessionServiceName = '';
     state.singleSessionEditingBookingId = '';
@@ -480,7 +496,50 @@ function attachEvents() {
 
   elements.adminDiscountForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (state.adminDiscountSelectedUserId) {
+      const selectedUser = (Array.isArray(state.adminUsers) ? state.adminUsers : []).find(
+        (user) => String(user.id) === String(state.adminDiscountSelectedUserId)
+      );
+      if (selectedUser) {
+        await applyAdminUserDiscount({
+          userId: selectedUser.id,
+          email: elements.adminDiscountEmail?.value,
+          phone: elements.adminDiscountPhone?.value,
+          discountPercent: elements.adminDiscountPercent?.value,
+        });
+        return;
+      }
+    }
+    const fallbackUser = findAdminUserByContact(
+      elements.adminDiscountEmail?.value,
+      elements.adminDiscountPhone?.value
+    );
+    if (fallbackUser) {
+      await applyAdminUserDiscount({
+        userId: fallbackUser.id,
+        email: elements.adminDiscountEmail?.value,
+        phone: elements.adminDiscountPhone?.value,
+        discountPercent: elements.adminDiscountPercent?.value,
+      });
+      return;
+    }
     await saveAdminDiscountPhone();
+  });
+  elements.adminDiscountGateBtn?.addEventListener('click', async () => {
+    await unlockAdminDiscounts();
+  });
+  elements.adminDiscountUserSearch?.addEventListener('input', (event) => {
+    state.adminDiscountSearch = String(event.target.value || '').trim().toLowerCase();
+    state.adminDiscountSelectedUserId = '';
+    render();
+  });
+  elements.adminDiscountUserSelect?.addEventListener('change', (event) => {
+    const selectedId = String(event.target.value || '').trim();
+    state.adminDiscountSelectedUserId = selectedId;
+    const selectedUser = (Array.isArray(state.adminUsers) ? state.adminUsers : []).find(
+      (user) => String(user.id) === selectedId
+    );
+    setAdminDiscountFormFromUser(selectedUser || null);
   });
   elements.adminCouponForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -791,17 +850,26 @@ async function refreshAdminCustomerContext() {
 
 async function loadDashboardData() {
   if (state.user?.role === 'admin') {
-    const [bookingsResult, membershipOrdersResult, discountPhonesResult, couponsResult, genericServicesResult] = await Promise.all([
+    const [
+      bookingsResult,
+      membershipOrdersResult,
+      discountPhonesResult,
+      couponsResult,
+      genericServicesResult,
+      adminUsersResult,
+    ] = await Promise.all([
       api('/api/bookings'),
       api('/api/admin/membership-orders'),
       api('/api/admin/discount-phones'),
       api('/api/admin/coupons'),
       api('/api/services'),
+      api('/api/admin/users'),
     ]);
     state.bookings = bookingsResult.bookings || [];
     state.adminMembershipOrders = membershipOrdersResult.orders || [];
     state.adminDiscountPhones = discountPhonesResult.discountPhones || [];
     state.adminCoupons = couponsResult.coupons || [];
+    state.adminUsers = adminUsersResult.users || [];
     state.membership = { plans: [], active: false, current: null };
     state.services = genericServicesResult.services || [];
     state.adminResolvedCustomer = null;
@@ -995,6 +1063,33 @@ function populateServiceOptions(selectedService = '') {
   if (selectedService) {
     const hasMatch = state.services.some((service) => service.name === selectedService);
     if (hasMatch) elements.serviceName.value = selectedService;
+  }
+}
+
+async function loadAdminDiscountUsers() {
+  if (state.user?.role !== 'admin') return;
+  const result = await api('/api/admin/users');
+  state.adminUsers = result.users || [];
+}
+
+async function unlockAdminDiscounts() {
+  const password = window.prompt('Enter the discount admin password');
+  if (!password) return;
+  try {
+    await api('/api/admin/discount-access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    state.adminDiscountUnlocked = true;
+    if (elements.adminDiscountGateMessage) {
+      elements.adminDiscountGateMessage.textContent = 'Discounts unlocked for this session.';
+      elements.adminDiscountGateMessage.hidden = false;
+    }
+    await loadAdminDiscountUsers();
+    render();
+  } catch (error) {
+    alert(error.message || 'Invalid discount password.');
   }
 }
 
@@ -1773,6 +1868,7 @@ function render() {
     renderAdminRows(filtered);
     renderAdminMembershipOrders();
     renderAdminDiscountPhones();
+    renderAdminDiscountUsers();
     renderAdminCoupons();
   } else {
     renderUserRows(filtered);
@@ -3286,6 +3382,12 @@ function renderUserCheckoutSummary(bookings) {
   const coupon = state.cartCouponPreview;
   const payableAmountInr = Number(coupon?.payableAmountInr || summary.totalAmountInr || 0);
   const discountAmountInr = Number(coupon?.discountAmountInr || 0);
+  const holdMinutes = summary.holdActive
+    ? Number(summary.holdRemainingMinutes || state.bookingHoldMinutes || BOOKING_HOLD_MINUTES)
+    : 0;
+  const holdLine = summary.holdActive
+    ? `<span class="user-hold-alert">Complete payment within ${holdMinutes} minute${holdMinutes === 1 ? '' : 's'} to keep this booking.</span>`
+    : '';
   elements.userCheckoutSummary.hidden = false;
   elements.userCheckoutSummary.innerHTML = `
     <strong>${summary.unitCount} item${summary.unitCount === 1 ? '' : 's'} ready for one payment</strong>
@@ -3296,6 +3398,7 @@ function renderUserCheckoutSummary(bookings) {
            <span>Total payable: Rs. ${payableAmountInr.toLocaleString('en-IN')}</span>`
         : `<span>Total payable: Rs. ${summary.totalAmountInr.toLocaleString('en-IN')}</span>`
     }
+    ${holdLine}
   `;
   elements.bookingsPayAllBtn.hidden = false;
   elements.bookingsPayAllBtn.disabled = false;
@@ -3351,6 +3454,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
 
     if (!isGroupedHydrogen) {
       const booking = sortedEntries[0];
+      const holdNotice = buildHoldNotice([booking]);
       rows.push({
         id: booking.id,
         booking,
@@ -3359,7 +3463,10 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
         status: booking.status,
         paymentStatus: booking.paymentStatus || 'unpaid',
         serviceTitle: booking.serviceName,
-        serviceMetaLines: [getBookingCategoryLabel(booking.serviceName)],
+        serviceMetaLines: [
+          getBookingCategoryLabel(booking.serviceName),
+          ...(holdNotice ? [holdNotice] : []),
+        ],
         scheduleLines: [formatDateTime(booking.bookingDate, booking.bookingTime)],
         serviceText: booking.serviceName,
         dateTimeText: formatDateTime(booking.bookingDate, booking.bookingTime),
@@ -3376,6 +3483,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       );
       return linkedIndex >= 0 ? `${entry.serviceName} (Session ${linkedIndex + 1})` : entry.serviceName;
     });
+    const holdNotice = buildHoldNotice(sortedEntries);
 
     const slotLines = hydrogenEntries.map(
       (entry, index) => `S${index + 1}: ${formatDateTime(entry.bookingDate, entry.bookingTime)}`
@@ -3402,6 +3510,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       serviceMetaLines: [
         baseServiceName,
         ...(addOnDetails.length ? [`Add-on: ${addOnDetails.join(', ')}`] : []),
+        ...(holdNotice ? [holdNotice] : []),
       ],
       scheduleLines: [hydrogenEntries[0] ? formatDateTime(hydrogenEntries[0].bookingDate, hydrogenEntries[0].bookingTime) : '-'],
       detailSections: [
@@ -3428,6 +3537,7 @@ function buildUserCartSummary(bookings = state.bookings) {
   const payableBookings = (Array.isArray(bookings) ? bookings : []).filter((booking) => {
     if (String(booking.status || '').toLowerCase() === 'cancelled') return false;
     if (String(booking.paymentStatus || '').toLowerCase() === 'paid') return false;
+    if (booking.holdExpired) return false;
     const service = getServiceCatalogEntry(booking.serviceName);
     return !service?.membershipOnly;
   });
@@ -3442,10 +3552,21 @@ function buildUserCartSummary(bookings = state.bookings) {
     }
   }
 
+  const holdActiveEntries = payableBookings.filter((booking) => booking.holdActive);
+  const holdRemainingMinutes = holdActiveEntries.length
+    ? Math.min(
+        ...holdActiveEntries
+          .map((booking) => Number(booking.holdRemainingMinutes || 0))
+          .filter((value) => Number.isFinite(value) && value > 0)
+      )
+    : 0;
+
   return {
     unitCount: rows.length,
     bookingCount: payableBookings.length,
     totalAmountInr,
+    holdActive: holdActiveEntries.length > 0,
+    holdRemainingMinutes,
   };
 }
 
@@ -3606,6 +3727,254 @@ function renderAdminDiscountPhones() {
   });
 }
 
+function buildAdminDiscountField(labelText, inputEl) {
+  const field = document.createElement('label');
+  field.className = 'admin-discount-field';
+  const label = document.createElement('span');
+  label.textContent = labelText;
+  field.appendChild(label);
+  field.appendChild(inputEl);
+  return field;
+}
+
+function getFilteredAdminUsers() {
+  const users = Array.isArray(state.adminUsers) ? state.adminUsers : [];
+  const query = String(state.adminDiscountSearch || '').trim().toLowerCase();
+  if (!query) return users;
+  return users.filter((user) => {
+    const haystack = [user.name, user.email, user.mobile, user.membershipPlan]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
+function findAdminUserByContact(email, phone) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const normalizedPhone = String(phone || '').trim();
+  if (!normalizedEmail && !normalizedPhone) return null;
+  return (Array.isArray(state.adminUsers) ? state.adminUsers : []).find((user) => {
+    const userEmail = String(user.email || '').trim().toLowerCase();
+    const userPhone = String(user.mobile || '').trim();
+    if (normalizedEmail && userEmail === normalizedEmail) return true;
+    if (normalizedPhone && userPhone === normalizedPhone) return true;
+    return false;
+  });
+}
+
+function setAdminDiscountFormFromUser(user) {
+  if (!elements.adminDiscountEmail || !elements.adminDiscountPhone || !elements.adminDiscountPercent) return;
+  if (!user) {
+    elements.adminDiscountEmail.value = '';
+    elements.adminDiscountPhone.value = '';
+    elements.adminDiscountPercent.value = '';
+    return;
+  }
+  elements.adminDiscountEmail.value = user.email || '';
+  elements.adminDiscountPhone.value = user.mobile || '';
+  const existingDiscount = getAdminDiscountRecordForPhone(user.mobile || '');
+  elements.adminDiscountPercent.value = existingDiscount ? String(existingDiscount.discountPercent || 0) : '';
+}
+
+function renderAdminDiscountUserSelect(users) {
+  if (!elements.adminDiscountUserSelect) return;
+  const selectedId = String(state.adminDiscountSelectedUserId || '');
+  elements.adminDiscountUserSelect.innerHTML = '<option value="">Choose a user</option>';
+
+  users.forEach((user) => {
+    const option = document.createElement('option');
+    option.value = String(user.id);
+    const membershipStatus = String(user.membershipStatus || 'inactive').toLowerCase();
+    const statusLabel = membershipStatus === 'active' ? 'Member' : 'User';
+    const email = user.email || 'no-email';
+    const phone = user.mobile || 'no-phone';
+    option.textContent = `${user.name || 'User'} • ${email} • ${phone} • ${statusLabel}`;
+    if (selectedId && selectedId === String(user.id)) {
+      option.selected = true;
+    }
+    elements.adminDiscountUserSelect.appendChild(option);
+  });
+}
+
+function renderAdminDiscountUsers() {
+  if (!elements.adminDiscountPanel || !elements.adminDiscountUsersList || !elements.adminDiscountUsersEmpty) return;
+
+  if (elements.adminDiscountGateMessage) {
+    if (state.adminDiscountUnlocked && !elements.adminDiscountGateMessage.textContent) {
+      elements.adminDiscountGateMessage.textContent = 'Discounts unlocked for this session.';
+    }
+    elements.adminDiscountGateMessage.hidden = !state.adminDiscountUnlocked;
+  }
+
+  elements.adminDiscountPanel.hidden = !state.adminDiscountUnlocked;
+  if (!state.adminDiscountUnlocked) {
+    elements.adminDiscountUsersList.innerHTML = '';
+    elements.adminDiscountUsersEmpty.hidden = true;
+    return;
+  }
+
+  const users = getFilteredAdminUsers();
+  elements.adminDiscountUsersList.innerHTML = '';
+  renderAdminDiscountUserSelect(users);
+  if (!users.length) {
+    elements.adminDiscountUsersEmpty.hidden = false;
+    return;
+  }
+  elements.adminDiscountUsersEmpty.hidden = true;
+
+  users.forEach((user) => {
+    const card = document.createElement('article');
+    card.className = 'admin-discount-user-card';
+
+    const membershipStatus = String(user.membershipStatus || 'inactive').toLowerCase();
+    const isMember = membershipStatus === 'active';
+    const peopleCount = Number(user.membershipPeopleCount || 0);
+    const peopleLine = peopleCount > 0 ? ` • ${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}` : '';
+    const membershipLine = isMember
+      ? `Active member${user.membershipPlan ? ` • ${user.membershipPlan}` : ''}${peopleLine}`
+      : 'No active membership';
+    const expiresLine = user.membershipExpiresAt ? `Expires: ${formatDateOnly(user.membershipExpiresAt)}` : '';
+
+    const header = document.createElement('div');
+    header.className = 'admin-discount-user-head';
+    header.innerHTML = `
+      <div>
+        <h3>${escapeHtml(user.name || 'User')}</h3>
+        <p>${escapeHtml(membershipLine)}${expiresLine ? ` • ${escapeHtml(expiresLine)}` : ''}</p>
+      </div>
+      <span class="status-chip ${isMember ? 'status-paid' : 'status-pending'}">${isMember ? 'Member' : 'User'}</span>
+    `;
+    card.appendChild(header);
+
+    const grid = document.createElement('div');
+    grid.className = 'admin-discount-user-grid';
+    const emailInput = document.createElement('input');
+    emailInput.type = 'email';
+    emailInput.value = user.email || '';
+    emailInput.placeholder = 'Add email';
+    const phoneInput = document.createElement('input');
+    phoneInput.type = 'tel';
+    phoneInput.value = user.mobile || '';
+    phoneInput.placeholder = 'Add phone number';
+    const discountInput = document.createElement('input');
+    discountInput.type = 'number';
+    discountInput.min = '1';
+    discountInput.max = '100';
+    discountInput.step = '1';
+    discountInput.placeholder = '10';
+
+    const existingDiscount = getAdminDiscountRecordForPhone(user.mobile || '');
+    if (existingDiscount) {
+      discountInput.value = String(existingDiscount.discountPercent || 0);
+    }
+
+    grid.append(
+      buildAdminDiscountField('Email', emailInput),
+      buildAdminDiscountField('Phone', phoneInput),
+      buildAdminDiscountField('Discount %', discountInput)
+    );
+    card.appendChild(grid);
+
+    const actions = document.createElement('div');
+    actions.className = 'admin-discount-user-actions';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'btn btn-secondary';
+    saveBtn.textContent = 'Save Details';
+    saveBtn.addEventListener('click', async () => {
+      await updateAdminUserContact(user.id, emailInput.value, phoneInput.value);
+    });
+    actions.appendChild(saveBtn);
+
+    const applyBtn = document.createElement('button');
+    applyBtn.type = 'button';
+    applyBtn.className = 'btn btn-primary';
+    applyBtn.textContent = 'Apply Discount';
+    applyBtn.addEventListener('click', async () => {
+      await applyAdminUserDiscount({
+        userId: user.id,
+        email: emailInput.value,
+        phone: phoneInput.value,
+        discountPercent: discountInput.value,
+      });
+    });
+    actions.appendChild(applyBtn);
+
+    if (existingDiscount) {
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'btn btn-secondary';
+      removeBtn.textContent = 'Remove Discount';
+      removeBtn.addEventListener('click', async () => {
+        await deleteAdminDiscountPhone(existingDiscount.id);
+      });
+      actions.appendChild(removeBtn);
+    }
+
+    card.appendChild(actions);
+    elements.adminDiscountUsersList.appendChild(card);
+  });
+}
+
+async function updateAdminUserContact(userId, email, phone) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const normalizedPhone = String(phone || '').trim();
+  if (!normalizedEmail) {
+    alert('Email is required.');
+    return;
+  }
+
+  try {
+    await api(`/api/admin/users/${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: normalizedEmail, mobile: normalizedPhone }),
+    });
+    await loadDashboardData();
+    render();
+  } catch (error) {
+    alert(error.message || 'Unable to save user details.');
+  }
+}
+
+async function applyAdminUserDiscount({ userId, email, phone, discountPercent }) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const normalizedPhone = String(phone || '').trim();
+  const percent = Number(discountPercent || 0);
+
+  if (!normalizedEmail) {
+    alert('Email is required.');
+    return;
+  }
+  if (!normalizedPhone) {
+    alert('Add a phone number to apply a discount.');
+    return;
+  }
+  if (!Number.isFinite(percent) || percent <= 0 || percent > 100) {
+    alert('Enter a valid discount percentage between 1 and 100.');
+    return;
+  }
+
+  try {
+    await api(`/api/admin/users/${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: normalizedEmail, mobile: normalizedPhone }),
+    });
+    await api('/api/admin/discount-phones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: normalizedPhone, discountPercent: percent }),
+    });
+    await loadDashboardData();
+    render();
+  } catch (error) {
+    alert(error.message || 'Unable to apply discount.');
+  }
+}
+
 async function saveAdminDiscountPhone() {
   const phone = String(elements.adminDiscountPhone?.value || '').trim();
   const discountPercent = Number(elements.adminDiscountPercent?.value || 0);
@@ -3634,6 +4003,9 @@ async function saveAdminDiscountPhone() {
       elements.adminDiscountSubmitBtn.disabled = false;
       elements.adminDiscountSubmitBtn.textContent = originalLabel;
     }
+  }
+  if (state.user?.role !== 'admin') {
+    state.adminUsers = [];
   }
 }
 
@@ -3962,6 +4334,20 @@ function getServiceCatalogEntry(serviceName) {
 function getDisplayedServicePriceInr(serviceName) {
   const service = getServiceCatalogEntry(serviceName);
   return Number(service?.effectivePriceInr ?? service?.priceInr ?? 0);
+}
+
+function normalizeDiscountPhoneKey(phone) {
+  const digits = String(phone || '').replace(/\D+/g, '');
+  if (digits.length < 7) return '';
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function getAdminDiscountRecordForPhone(phone) {
+  const phoneKey = normalizeDiscountPhoneKey(phone);
+  if (!phoneKey) return null;
+  return (Array.isArray(state.adminDiscountPhones) ? state.adminDiscountPhones : []).find(
+    (item) => item.phoneKey === phoneKey
+  ) || null;
 }
 
 function getCurrentContextBookings() {

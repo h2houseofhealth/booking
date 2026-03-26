@@ -1488,7 +1488,7 @@ h3,
 
 .admin-discount-form {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(140px, 0.7fr) auto;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(140px, 0.7fr) auto;
   gap: 0.75rem;
   align-items: end;
   margin-bottom: 0.9rem;
@@ -1562,6 +1562,92 @@ h3,
   margin: 0.2rem 0 0;
   font-size: 0.84rem;
   color: rgba(var(--ink-rgb), 0.76);
+}
+
+.admin-discount-gate {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.4rem 0 0.8rem;
+}
+
+.admin-discount-panel {
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.admin-discount-finder {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  margin: 0.5rem 0 0.9rem;
+}
+
+.admin-discount-finder select,
+.admin-discount-finder input {
+  height: 2.5rem;
+}
+
+.admin-discount-user-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.admin-discount-user-card {
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.18);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.admin-discount-user-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.admin-discount-user-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.admin-discount-user-head p {
+  margin: 0.25rem 0 0;
+  font-size: 0.84rem;
+  color: rgba(var(--ink-rgb), 0.76);
+}
+
+.admin-discount-user-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.6rem;
+}
+
+.admin-discount-field {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: rgba(var(--ink-rgb), 0.76);
+}
+
+.admin-discount-field input {
+  height: 2.5rem;
+}
+
+.admin-discount-user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.admin-discount-manual {
+  margin-top: 1rem;
 }
 
 .admin-membership-head {
@@ -1791,6 +1877,24 @@ th {
   background: rgba(var(--brand-primary-rgb), 0.6);
 }
 
+.booking-service-meta.is-hold {
+  font-weight: 600;
+  color: rgba(var(--brand-primary-rgb), 0.92);
+}
+
+.booking-service-meta.is-hold::before {
+  background: rgba(var(--brand-primary-rgb), 0.9);
+}
+
+.booking-service-meta.is-expired {
+  font-weight: 600;
+  color: rgba(var(--brand-deep-rgb), 0.82);
+}
+
+.booking-service-meta.is-expired::before {
+  background: rgba(var(--brand-deep-rgb), 0.72);
+}
+
 .booking-schedule-line {
   padding: 0.28rem 0.5rem;
   border: 1px solid rgba(var(--brand-primary-rgb), 0.14);
@@ -1857,6 +1961,11 @@ th {
 .user-checkout-summary span {
   font-size: 0.84rem;
   color: rgba(var(--ink-rgb), 0.8);
+}
+
+.user-checkout-summary .user-hold-alert {
+  font-weight: 600;
+  color: rgba(var(--brand-primary-rgb), 0.92);
 }
 
 .dialog-actions {
@@ -2204,6 +2313,10 @@ th {
   }
 
   .admin-discount-form {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-discount-finder {
     grid-template-columns: 1fr;
   }
 

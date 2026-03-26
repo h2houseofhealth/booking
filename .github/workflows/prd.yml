@@ -20,7 +20,7 @@ jobs:
       - name: Build
         run: |
           mkdir dist
-          cp -R . dist
+          rsync -av --exclude=dist . dist/
           rm -rf dist/.git
           rm -rf dist/.github
 

@@ -1018,9 +1018,9 @@ function getHydrogenSlotsForSubmit(requiredSlots) {
   return slots;
 }
 
-function populateAvailableTimeOptions(selectElement, serviceName, bookingDate, currentReservedSlot = null) {
+function populateAvailableTimeOptions(selectElement, serviceName, bookingDate, currentReservedSlot = null, preferredTime = '') {
   if (!selectElement) return;
-  const selectedValue = String(selectElement.value || '');
+  const selectedValue = String(selectElement.value || preferredTime || currentReservedSlot?.bookingTime || '').trim();
   selectElement.innerHTML = '';
 
   const serviceAvailability = state.slotAvailability[String(serviceName || '')] || {};
@@ -1034,15 +1034,18 @@ function populateAvailableTimeOptions(selectElement, serviceName, bookingDate, c
     const booked = Number(serviceAvailability[optionData.value] || 0);
     const held = Number(serviceHolds[optionData.value] || 0);
     const isCurrentReserved = bookingDate === reservedDate && optionData.value === reservedTime;
+    const isPastSlot = isBookingSlotInPast(bookingDate, optionData.value);
     const isFull = booked >= capacity && !isCurrentReserved;
     const option = document.createElement('option');
     option.value = optionData.value;
-    option.textContent = isFull
-      ? held > 0
-        ? `${optionData.label} (On hold - try in ${holdMinutes} min)`
-        : `${optionData.label} (Full)`
-      : optionData.label;
-    option.disabled = isFull;
+    option.textContent = isPastSlot
+      ? `${optionData.label} (Unavailable)`
+      : isFull
+        ? held > 0
+          ? `${optionData.label} (On hold - try in ${holdMinutes} min)`
+          : `${optionData.label} (Full)`
+        : optionData.label;
+    option.disabled = isPastSlot || isFull;
     selectElement.appendChild(option);
   }
 
@@ -2309,7 +2312,7 @@ function renderServices() {
       </div>
     `;
     const timeSelect = editor.querySelector('.hydrogen-editor-time');
-    populateAvailableTimeOptions(timeSelect, selectedService.name, editorDate, activeSlot);
+    populateAvailableTimeOptions(timeSelect, selectedService.name, editorDate, activeSlot, editorTime);
     state.activeHydrogenSessionTime = timeSelect.value || SLOT_OPTIONS[0].value;
     const dateInput = editor.querySelector('.hydrogen-editor-date');
     dateInput.addEventListener('change', () => {
@@ -2532,10 +2535,16 @@ function renderServices() {
     `;
     const ivDateInput = editor.querySelector('.hydrogen-editor-date');
     const ivTimeSelect = editor.querySelector('.hydrogen-editor-time');
-    populateAvailableTimeOptions(ivTimeSelect, selectedService.name, editorDate, {
-      bookingDate: selection.bookingDate || '',
-      bookingTime: selection.bookingTime || '',
-    });
+    populateAvailableTimeOptions(
+      ivTimeSelect,
+      selectedService.name,
+      editorDate,
+      {
+        bookingDate: selection.bookingDate || '',
+        bookingTime: selection.bookingTime || '',
+      },
+      editorTime
+    );
     state.ivSelections[selectedService.name] = {
       ...(state.ivSelections[selectedService.name] || {}),
       editingTime: ivTimeSelect.value || editorTime || SLOT_OPTIONS[0].value,
@@ -2706,6 +2715,7 @@ function renderServices() {
     for (const slot of SLOT_OPTIONS) {
       const booked = Number(serviceAvailability[slot.value] || 0);
       const capacity = Number(state.slotCapacityByService[service.name] || 8);
+      const isPastSlot = isBookingSlotInPast(state.selectedServiceDate, slot.value);
       const slotRow = document.createElement('div');
       slotRow.className = 'service-slot-row';
       const slotTime = document.createElement('span');
@@ -2718,9 +2728,12 @@ function renderServices() {
         const seatBtn = document.createElement('button');
         seatBtn.type = 'button';
         seatBtn.className = `slot-seat-box${seatBooked ? ' is-booked' : ' is-available'}`;
-        seatBtn.disabled = seatBooked || state.slotAvailabilityLoading;
-        seatBtn.title = seatBooked ? 'Booked' : `Book ${slot.label}`;
-        seatBtn.setAttribute('aria-label', `${slot.label} seat ${seatIndex + 1} ${seatBooked ? 'booked' : 'available'}`);
+        seatBtn.disabled = seatBooked || isPastSlot || state.slotAvailabilityLoading;
+        seatBtn.title = seatBooked ? 'Booked' : isPastSlot ? 'Unavailable' : `Book ${slot.label}`;
+        seatBtn.setAttribute(
+          'aria-label',
+          `${slot.label} seat ${seatIndex + 1} ${seatBooked ? 'booked' : isPastSlot ? 'unavailable' : 'available'}`
+        );
         seatBtn.addEventListener('click', () => {
           openDialog();
           elements.serviceName.value = service.name;
@@ -2791,6 +2804,15 @@ function getTodayIsoDate() {
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function isBookingSlotInPast(bookingDate, bookingTime) {
+  const normalizedDate = String(bookingDate || '').trim();
+  const normalizedTime = String(bookingTime || '').trim();
+  if (!normalizedDate || !normalizedTime) return false;
+  const slotDateTime = new Date(`${normalizedDate}T${normalizedTime}:00`);
+  if (Number.isNaN(slotDateTime.getTime())) return false;
+  return slotDateTime.getTime() < Date.now();
 }
 
 function getMaxBookingIsoDate() {
@@ -3603,9 +3625,10 @@ function renderAdminRows(bookings) {
 
   for (const booking of bookings) {
     const tr = document.createElement('tr');
-    tr.appendChild(cell(`${booking.clientName}\n${booking.clientMobile || '-'}`));
+    tr.appendChild(multilineCell(`${booking.clientName}\n${booking.clientMobile || '-'}`));
     tr.appendChild(cell(booking.serviceName));
-    tr.appendChild(cell(formatDateTime(booking.bookingDate, booking.bookingTime)));
+    tr.appendChild(multilineCell(formatAdminBookingDateTime(booking.bookingDate, booking.bookingTime)));
+    tr.appendChild(cell(formatBookingCreatedAtIndia(booking.createdAt)));
     tr.appendChild(statusCell(booking.status));
     tr.appendChild(paymentCell(booking.paymentStatus || 'unpaid'));
 
@@ -4607,15 +4630,65 @@ function formatDateOnly(value) {
   }).format(date);
 }
 
-function formatDateTime(dateISO, time24) {
-  if (!dateISO || !time24) return '-';
-  const date = new Date(`${dateISO}T${time24}`);
+function formatBookingDateLabel(dateISO) {
+  const match = String(dateISO || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '-';
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, monthIndex, day, 12, 0, 0);
+  if (Number.isNaN(date.getTime())) return '-';
   return new Intl.DateTimeFormat(undefined, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
+  }).format(date);
+}
+
+function formatBookingTimeLabel(time24) {
+  const normalized = String(time24 || '').trim();
+  if (!normalized) return '-';
+  const slot = SLOT_OPTIONS.find((item) => item.value === normalized);
+  if (slot?.label) return slot.label;
+  const match = normalized.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return normalized;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const date = new Date(2000, 0, 1, hours, minutes, 0);
+  if (Number.isNaN(date.getTime())) return normalized;
+  return new Intl.DateTimeFormat(undefined, {
     hour: 'numeric',
     minute: '2-digit',
+  }).format(date);
+}
+
+function formatDateTime(dateISO, time24) {
+  if (!dateISO || !time24) return '-';
+  return `${formatBookingDateLabel(dateISO)}, ${formatBookingTimeLabel(time24)}`;
+}
+
+function formatAdminBookingDateTime(dateISO, time24) {
+  if (!dateISO || !time24) return '-';
+  return `${formatBookingDateLabel(dateISO)}\n${formatBookingTimeLabel(time24)}`;
+}
+
+function formatBookingCreatedAtIndia(value) {
+  if (!value) return '-';
+  const raw = String(value).trim();
+  const normalized = raw.replace(' ', 'T');
+  const hasExplicitTimezone = /(?:Z|[+\-]\d{2}:\d{2})$/i.test(normalized);
+  const parsed = Date.parse(hasExplicitTimezone ? normalized : `${normalized}Z`);
+  const date = new Date(parsed);
+  if (Number.isNaN(date.getTime())) return '-';
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
   }).format(date);
 }
 

@@ -49,6 +49,7 @@ const state = {
   adminDiscountSearchResults: [],
   adminDiscountSearchLoading: false,
   adminDiscountSelectedUsers: [],
+  adminDiscountSelectedWindowOpen: false,
   filters: {
     search: '',
     status: 'all',
@@ -183,11 +184,11 @@ const elements = {
   adminDiscountBulkApplyBtn: document.getElementById('adminDiscountBulkApplyBtn'),
   adminDiscountUsersEmpty: document.getElementById('adminDiscountUsersEmpty'),
   adminDiscountUserSearch: document.getElementById('adminDiscountUserSearch'),
-  adminDiscountNewName: document.getElementById('adminDiscountNewName'),
-  adminDiscountNewEmail: document.getElementById('adminDiscountNewEmail'),
-  adminDiscountNewPhone: document.getElementById('adminDiscountNewPhone'),
-  adminDiscountAddNewBtn: document.getElementById('adminDiscountAddNewBtn'),
   adminDiscountSelectedCount: document.getElementById('adminDiscountSelectedCount'),
+  adminDiscountSelectedBtn: document.getElementById('adminDiscountSelectedBtn'),
+  adminDiscountSelectedWindow: document.getElementById('adminDiscountSelectedWindow'),
+  adminDiscountSelectedWindowCount: document.getElementById('adminDiscountSelectedWindowCount'),
+  adminDiscountSelectedList: document.getElementById('adminDiscountSelectedList'),
   adminCouponForm: document.getElementById('adminCouponForm'),
   adminCouponRecipientEmail: document.getElementById('adminCouponRecipientEmail'),
   adminCouponCode: document.getElementById('adminCouponCode'),
@@ -309,6 +310,7 @@ function attachEvents() {
     state.adminDiscountSearchResults = [];
     state.adminDiscountSearchLoading = false;
     state.adminDiscountSelectedUsers = [];
+    state.adminDiscountSelectedWindowOpen = false;
     state.selectedServiceCategory = null;
     state.selectedSingleSessionServiceName = '';
     state.singleSessionEditingBookingId = '';
@@ -546,11 +548,12 @@ function attachEvents() {
       render();
     }
   });
-  elements.adminDiscountAddNewBtn?.addEventListener('click', async () => {
-    await createAdminDiscountUser();
-  });
   elements.adminDiscountBulkApplyBtn?.addEventListener('click', async () => {
     await applyAdminDiscountToSelected();
+  });
+  elements.adminDiscountSelectedBtn?.addEventListener('click', () => {
+    state.adminDiscountSelectedWindowOpen = !state.adminDiscountSelectedWindowOpen;
+    render();
   });
   elements.adminCouponForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -597,12 +600,21 @@ function attachEvents() {
   });
 
   document.addEventListener('click', (event) => {
-    if (!state.adminDiscountDropdownOpen) return;
     const target = event.target;
-    if (elements.adminDiscountDropdown?.contains(target) || elements.adminDiscountUserSearch?.contains(target)) {
+
+    if (state.adminDiscountDropdownOpen) {
+      if (elements.adminDiscountDropdown?.contains(target) || elements.adminDiscountUserSearch?.contains(target)) {
+        return;
+      }
+      state.adminDiscountDropdownOpen = false;
+      render();
+    }
+
+    if (!state.adminDiscountSelectedWindowOpen) return;
+    if (elements.adminDiscountSelectedWindow?.contains(target) || elements.adminDiscountSelectedBtn?.contains(target)) {
       return;
     }
-    state.adminDiscountDropdownOpen = false;
+    state.adminDiscountSelectedWindowOpen = false;
     render();
   });
 
@@ -3801,6 +3813,9 @@ function removeSelectedDiscountUser(userId) {
   state.adminDiscountSelectedUsers = getSelectedDiscountUsers().filter(
     (user) => String(user.id) !== normalizedId
   );
+  if (!state.adminDiscountSelectedUsers.length) {
+    state.adminDiscountSelectedWindowOpen = false;
+  }
   render();
 }
 
@@ -3818,48 +3833,6 @@ function scheduleAdminDiscountSearch(query) {
   adminDiscountSearchTimer = window.setTimeout(() => {
     fetchAdminDiscountUsers(trimmed);
   }, 300);
-}
-
-async function createAdminDiscountUser() {
-  const name = String(elements.adminDiscountNewName?.value || '').trim();
-  const email = String(elements.adminDiscountNewEmail?.value || '').trim().toLowerCase();
-  const phone = String(elements.adminDiscountNewPhone?.value || '').trim();
-
-  if (!name || !email || !phone) {
-    alert('Name, email, and phone are required to add a new user.');
-    return;
-  }
-  if (!isLikelyEmail(email)) {
-    alert('Enter a valid email address.');
-    return;
-  }
-
-  try {
-    const result = await api('/api/admin/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, mobile: phone }),
-    });
-    if (!result?.user?.id) {
-      throw new Error('Unable to add the user.');
-    }
-
-    const nextSelected = getSelectedDiscountUsers();
-    const exists = nextSelected.some((user) => String(user.id) === String(result.user.id));
-    state.adminDiscountSelectedUsers = exists ? nextSelected : [...nextSelected, result.user];
-
-    if (Array.isArray(state.adminUsers)) {
-      const known = state.adminUsers.some((user) => String(user.id) === String(result.user.id));
-      if (!known) state.adminUsers = [...state.adminUsers, result.user];
-    }
-
-    if (elements.adminDiscountNewName) elements.adminDiscountNewName.value = '';
-    if (elements.adminDiscountNewEmail) elements.adminDiscountNewEmail.value = '';
-    if (elements.adminDiscountNewPhone) elements.adminDiscountNewPhone.value = '';
-    scheduleAdminDiscountSearch(state.adminDiscountSearch);
-  } catch (error) {
-    alert(error.message || 'Unable to add the user right now.');
-  }
 }
 
 async function fetchAdminDiscountUsers(query) {
@@ -3895,6 +3868,8 @@ function renderAdminDiscountUsers() {
   if (!state.adminDiscountUnlocked) {
     elements.adminDiscountUserResults.innerHTML = '';
     elements.adminDiscountUsersEmpty.hidden = true;
+    state.adminDiscountSelectedWindowOpen = false;
+    if (elements.adminDiscountSelectedWindow) elements.adminDiscountSelectedWindow.hidden = true;
     return;
   }
 
@@ -3907,6 +3882,7 @@ function renderAdminDiscountUsers() {
     const count = getSelectedDiscountUsers().length;
     elements.adminDiscountSelectedCount.textContent = `${count} selected`;
   }
+  renderAdminSelectedDiscountUsers();
 
   const users = Array.isArray(state.adminDiscountSearchResults) ? state.adminDiscountSearchResults : [];
   elements.adminDiscountUserResults.innerHTML = '';
@@ -3925,7 +3901,7 @@ function renderAdminDiscountUsers() {
   const trimmedQuery = String(state.adminDiscountSearch || '').trim();
   if (!users.length) {
     const emptyText = trimmedQuery
-      ? 'No users found. Add a new user below.'
+      ? 'No users found.'
       : 'Type to search users.';
     const emptyTextEl = elements.adminDiscountUsersEmpty.querySelector('p');
     if (emptyTextEl) emptyTextEl.textContent = emptyText;
@@ -4006,9 +3982,81 @@ async function applyAdminDiscountToSelected() {
 
   await loadDashboardData();
   await fetchAdminDiscountUsers(state.adminDiscountSearch);
+  state.adminDiscountSelectedUsers = [];
+  state.adminDiscountSelectedWindowOpen = false;
   if (failures.length) {
     alert(`Discount applied with some issues. Could not apply for: ${failures.join(', ')}.`);
+    render();
+    return;
   }
+  render();
+}
+
+function renderAdminSelectedDiscountUsers() {
+  if (
+    !elements.adminDiscountSelectedBtn ||
+    !elements.adminDiscountSelectedWindow ||
+    !elements.adminDiscountSelectedWindowCount ||
+    !elements.adminDiscountSelectedList
+  ) {
+    return;
+  }
+
+  const selectedUsers = getSelectedDiscountUsers();
+  const count = selectedUsers.length;
+  elements.adminDiscountSelectedBtn.textContent = count ? `Selected (${count})` : 'Selected';
+  elements.adminDiscountSelectedBtn.disabled = !count;
+  elements.adminDiscountSelectedWindowCount.textContent = `${count} selected`;
+  elements.adminDiscountSelectedWindow.hidden = !state.adminDiscountSelectedWindowOpen || !count;
+  elements.adminDiscountSelectedList.innerHTML = '';
+
+  if (!count) {
+    state.adminDiscountSelectedWindowOpen = false;
+    return;
+  }
+
+  selectedUsers.forEach((user) => {
+    const row = document.createElement('div');
+    row.className = 'admin-discount-selected-row';
+
+    const main = document.createElement('div');
+    main.className = 'admin-discount-selected-main';
+
+    const left = document.createElement('div');
+    left.className = 'admin-discount-selected-left';
+
+    const info = document.createElement('div');
+    info.className = 'admin-discount-selected-info';
+    const membershipStatus = String(user.membershipStatus || 'inactive').toLowerCase();
+    const isMember = membershipStatus === 'active';
+    const statusLabel = isMember ? 'Member' : 'User';
+    const email = user.email || 'no-email';
+    const phone = user.mobile || 'no-phone';
+    info.innerHTML = `
+      <strong>${escapeHtml(user.name || 'User')}</strong>
+      <span>${escapeHtml(email)}</span>
+      <span>${escapeHtml(phone)}</span>
+      <span>${escapeHtml(statusLabel)}</span>
+    `;
+
+    left.appendChild(info);
+
+    const actions = document.createElement('div');
+    actions.className = 'admin-discount-selected-actions';
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'btn btn-secondary';
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', () => {
+      removeSelectedDiscountUser(user.id);
+    });
+
+    actions.appendChild(removeBtn);
+    main.append(left, actions);
+    row.appendChild(main);
+    elements.adminDiscountSelectedList.appendChild(row);
+  });
 }
 
 async function applyAdminUserDiscountRaw({ userId, email, phone, discountPercent }) {

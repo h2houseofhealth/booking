@@ -1,7 +1,4 @@
-const API_URL = window.location.hostname === "localhost"
-  ? ""
-  : "http://52.65.71.35:3000";
-
+const API_URL = "";
 const state = {
   user: null,
   bookings: [],

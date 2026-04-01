@@ -826,6 +826,7 @@ async function loadCurrentUser() {
   try {
     const result = await api('/api/auth/me');
     state.user = result.user;
+    syncPostLoginChoiceWithMembership();
   } catch {
     state.user = null;
   }
@@ -834,6 +835,14 @@ async function loadCurrentUser() {
 async function loadProfile() {
   const result = await api('/api/profile');
   state.user = { ...state.user, ...result.profile };
+  syncPostLoginChoiceWithMembership();
+}
+
+function syncPostLoginChoiceWithMembership() {
+  if (state.user?.role !== 'user') return;
+  if (isCurrentUserMembershipActive()) {
+    state.postLoginChoice = 'continue-member';
+  }
 }
 
 function isAdminCustomerFormReady() {

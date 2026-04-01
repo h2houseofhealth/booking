@@ -3,6 +3,7 @@ const https = require('https');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
+const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -297,6 +298,12 @@ const MEMBERSHIP_PLANS = [
 const MEMBERSHIP_VALIDITY_DAYS = Number(MEMBERSHIP_PLANS.find((plan) => plan.id === 'h2_single')?.validityDays || 90);
 
 const app = express();
+const cors = require("cors");
+app.use(cors({
+  origin: "*",
+  credentials: false,
+}));
+app.options('*', cors());
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const uploadsDir = path.resolve(process.env.UPLOADS_DIR || path.join(__dirname, 'uploads'));
 const dbPath = path.join(dataDir, 'booking.db');

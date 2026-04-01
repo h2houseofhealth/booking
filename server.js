@@ -298,10 +298,7 @@ const MEMBERSHIP_VALIDITY_DAYS = Number(MEMBERSHIP_PLANS.find((plan) => plan.id 
 
 const app = express();
 const cors = require("cors");
-app.use(cors({
-  origin: "*",
-  credentials: false,
-}));
+app.use(cors());
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const uploadsDir = path.resolve(process.env.UPLOADS_DIR || path.join(__dirname, 'uploads'));
 const dbPath = path.join(dataDir, 'booking.db');
@@ -4212,15 +4209,14 @@ app.get(/.*/, (_req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`Server listening on http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server listening on port ${PORT}`);
   if (SENDGRID_API_KEY && SENDGRID_FROM_EMAIL) {
     console.log(`SendGrid OTP mailer configured with sender ${SENDGRID_FROM_EMAIL}`);
   } else {
     console.warn('SendGrid OTP mailer is not fully configured. Check SENDGRID_API_KEY and SENDGRID_FROM_EMAIL.');
   }
 });
-
 function canAccessBooking(user, ownerId) {
   return user.role === 'admin' || user.id === Number(ownerId);
 }

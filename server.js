@@ -295,8 +295,15 @@ const MEMBERSHIP_PLANS = [
   },
 ];
 const MEMBERSHIP_VALIDITY_DAYS = Number(MEMBERSHIP_PLANS.find((plan) => plan.id === 'h2_single')?.validityDays || 90);
-
+const express = require("express");
 const app = express();
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "*");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  next();
+});
+app.use(express.json());
 const cors = require("cors");
 app.use(cors());
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));

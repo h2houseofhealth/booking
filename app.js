@@ -7,6 +7,7 @@ const state = {
   adminDiscountPhones: [],
   adminUsers: [],
   adminCoupons: [],
+  adminSelectedUserId: null,
   adminResolvedCustomer: null,
   adminCustomerForm: {
     name: '',
@@ -227,6 +228,15 @@ const elements = {
   adminCouponSaveOnlyBtn: document.getElementById('adminCouponSaveOnlyBtn'),
   adminCouponList: document.getElementById('adminCouponList'),
   adminCouponEmptyState: document.getElementById('adminCouponEmptyState'),
+  adminUserCards: document.getElementById('adminUserCards'),
+  adminUserCardsEmpty: document.getElementById('adminUserCardsEmpty'),
+  adminUserSessionDialog: document.getElementById('adminUserSessionDialog'),
+  adminUserSessionTitle: document.getElementById('adminUserSessionTitle'),
+  adminUserSessionMeta: document.getElementById('adminUserSessionMeta'),
+  adminUserSessionCloseBtn: document.getElementById('adminUserSessionCloseBtn'),
+  adminUserSessionKpis: document.getElementById('adminUserSessionKpis'),
+  adminUserSessionList: document.getElementById('adminUserSessionList'),
+  adminUserSessionListEmpty: document.getElementById('adminUserSessionListEmpty'),
   membershipCouponCode: document.getElementById('membershipCouponCode'),
   membershipApplyCouponBtn: document.getElementById('membershipApplyCouponBtn'),
   membershipCouponPreview: document.getElementById('membershipCouponPreview'),
@@ -329,6 +339,7 @@ function attachEvents() {
     state.adminDiscountPhones = [];
     state.adminUsers = [];
     state.adminCoupons = [];
+    state.adminSelectedUserId = null;
     state.adminResolvedCustomer = null;
     state.adminCustomerForm = { name: '', email: '', phone: '' };
     state.postLoginChoice = '';
@@ -380,6 +391,7 @@ function attachEvents() {
     if (elements.dialog.open) elements.dialog.close();
     if (elements.profileDialog.open) elements.profileDialog.close();
     if (elements.membershipDialog?.open) elements.membershipDialog.close();
+    if (elements.adminUserSessionDialog?.open) elements.adminUserSessionDialog.close();
     renderAuthMode();
     render();
   });
@@ -533,6 +545,7 @@ function attachEvents() {
   });
   elements.closeProfileDialogBtn.addEventListener('click', closeProfileDialog);
   elements.cancelProfileBtn.addEventListener('click', closeProfileDialog);
+  elements.adminUserSessionCloseBtn?.addEventListener('click', closeAdminUserSessionDialog);
   elements.profileForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const submitBtn = elements.profileForm.querySelector('button[type="submit"]');
@@ -1301,6 +1314,21 @@ function closeProfileDialog() {
   clearProfilePreviewObjectUrl();
   elements.profileDialog.close();
   renderProfileAvatar();
+}
+
+function openAdminUserSessionDialog(userId) {
+  if (!elements.adminUserSessionDialog) return;
+  state.adminSelectedUserId = userId == null ? null : String(userId);
+  renderAdminUserSessionDialog();
+  if (elements.adminUserSessionDialog.open) {
+    elements.adminUserSessionDialog.close();
+  }
+  elements.adminUserSessionDialog.showModal();
+}
+
+function closeAdminUserSessionDialog() {
+  if (!elements.adminUserSessionDialog) return;
+  elements.adminUserSessionDialog.close();
 }
 
 async function saveProfile() {
@@ -2195,7 +2223,9 @@ function render() {
   renderCartCouponPreview();
 
   if (isAdmin) {
+    renderAdminUserCards();
     renderAdminRows(filtered);
+    renderAdminUserSessionDialog();
     renderAdminMembershipOrders();
     renderAdminDiscountPhones();
     renderAdminDiscountUsers();
@@ -3212,8 +3242,7 @@ function renderMembership() {
     elements.membershipDashboardStatus.textContent = active
       ? `${activePlanName}${effectiveExpiry ? ` • valid till ${effectiveExpiry.toLocaleDateString()}` : ''}`
       : 'Activate a membership to unlock member pricing and benefits.';
-  }
-
+  }
   if (elements.membershipStatSessions) {
     const sessions = Number(activePlan?.h2SessionsIncluded || current.h2SessionsIncluded || 0);
     elements.membershipStatSessions.textContent = Number.isFinite(sessions) ? String(sessions) : '0';
@@ -3766,6 +3795,206 @@ function renderStats(bookings) {
   elements.confirmedCount.textContent = String(confirmed);
   elements.pendingCount.textContent = String(pending);
   elements.cancelledCount.textContent = String(cancelled);
+}
+
+function getAdminUserBookings(userId) {
+  const normalizedId = String(userId || '');
+  return (Array.isArray(state.bookings) ? state.bookings : [])
+    .filter((booking) => String(booking?.userId || '') === normalizedId)
+    .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
+}
+
+function getBookingStartTime(booking) {
+  const bookingDate = String(booking?.bookingDate || '').trim();
+  const bookingTime = String(booking?.bookingTime || '').trim();
+  if (!bookingDate || !bookingTime) return Number.NaN;
+  const timestamp = new Date(`${bookingDate}T${bookingTime}:00`).getTime();
+  return Number.isFinite(timestamp) ? timestamp : Number.NaN;
+}
+
+function isBookingMissed(booking) {
+  const status = String(booking?.status || '').trim().toLowerCase();
+  if (status === 'missed') return true;
+  if (status === 'completed' || status === 'cancelled') return false;
+  const bookingStart = getBookingStartTime(booking);
+  return Number.isFinite(bookingStart) && bookingStart < Date.now();
+}
+
+function buildAdminUserSessionSummary(user) {
+  const bookings = getAdminUserBookings(user?.id);
+  const activeBookings = bookings.filter((booking) => String(booking?.status || '').toLowerCase() !== 'cancelled');
+  const completed = activeBookings.filter((booking) => String(booking?.status || '').toLowerCase() === 'completed').length;
+  const missed = activeBookings.filter(isBookingMissed).length;
+  const remaining = activeBookings.filter((booking) => {
+    const status = String(booking?.status || '').toLowerCase();
+    return status !== 'completed' && !isBookingMissed(booking);
+  }).length;
+
+  return {
+    bookings,
+    total: activeBookings.length,
+    completed,
+    remaining,
+    missed,
+  };
+}
+
+function getMembershipPlanSessionAllowance(user) {
+  const planId = String(user?.membershipPlan || '').trim();
+  const peopleCount = Math.max(1, Number(user?.membershipPeopleCount || 1));
+  const planSessionsById = {
+    h2_single: 16,
+    h2_two: 32,
+    h2_four: 64,
+    h2_add_person: 16,
+  };
+  const totalSessions = Number(planSessionsById[planId] || 0);
+  if (!totalSessions) {
+    return {
+      planLabel: 'No active plan',
+      totalSessions: 0,
+      perUserSessions: 0,
+    };
+  }
+  return {
+    planLabel: getMembershipPlanDisplayName(planId),
+    totalSessions,
+    perUserSessions: Math.floor(totalSessions / peopleCount),
+  };
+}
+
+function renderAdminUserCards() {
+  if (!elements.adminUserCards || !elements.adminUserCardsEmpty) return;
+
+  const users = Array.isArray(state.adminUsers) ? state.adminUsers : [];
+  elements.adminUserCards.innerHTML = '';
+
+  if (!users.length) {
+    elements.adminUserCardsEmpty.hidden = false;
+    return;
+  }
+
+  elements.adminUserCardsEmpty.hidden = true;
+  users.forEach((user) => {
+    const summary = buildAdminUserSessionSummary(user);
+    const membership = getMembershipPlanSessionAllowance(user);
+    const completionPercent = summary.total > 0 ? Math.round((summary.completed / summary.total) * 100) : 0;
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'admin-user-card';
+    card.innerHTML = `
+      <div class="admin-user-card-top">
+        <span class="admin-user-card-avatar">${escapeHtml(getInitials(user?.name || 'User'))}</span>
+        <span class="admin-user-card-tag">User #${escapeHtml(String(user?.id || '-'))}</span>
+      </div>
+      <div class="admin-user-card-main">
+        <div class="admin-user-card-body">
+          <h3>${escapeHtml(user?.name || 'Unnamed User')}</h3>
+          <p>${escapeHtml(user?.email || user?.mobile || 'No contact info')}</p>
+          <p class="admin-user-plan-copy">${escapeHtml(
+            membership.totalSessions
+              ? `${membership.planLabel} ? ${membership.perUserSessions} sessions per user`
+              : membership.planLabel
+          )}</p>
+        </div>
+        <div class="admin-user-donut-wrap">
+          <div class="admin-user-donut" style="--donut-angle:${completionPercent}%;"><span>${escapeHtml(
+            String(summary.completed)
+          )}/${escapeHtml(String(summary.total))}</span></div>
+          <small>Completed</small>
+        </div>
+      </div>
+      <div class="admin-user-card-footer">
+        <span><strong>${summary.total}</strong> total sessions</span>
+        <span><strong>${summary.completed}</strong> completed</span>
+      </div>
+    `;
+    card.addEventListener('click', () => {
+      openAdminUserSessionDialog(user.id);
+    });
+    elements.adminUserCards.appendChild(card);
+  });
+}
+
+function renderAdminUserSessionDialog() {
+  if (
+    !elements.adminUserSessionTitle ||
+    !elements.adminUserSessionMeta ||
+    !elements.adminUserSessionKpis ||
+    !elements.adminUserSessionList ||
+    !elements.adminUserSessionListEmpty
+  ) {
+    return;
+  }
+
+  const selectedUser = (Array.isArray(state.adminUsers) ? state.adminUsers : []).find(
+    (user) => String(user?.id || '') === String(state.adminSelectedUserId || '')
+  );
+
+  if (!selectedUser) {
+    elements.adminUserSessionTitle.textContent = 'User Sessions';
+    elements.adminUserSessionMeta.textContent = '';
+    elements.adminUserSessionKpis.innerHTML = '';
+    elements.adminUserSessionList.innerHTML = '';
+    elements.adminUserSessionListEmpty.hidden = false;
+    return;
+  }
+
+  const summary = buildAdminUserSessionSummary(selectedUser);
+  elements.adminUserSessionTitle.textContent = selectedUser.name || 'User Sessions';
+  elements.adminUserSessionMeta.textContent = [selectedUser.email, selectedUser.mobile ? `ID ${selectedUser.id} • ${selectedUser.mobile}` : `ID ${selectedUser.id}`]
+    .filter(Boolean)
+    .join(' • ');
+
+  const kpis = [
+    { title: 'Total Sessions', value: summary.total, tone: 'total' },
+    { title: 'Completed Sessions', value: summary.completed, tone: 'completed' },
+    { title: 'Remaining Sessions', value: summary.remaining, tone: 'remaining' },
+    { title: 'Missed Sessions', value: summary.missed, tone: 'missed' },
+  ];
+
+  elements.adminUserSessionKpis.innerHTML = '';
+  kpis.forEach((metric) => {
+    const card = document.createElement('article');
+    card.className = `admin-user-kpi-card tone-${metric.tone}`;
+    card.innerHTML = `
+      <span>${escapeHtml(metric.title)}</span>
+      <strong>${escapeHtml(String(metric.value))}</strong>
+    `;
+    elements.adminUserSessionKpis.appendChild(card);
+  });
+
+  elements.adminUserSessionList.innerHTML = '';
+  if (!summary.bookings.length) {
+    elements.adminUserSessionListEmpty.hidden = false;
+    return;
+  }
+
+  elements.adminUserSessionListEmpty.hidden = true;
+  [...summary.bookings]
+    .sort((a, b) => `${b.bookingDate}T${b.bookingTime}`.localeCompare(`${a.bookingDate}T${a.bookingTime}`))
+    .forEach((booking) => {
+      const status = String(booking?.status || '').toLowerCase();
+      const derivedStatus =
+        isBookingMissed(booking) && !['completed', 'cancelled', 'missed'].includes(status)
+          ? 'missed'
+          : status || 'pending';
+      const row = document.createElement('article');
+      row.className = 'admin-user-session-row';
+      row.innerHTML = `
+        <div>
+          <h4>${escapeHtml(booking?.serviceName || 'Session')}</h4>
+          <p>${escapeHtml(formatAdminBookingDateTime(booking?.bookingDate, booking?.bookingTime).replace(/\n/g, ' • '))}</p>
+        </div>
+        <div class="admin-user-session-badges">
+          <span class="status-chip status-${escapeHtml(derivedStatus)}">${escapeHtml(derivedStatus)}</span>
+          <span class="status-chip payment-${escapeHtml(String(booking?.paymentStatus || 'unpaid').toLowerCase())}">${escapeHtml(
+            String(booking?.paymentStatus || 'unpaid')
+          )}</span>
+        </div>
+      `;
+      elements.adminUserSessionList.appendChild(row);
+    });
 }
 
 function renderUserRows(bookings) {
@@ -5174,3 +5403,4 @@ function escapeHtml(value) {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 }
+

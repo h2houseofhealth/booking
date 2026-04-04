@@ -4311,6 +4311,7 @@ app.get(/.*/, (_req, res) => {
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server listening on port ${PORT}`);
+  console.log(`Open: http://localhost:${PORT}`);
   if (SENDGRID_API_KEY && SENDGRID_FROM_EMAIL) {
     console.log(`SendGrid OTP mailer configured with sender ${SENDGRID_FROM_EMAIL}`);
   } else {

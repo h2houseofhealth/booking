@@ -313,6 +313,15 @@
 
       <section class="panel app-only admin-only" aria-label="Admin bookings" hidden>
         <div class="panel-head">
+          <h2>User Sessions</h2>
+        </div>
+        <p class="membership-copy">Click any user card to review their session totals and recent session history.</p>
+        <div id="adminUserCards" class="admin-user-grid"></div>
+        <p id="adminUserCardsEmpty" class="empty-state" hidden>No users found.</p>
+      </section>
+
+      <section class="panel app-only admin-only" aria-label="Admin bookings" hidden>
+        <div class="panel-head">
           <h2>All User Bookings</h2>
         </div>
         <div class="table-wrap">
@@ -528,6 +537,26 @@
         </div>
         <p id="profileFormMessage" class="form-message" aria-live="polite"></p>
       </form>
+    </dialog>
+
+    <dialog id="adminUserSessionDialog" class="profile-dialog">
+      <div class="admin-user-dialog">
+        <div class="dialog-head">
+          <div>
+            <h2 id="adminUserSessionTitle">User Sessions</h2>
+            <p id="adminUserSessionMeta" class="membership-copy"></p>
+          </div>
+          <button id="adminUserSessionCloseBtn" class="icon-btn" type="button" aria-label="Close">×</button>
+        </div>
+        <div id="adminUserSessionKpis" class="admin-user-kpi-grid"></div>
+        <div class="admin-user-session-list-wrap">
+          <div class="panel-head admin-user-session-list-head">
+            <h3>Session History</h3>
+          </div>
+          <div id="adminUserSessionList" class="admin-user-session-list"></div>
+          <p id="adminUserSessionListEmpty" class="empty-state" hidden>No sessions found for this user.</p>
+        </div>
+      </div>
     </dialog>
 
     <dialog id="membershipDialog" class="booking-dialog">

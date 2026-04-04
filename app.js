@@ -56,6 +56,7 @@ const state = {
   adminBookingNotesByBooking: {},
   adminBookingNotesLoading: false,
   adminBookingNoteEdits: {},
+  forceExperienceBooking: false,
   filters: {
     search: '',
     status: 'all',
@@ -255,6 +256,7 @@ const elements = {
   bookingDate: document.getElementById('bookingDate'),
   bookingTime: document.getElementById('bookingTime'),
   bookingNotes: document.getElementById('bookingNotes'),
+  experienceBookBtn: document.getElementById('experienceBookBtn'),
 };
 
 let isRegisterMode = false;
@@ -649,6 +651,20 @@ function attachEvents() {
   });
 
   elements.openBookingBtn?.addEventListener('click', () => openDialog());
+  elements.experienceBookBtn?.addEventListener('click', () => {
+    state.forceExperienceBooking = true;
+    openDialog();
+  });
+  elements.experienceBookBtn?.addEventListener('click', () => {
+    openDialog();
+    const experienceService =
+      state.services.find((service) => String(service.name || '').trim().toLowerCase() === 'experience session') ||
+      state.services.find((service) => String(service.name || '').trim().toLowerCase().includes('experience')) ||
+      null;
+    if (experienceService && elements.serviceName) {
+      elements.serviceName.value = experienceService.name;
+    }
+  });
   elements.bookingForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     await upsertBooking();
@@ -1207,6 +1223,11 @@ function populateTimeSlots() {
 function populateServiceOptions(selectedService = '') {
   elements.serviceName.innerHTML = '';
   for (const service of state.services) {
+    const category = String(service.category || '').toUpperCase();
+    const isExperience = category === 'EXPERIENCE SESSION' || String(service.name || '').toLowerCase().includes('experience');
+    if (isExperience && !state.forceExperienceBooking && selectedService !== service.name) {
+      continue;
+    }
     const option = document.createElement('option');
     option.value = service.name;
     const isIncluded = Boolean(service.membershipOnly) && isCurrentUserMembershipActive();
@@ -1308,11 +1329,38 @@ function openDialog(booking = null) {
     elements.bookingTime.value = SLOT_OPTIONS[0].value;
   }
 
+  if (!booking && state.forceExperienceBooking) {
+    const experienceService =
+      state.services.find((service) => String(service.name || '').trim().toLowerCase() === 'experience session') ||
+      state.services.find((service) => String(service.name || '').trim().toLowerCase().includes('experience')) ||
+      null;
+    if (experienceService && elements.serviceName) {
+      elements.serviceName.value = experienceService.name;
+      elements.serviceName.disabled = true;
+    }
+    const experienceLabel = document.getElementById('experienceServiceLabel');
+    if (experienceLabel) {
+      experienceLabel.hidden = false;
+    }
+    if (elements.serviceName) {
+      elements.serviceName.hidden = true;
+    }
+  }
+
   elements.dialog.showModal();
 }
 
 function closeDialog() {
   elements.dialog.close();
+  state.forceExperienceBooking = false;
+  const experienceLabel = document.getElementById('experienceServiceLabel');
+  if (experienceLabel) {
+    experienceLabel.hidden = true;
+  }
+  if (elements.serviceName) {
+    elements.serviceName.hidden = false;
+    elements.serviceName.disabled = false;
+  }
 }
 
 function openProfileDialog() {
@@ -2357,6 +2405,12 @@ function renderProfileMembershipBadge() {
 function renderServices() {
   if (!elements.serviceGrid) return;
 
+  const experienceCard = document.getElementById('experienceCard');
+  if (experienceCard) {
+    const isMember = isCurrentUserMembershipActive();
+    experienceCard.hidden = isMember;
+  }
+
   elements.serviceGrid.innerHTML = '';
   if (!state.services.length) {
     elements.serviceEmpty.hidden = false;
@@ -2508,8 +2562,12 @@ function renderServices() {
 
     const sidebar = document.createElement('aside');
     sidebar.className = 'hydrogen-sidebar';
+    const consultationBenefit = isCurrentUserMembershipActive()
+      ? '<div class="hydrogen-benefit-tag">Free Consultation Session</div>'
+      : '';
     sidebar.innerHTML = `
       <h4 class="hydrogen-sidebar-title">Hydrogen Therapy</h4>
+      ${consultationBenefit}
       <div class="hydrogen-plan-controls">
         <label>
           Session Package
@@ -2624,6 +2682,15 @@ function renderServices() {
         <h3>${escapeHtml(selectedService.name)}</h3>
       </div>
     `;
+    if (String(selectedService.name || '') === 'H2 Single Session' && isCurrentUserMembershipActive()) {
+      const initiationBlock = document.createElement('div');
+      initiationBlock.className = 'service-info-block';
+      initiationBlock.innerHTML = `
+        <strong>Initiation Session (1 hr)</strong>
+        <span>Full doctor consultation + diagnostic &amp; genetic testing</span>
+      `;
+      card.appendChild(initiationBlock);
+    }
 
     const addOnPanel = document.createElement('div');
     addOnPanel.className = 'hydrogen-addon-panel';
@@ -2872,6 +2939,15 @@ function renderServices() {
         ${isMembershipOnly && !hasMemberAccess ? '<p class="service-price-meta">Booking is only available for active members.</p>' : ''}
       </div>
     `;
+    if (String(selectedService.name || '') === 'H2 Single Session') {
+      const initiationBlock = document.createElement('div');
+      initiationBlock.className = 'service-info-block';
+      initiationBlock.innerHTML = `
+        <strong>Initiation Session (1 hr)</strong>
+        <span>Full doctor consultation + diagnostic &amp; genetic testing</span>
+      `;
+      card.appendChild(initiationBlock);
+    }
 
     const editor = document.createElement('div');
     editor.className = 'hydrogen-session-editor';
@@ -3250,17 +3326,21 @@ function renderMembership() {
   }
 
   if (elements.membershipDashboard) {
-    elements.membershipDashboard.hidden = false;
+    elements.membershipDashboard.hidden = !active;
   }
 
-  const firstName = String(state.user?.name || 'Member').trim().split(/\s+/)[0] || 'Member';
-  if (elements.membershipWelcomeName) {
-    elements.membershipWelcomeName.textContent = `Welcome, ${firstName}`;
-  }
-  if (elements.membershipDashboardStatus) {
-    elements.membershipDashboardStatus.textContent = active
-      ? `${activePlanName}${effectiveExpiry ? ` • valid till ${effectiveExpiry.toLocaleDateString()}` : ''}`
-      : 'Activate a membership to unlock member pricing and benefits.';
+  if (active) {
+    const firstName = String(state.user?.name || 'Member').trim().split(/\s+/)[0] || 'Member';
+    if (elements.membershipWelcomeName) {
+      elements.membershipWelcomeName.textContent = `Welcome, ${firstName}`;
+    }
+    if (elements.membershipDashboardStatus) {
+      elements.membershipDashboardStatus.textContent = `${activePlanName}${
+        effectiveExpiry ? ` • valid till ${effectiveExpiry.toLocaleDateString()}` : ''
+      }`;
+    }
+  } else if (elements.membershipDashboardStatus) {
+    elements.membershipDashboardStatus.textContent = '';
   }
 
   if (elements.membershipStatSessions) {

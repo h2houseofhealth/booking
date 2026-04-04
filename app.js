@@ -57,6 +57,7 @@ const state = {
   adminBookingNotesLoading: false,
   adminBookingNoteEdits: {},
   forceExperienceBooking: false,
+  membershipCalendarSelectedDate: '',
   filters: {
     search: '',
     status: 'all',
@@ -159,6 +160,9 @@ const elements = {
   membershipUsageLabel: document.getElementById('membershipUsageLabel'),
   membershipUsageBar: document.getElementById('membershipUsageBar'),
   membershipUsageNote: document.getElementById('membershipUsageNote'),
+  membershipCalendarMonth: document.getElementById('membershipCalendarMonth'),
+  membershipCalendarGrid: document.getElementById('membershipCalendarGrid'),
+  membershipCalendarDetails: document.getElementById('membershipCalendarDetails'),
   membershipNextSessionTitle: document.getElementById('membershipNextSessionTitle'),
   membershipNextSessionMeta: document.getElementById('membershipNextSessionMeta'),
   membershipQuickBookBtn: document.getElementById('membershipQuickBookBtn'),
@@ -2373,7 +2377,7 @@ function isCurrentUserMembershipActive() {
   const startedAt = state.user?.membershipStartedAt ? new Date(state.user.membershipStartedAt).getTime() : NaN;
   const storedExpiresAt = state.user?.membershipExpiresAt ? new Date(state.user.membershipExpiresAt).getTime() : NaN;
   const expiresAt = Number.isFinite(startedAt)
-    ? startedAt + 90 * 24 * 60 * 60 * 1000
+    ? startedAt + 365 * 24 * 60 * 60 * 1000
     : storedExpiresAt;
   return Number.isFinite(expiresAt) && expiresAt > Date.now();
 }
@@ -2381,7 +2385,7 @@ function isCurrentUserMembershipActive() {
 function getEffectiveMembershipExpiryDate(startedAtValue, expiresAtValue) {
   const startedAt = startedAtValue ? new Date(startedAtValue).getTime() : NaN;
   if (Number.isFinite(startedAt)) {
-    return new Date(startedAt + 90 * 24 * 60 * 60 * 1000);
+    return new Date(startedAt + 365 * 24 * 60 * 60 * 1000);
   }
   const expiresAt = expiresAtValue ? new Date(expiresAtValue) : null;
   return expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : null;
@@ -3293,6 +3297,118 @@ function getMaxBookingIsoDate() {
   return `${year}-${month}-${day}`;
 }
 
+function getCalendarMonthLabel(date) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+}
+
+function getCalendarDateKey(year, monthIndex, day) {
+  const month = String(monthIndex + 1).padStart(2, '0');
+  const dayValue = String(day).padStart(2, '0');
+  return `${year}-${month}-${dayValue}`;
+}
+
+function buildBookingsByDate(bookings, year, monthIndex) {
+  const map = new Map();
+  const monthKey = `${year}-${String(monthIndex + 1).padStart(2, '0')}-`;
+  for (const booking of bookings) {
+    const rawDate = String(booking?.bookingDate || '').trim();
+    if (!rawDate.startsWith(monthKey)) continue;
+    const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) continue;
+    if (!map.has(rawDate)) map.set(rawDate, []);
+    map.get(rawDate).push(booking);
+  }
+  return map;
+}
+
+function renderMembershipCalendarDetails(dateKey, bookings) {
+  if (!elements.membershipCalendarDetails) return;
+  if (!dateKey) {
+    elements.membershipCalendarDetails.textContent = 'Select a date to view sessions.';
+    return;
+  }
+  const label = formatBookingDateLabel(dateKey);
+  if (!bookings.length) {
+    elements.membershipCalendarDetails.innerHTML = `
+      <div>${escapeHtml(label)}</div>
+      <span>No sessions booked.</span>
+    `;
+    return;
+  }
+  const limited = bookings.slice(0, 3);
+  const lines = limited
+    .map(
+      (booking) => `
+        <div class="membership-calendar-detail-item">
+          <strong>${escapeHtml(booking.serviceName || 'Session')}</strong>
+          <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))}</span>
+        </div>
+      `
+    )
+    .join('');
+  const moreCount = bookings.length - limited.length;
+  const moreLine = moreCount > 0 ? `<span>+${moreCount} more</span>` : '';
+  elements.membershipCalendarDetails.innerHTML = `
+    <div>${escapeHtml(label)}</div>
+    ${lines}
+    ${moreLine}
+  `;
+}
+
+function renderMembershipCalendar(bookings) {
+  if (!elements.membershipCalendarGrid || !elements.membershipCalendarMonth) return;
+  const today = new Date();
+  const year = today.getFullYear();
+  const monthIndex = today.getMonth();
+  elements.membershipCalendarMonth.textContent = getCalendarMonthLabel(today);
+
+  const firstOfMonth = new Date(year, monthIndex, 1);
+  const startDay = firstOfMonth.getDay();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const bookedByDate = buildBookingsByDate(bookings, year, monthIndex);
+  const bookedDates = Array.from(bookedByDate.keys()).sort();
+  const todayKey = getCalendarDateKey(year, monthIndex, today.getDate());
+  if (!state.membershipCalendarSelectedDate || !state.membershipCalendarSelectedDate.startsWith(`${year}-`)) {
+    state.membershipCalendarSelectedDate = bookedDates[0] || todayKey;
+  }
+  if (!state.membershipCalendarSelectedDate.startsWith(`${year}-${String(monthIndex + 1).padStart(2, '0')}-`)) {
+    state.membershipCalendarSelectedDate = bookedDates[0] || todayKey;
+  }
+
+  elements.membershipCalendarGrid.innerHTML = '';
+  const totalCells = 42;
+  for (let index = 0; index < totalCells; index += 1) {
+    const dayNumber = index - startDay + 1;
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'membership-calendar-day';
+    if (dayNumber < 1 || dayNumber > daysInMonth) {
+      cell.classList.add('is-outside');
+      cell.disabled = true;
+      cell.textContent = '';
+    } else {
+      const dateKey = getCalendarDateKey(year, monthIndex, dayNumber);
+      cell.textContent = String(dayNumber);
+      if (dateKey === todayKey) cell.classList.add('is-today');
+      if (dateKey === state.membershipCalendarSelectedDate) cell.classList.add('is-selected');
+      if (bookedByDate.has(dateKey)) cell.classList.add('is-booked');
+      cell.addEventListener('click', () => {
+        state.membershipCalendarSelectedDate = dateKey;
+        renderMembershipCalendar(bookings);
+      });
+    }
+    elements.membershipCalendarGrid.appendChild(cell);
+  }
+
+  renderMembershipCalendarDetails(
+    state.membershipCalendarSelectedDate,
+    bookedByDate.get(state.membershipCalendarSelectedDate) || []
+  );
+}
+
 function renderMembership() {
   if (!elements.membershipPlans || !elements.membershipStatusText) return;
   if (state.user?.role !== 'user') return;
@@ -3390,6 +3506,9 @@ function renderMembership() {
       ? formatDateTime(upcoming.bookingDate, upcoming.bookingTime)
       : 'Book your next session to keep momentum.';
   }
+  if (active) {
+    renderMembershipCalendar((state.bookings || []).filter((booking) => String(booking.status || '').toLowerCase() !== 'cancelled'));
+  }
 
   const orderedPlanIds = ['h2_single', 'h2_two', 'h2_four'];
   const plans = orderedPlanIds
@@ -3433,7 +3552,7 @@ function renderMembership() {
       </div>
       <div class="membership-card-price-block">
         <p class="membership-price">Rs. ${estimatedAmountInr.toLocaleString('en-IN')}</p>
-        <p class="membership-price-caption">3-month access • ${escapeHtml(plan.validityDays)} days</p>
+        <p class="membership-price-caption">1-year access • ${escapeHtml(plan.validityDays)} days</p>
       </div>
       <div class="membership-card-metrics">
         <div class="membership-card-metric">

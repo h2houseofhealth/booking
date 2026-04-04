@@ -116,6 +116,13 @@ const SERVICE_CATALOG = [
       'Long-cycle intensive plan built for deep and sustained wellness transformation. Non-member pricing: Rs. 1,50,000.',
   },
   {
+    category: 'EXPERIENCE SESSION',
+    name: 'Experience Session',
+    priceInr: 4000,
+    includes: '30 min hydrogen therapy + consultation.',
+    description: 'Experience Session (Demo) for non-members.',
+  },
+  {
     category: 'MEMBERSHIP SERVICES',
     name: 'Lab Tests',
     priceInr: 0,

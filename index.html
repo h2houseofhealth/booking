@@ -238,6 +238,15 @@
         </div>
         <div id="adminClientMeta" class="admin-client-meta admin-only" hidden></div>
         <p id="adminCustomerMessage" class="membership-copy admin-only" hidden></p>
+        <div id="experienceCard" class="experience-card user-only">
+          <div class="experience-card-left">
+            <div class="experience-card-title">Experience Session</div>
+            <div class="experience-card-desc">30 min hydrogen therapy + consultation</div>
+          </div>
+          <div class="experience-card-right">
+            <button id="experienceBookBtn" class="experience-card-btn" type="button">Book</button>
+          </div>
+        </div>
         <div id="serviceGrid" class="doctor-grid"></div>
         <p id="serviceEmpty" class="empty-state" hidden>No services configured.</p>
         <p id="servicePageNote" class="service-page-note user-only">
@@ -470,6 +479,7 @@
           <label>
             Service
             <select id="serviceName" required></select>
+            <div id="experienceServiceLabel" class="experience-service-label" hidden>Hydrogen Therapy</div>
           </label>
           <label>
             Date

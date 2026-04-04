@@ -1040,51 +1040,70 @@ async function loadDashboardData() {
 }
 
 async function loadServiceAvailability() {
-  if (!state.selectedServiceCategory || !state.selectedServiceDate) return;
-  if (state.user?.role === 'admin' && !isAdminCustomerFormReady()) return;
+  if (!state.selectedServiceCategory || !state.selectedServiceDate) {
+    state.slotAvailabilityLoading = false;
+    renderServices();
+    return;
+  }
+  if (state.user?.role === 'admin' && !isAdminCustomerFormReady()) {
+    state.slotAvailabilityLoading = false;
+    renderServices();
+    return;
+  }
   const requestId = ++availabilityRequestId;
   state.slotAvailabilityLoading = true;
   renderServices();
 
-  try {
-    const params = new URLSearchParams({
-      bookingDate: state.selectedServiceDate,
-      category: state.selectedServiceCategory,
-    });
-    if (state.user?.role === 'admin') {
-      params.set('customerEmail', state.adminCustomerForm.email);
-    }
-    const result = await api(`/api/services/availability?${params.toString()}`);
-    if (requestId !== availabilityRequestId) return;
-    state.slotAvailability = result.availability || {};
-    state.slotCapacityByService = result.slotCapacityByService || {};
-    state.slotHoldCounts = result.holds || {};
-    state.bookingHoldMinutes = Number(result.holdMinutes || BOOKING_HOLD_MINUTES) || BOOKING_HOLD_MINUTES;
-    const todayIso = getTodayIsoDate();
-    const hasFutureSlots = SLOT_OPTIONS.some(
-      (slot) => !isBookingSlotInPast(state.selectedServiceDate, slot.value)
-    );
-    if (!hasFutureSlots && state.selectedServiceDate === todayIso) {
-      state.slotAutoShiftedNotice = 'Today has no remaining slots. Showing the next available day.';
-      state.selectedServiceDate = getTomorrowIsoDate();
+  const params = new URLSearchParams({
+    bookingDate: state.selectedServiceDate,
+    category: state.selectedServiceCategory,
+  });
+  if (state.user?.role === 'admin' && isAdminCustomerFormReady()) {
+    params.set('customerEmail', state.adminCustomerForm.email);
+  }
+  const apiBase = API_URL || window.location.origin;
+  const url = `${apiBase}/api/services/availability?${params.toString()}`;
+
+  fetch(url)
+    .then((res) => res.json())
+    .then((data) => {
+      if (requestId !== availabilityRequestId) return;
+      console.log('API DATA:', data);
+
+      // 🔥 THIS IS THE FIX
+      state.slotAvailability = data.slots || data.availability || {};
+      state.slotCapacityByService = data.slotCapacityByService || {};
+      state.slotHoldCounts = data.holds || {};
+      state.bookingHoldMinutes = Number(data.holdMinutes || BOOKING_HOLD_MINUTES) || BOOKING_HOLD_MINUTES;
+
+      const todayIso = getTodayIsoDate();
+      const hasFutureSlots = SLOT_OPTIONS.some(
+        (slot) => !isBookingSlotInPast(state.selectedServiceDate, slot.value)
+      );
+      if (!hasFutureSlots && state.selectedServiceDate === todayIso) {
+        state.slotAutoShiftedNotice = 'Today has no remaining slots. Showing the next available day.';
+        state.selectedServiceDate = getTomorrowIsoDate();
+        state.slotAvailability = {};
+        state.slotCapacityByService = {};
+        state.slotHoldCounts = {};
+        state.slotAvailabilityLoading = true;
+        renderServices();
+        loadServiceAvailability();
+        return;
+      }
+
+      state.slotAvailabilityLoading = false;
+      renderServices();
+    })
+    .catch((err) => {
+      if (requestId !== availabilityRequestId) return;
+      console.error(err);
       state.slotAvailability = {};
       state.slotCapacityByService = {};
       state.slotHoldCounts = {};
-      state.slotAvailabilityLoading = true;
+      state.slotAvailabilityLoading = false;
       renderServices();
-      await loadServiceAvailability();
-      return;
-    }
-  } catch {
-    if (requestId !== availabilityRequestId) return;
-    state.slotAvailability = {};
-    state.slotCapacityByService = {};
-    state.slotHoldCounts = {};
-  } finally {
-    if (requestId !== availabilityRequestId) return;
-    state.slotAvailabilityLoading = false;
-    renderServices();
-  }
+    });
 }
 
 function refreshSelectedCategoryAvailability(bookingDate = '') {

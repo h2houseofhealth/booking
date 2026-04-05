@@ -95,23 +95,47 @@
         </div>
       </section>
 
-      <section class="stats-grid app-only admin-only" aria-label="Booking summary" hidden>
-        <article class="stat-card">
-          <h2>Total</h2>
+      <section class="stats-grid admin-stats-grid app-only admin-only" aria-label="Booking summary" hidden>
+        <button id="adminStatTotal" class="stat-card" type="button">
+          <h2>Total Bookings Today</h2>
           <p id="totalCount">0</p>
-        </article>
-        <article class="stat-card">
-          <h2>Confirmed</h2>
+        </button>
+        <button id="adminStatConfirmed" class="stat-card" type="button">
+          <h2>Confirmed Bookings Today</h2>
           <p id="confirmedCount">0</p>
-        </article>
-        <article class="stat-card">
-          <h2>Pending</h2>
+        </button>
+        <button id="adminStatPending" class="stat-card" type="button">
+          <h2>Pending Bookings Today</h2>
           <p id="pendingCount">0</p>
-        </article>
-        <article class="stat-card">
-          <h2>Cancelled</h2>
+        </button>
+        <button id="adminStatCancelled" class="stat-card" type="button">
+          <h2>Cancelled Bookings Today</h2>
           <p id="cancelledCount">0</p>
-        </article>
+        </button>
+        <button id="adminHistoryCard" class="stat-card" type="button">
+          <h2>History of All Bookings</h2>
+          <p id="historyCount">0</p>
+        </button>
+      </section>
+
+      <section class="panel app-only admin-only admin-services-shortcuts" aria-label="Service shortcuts" hidden>
+        <div class="panel-head">
+          <h2>Services</h2>
+        </div>
+        <div class="admin-service-shortcuts-grid">
+          <button id="adminShortcutHydrogen" class="admin-service-shortcut-btn" type="button" data-service="HYDROGEN SESSION">
+            <strong>Hydrogen Session</strong>
+            <span class="shortcut-toggle">6 options</span>
+          </button>
+          <button id="adminShortcutIvTherapy" class="admin-service-shortcut-btn" type="button" data-service="IV THERAPIES">
+            <strong>IV Therapies</strong>
+            <span class="shortcut-toggle">7 options</span>
+          </button>
+          <button id="adminShortcutIvShots" class="admin-service-shortcut-btn" type="button" data-service="IV SHOTS">
+            <strong>IV Shots</strong>
+            <span class="shortcut-toggle">8 options</span>
+          </button>
+        </div>
       </section>
 
       <section id="userTabNav" class="panel app-only user-only user-tab-nav" aria-label="User navigation" hidden>
@@ -337,18 +361,24 @@
         </div>
       </section>
 
-      <section class="panel app-only admin-only" aria-label="Admin bookings" hidden>
+      <section class="panel app-only admin-only admin-user-session-panel" aria-label="Admin bookings" hidden>
         <div class="panel-head">
           <h2>User Sessions</h2>
         </div>
-        <p class="membership-copy">Click any user card to review their session totals and recent session history.</p>
+        <div class="admin-section-toolbar">
+          <p class="membership-copy">Search any user and open their session details from the cards below.</p>
+          <label class="admin-inline-search">
+            <span>Search</span>
+            <input id="adminSessionSearch" type="text" placeholder="Search users with id, name, email, phone number" />
+          </label>
+        </div>
         <div id="adminUserCards" class="admin-user-grid"></div>
         <p id="adminUserCardsEmpty" class="empty-state" hidden>No users found.</p>
       </section>
 
-      <section class="panel app-only admin-only" aria-label="Admin bookings" hidden>
+      <section id="adminHistorySection" class="panel app-only admin-only" aria-label="Admin bookings">
         <div class="panel-head">
-          <h2>All User Bookings</h2>
+          <h2 id="adminTableTitle">Today's Bookings</h2>
         </div>
         <div class="table-wrap">
           <table>
@@ -367,16 +397,23 @@
           </table>
           <p id="adminEmptyState" class="empty-state">No bookings found.</p>
         </div>
+        <div id="adminHistoryToggleBtnWrap" style="text-align: center; margin-top: 1rem;">
+          <button id="adminHistoryToggleBtn" class="btn btn-secondary" type="button" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">Hide History</button>
+        </div>
       </section>
 
-      <section class="panel app-only admin-only" aria-label="Membership purchases" hidden>
+      <section class="panel app-only admin-only admin-membership-panel" aria-label="Membership purchases" hidden>
         <div class="panel-head">
           <h2>Paid Memberships</h2>
         </div>
-        <p class="membership-copy">
-          Only paid memberships and their covered person details are listed here.
-        </p>
-        <div id="adminMembershipOrdersList" class="admin-membership-list"></div>
+        <div class="admin-section-toolbar">
+          <p class="membership-copy">Click any member card to view full details, invoices, and covered members.</p>
+          <label class="admin-inline-search">
+            <span>Search</span>
+            <input id="adminMembershipSearch" type="text" placeholder="Search users with id, username, email, phone number" />
+          </label>
+        </div>
+        <div id="adminMembershipOrdersList" class="admin-membership-circles"></div>
         <p id="adminMembershipEmptyState" class="empty-state">No paid memberships found.</p>
       </section>
 
@@ -592,21 +629,10 @@
           <h2 id="membershipDialogTitle">Membership Details</h2>
           <button id="closeMembershipDialogBtn" class="icon-btn" type="button" aria-label="Close">×</button>
         </div>
-        <p id="membershipPlanSummary" class="membership-checkout-summary"></p>
-        <div class="coupon-entry">
-          <label>
-            Coupon Code
-            <div class="coupon-entry-row">
-              <input id="membershipCouponCode" type="text" placeholder="Enter coupon code" />
-              <button id="membershipApplyCouponBtn" class="btn btn-secondary" type="button">Apply</button>
-            </div>
-          </label>
-          <div id="membershipCouponPreview" class="coupon-preview" hidden></div>
-        </div>
-        <div id="membershipMembersGrid" class="membership-members-grid"></div>
+        <div class="membership-dialog-content"></div>
+        <div class="membership-dialog-actions"></div>
         <div class="dialog-actions">
-          <button class="btn btn-secondary" type="button" id="cancelMembershipBtn">Cancel</button>
-          <button class="btn btn-primary" type="submit">Continue to Payment</button>
+          <button class="btn btn-secondary" type="button" id="cancelMembershipBtn">Close</button>
         </div>
       </form>
     </dialog>

@@ -4243,6 +4243,9 @@ function renderUserRows(bookings) {
 
     const canEdit = !['completed', 'cancelled'].includes(String(row.status || '').toLowerCase());
     const canCancel = row.status !== 'cancelled';
+    if ((row.paymentStatus || 'unpaid') === 'paid') {
+      actions.append(createActionButton('Invoice', () => openBookingInvoice(row.booking?.id || row.id)));
+    }
     if (canEdit) {
       actions.append(
         createActionButton(row.isGroupedHydrogen ? 'Edit Package' : 'Edit', () => {
@@ -4496,6 +4499,9 @@ function renderAdminRows(bookings) {
     if ((booking.paymentStatus || 'unpaid') !== 'paid' && booking.status !== 'cancelled') {
       actions.append(createActionButton('Copy Payment Link', () => copyBookingPaymentLink(booking.id)));
     }
+    if ((booking.paymentStatus || 'unpaid') === 'paid') {
+      actions.append(createActionButton('Invoice', () => openBookingInvoice(booking.id)));
+    }
 
     actions.append(
       createActionButton('Confirm', () => changeStatus(booking.id, 'confirmed')),
@@ -4560,6 +4566,11 @@ function renderAdminMembershipOrders() {
         <h4>Covered Person Details</h4>
       </div>
     `;
+
+    const cardActions = document.createElement('div');
+    cardActions.className = 'action-row';
+    cardActions.append(createActionButton('Invoice', () => openMembershipInvoice(order.orderId)));
+    card.appendChild(cardActions);
 
     const membersWrap = card.querySelector('.admin-membership-members');
     if (!memberDetails.length) {
@@ -5500,6 +5511,34 @@ function copyTextToClipboard(value) {
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(text).catch(() => {});
   }
+}
+
+function openPortalDocument(url) {
+  const targetUrl = url.startsWith('http') ? url : `${API_URL}${url}`;
+  const popup = window.open(targetUrl, '_blank', 'noopener');
+  if (!popup) {
+    window.location.href = targetUrl;
+  }
+}
+
+async function openBookingInvoice(bookingId) {
+  const id = Number(bookingId);
+  if (!Number.isInteger(id)) return;
+  const result = await api(`/api/bookings/${encodeURIComponent(id)}/invoice-link`);
+  if (!result?.invoiceUrl) {
+    throw new Error('Invoice link could not be generated. Please refresh the page and try again.');
+  }
+  openPortalDocument(result.invoiceUrl);
+}
+
+async function openMembershipInvoice(orderId) {
+  const normalizedOrderId = String(orderId || '').trim();
+  if (!normalizedOrderId) return;
+  const result = await api(`/api/membership-orders/${encodeURIComponent(normalizedOrderId)}/invoice-link`);
+  if (!result?.invoiceUrl) {
+    throw new Error('Invoice link could not be generated. Please refresh the page and try again.');
+  }
+  openPortalDocument(result.invoiceUrl);
 }
 
 function getMembershipPlanDisplayName(planId) {

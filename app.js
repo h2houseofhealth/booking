@@ -56,6 +56,8 @@ const state = {
   adminBookingNotesByBooking: {},
   adminBookingNotesLoading: false,
   adminBookingNoteEdits: {},
+  forceExperienceBooking: false,
+  membershipCalendarSelectedDate: '',
   filters: {
     search: '',
     status: 'all',
@@ -158,6 +160,9 @@ const elements = {
   membershipUsageLabel: document.getElementById('membershipUsageLabel'),
   membershipUsageBar: document.getElementById('membershipUsageBar'),
   membershipUsageNote: document.getElementById('membershipUsageNote'),
+  membershipCalendarMonth: document.getElementById('membershipCalendarMonth'),
+  membershipCalendarGrid: document.getElementById('membershipCalendarGrid'),
+  membershipCalendarDetails: document.getElementById('membershipCalendarDetails'),
   membershipNextSessionTitle: document.getElementById('membershipNextSessionTitle'),
   membershipNextSessionMeta: document.getElementById('membershipNextSessionMeta'),
   membershipQuickBookBtn: document.getElementById('membershipQuickBookBtn'),
@@ -255,6 +260,7 @@ const elements = {
   bookingDate: document.getElementById('bookingDate'),
   bookingTime: document.getElementById('bookingTime'),
   bookingNotes: document.getElementById('bookingNotes'),
+  experienceBookBtn: document.getElementById('experienceBookBtn'),
 };
 
 let isRegisterMode = false;
@@ -649,6 +655,20 @@ function attachEvents() {
   });
 
   elements.openBookingBtn?.addEventListener('click', () => openDialog());
+  elements.experienceBookBtn?.addEventListener('click', () => {
+    state.forceExperienceBooking = true;
+    openDialog();
+  });
+  elements.experienceBookBtn?.addEventListener('click', () => {
+    openDialog();
+    const experienceService =
+      state.services.find((service) => String(service.name || '').trim().toLowerCase() === 'experience session') ||
+      state.services.find((service) => String(service.name || '').trim().toLowerCase().includes('experience')) ||
+      null;
+    if (experienceService && elements.serviceName) {
+      elements.serviceName.value = experienceService.name;
+    }
+  });
   elements.bookingForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     await upsertBooking();
@@ -1053,51 +1073,70 @@ async function loadDashboardData() {
 }
 
 async function loadServiceAvailability() {
-  if (!state.selectedServiceCategory || !state.selectedServiceDate) return;
-  if (state.user?.role === 'admin' && !isAdminCustomerFormReady()) return;
+  if (!state.selectedServiceCategory || !state.selectedServiceDate) {
+    state.slotAvailabilityLoading = false;
+    renderServices();
+    return;
+  }
+  if (state.user?.role === 'admin' && !isAdminCustomerFormReady()) {
+    state.slotAvailabilityLoading = false;
+    renderServices();
+    return;
+  }
   const requestId = ++availabilityRequestId;
   state.slotAvailabilityLoading = true;
   renderServices();
 
-  try {
-    const params = new URLSearchParams({
-      bookingDate: state.selectedServiceDate,
-      category: state.selectedServiceCategory,
-    });
-    if (state.user?.role === 'admin') {
-      params.set('customerEmail', state.adminCustomerForm.email);
-    }
-    const result = await api(`/api/services/availability?${params.toString()}`);
-    if (requestId !== availabilityRequestId) return;
-    state.slotAvailability = result.availability || {};
-    state.slotCapacityByService = result.slotCapacityByService || {};
-    state.slotHoldCounts = result.holds || {};
-    state.bookingHoldMinutes = Number(result.holdMinutes || BOOKING_HOLD_MINUTES) || BOOKING_HOLD_MINUTES;
-    const todayIso = getTodayIsoDate();
-    const hasFutureSlots = SLOT_OPTIONS.some(
-      (slot) => !isBookingSlotInPast(state.selectedServiceDate, slot.value)
-    );
-    if (!hasFutureSlots && state.selectedServiceDate === todayIso) {
-      state.slotAutoShiftedNotice = 'Today has no remaining slots. Showing the next available day.';
-      state.selectedServiceDate = getTomorrowIsoDate();
+  const params = new URLSearchParams({
+    bookingDate: state.selectedServiceDate,
+    category: state.selectedServiceCategory,
+  });
+  if (state.user?.role === 'admin' && isAdminCustomerFormReady()) {
+    params.set('customerEmail', state.adminCustomerForm.email);
+  }
+  const apiBase = API_URL || window.location.origin;
+  const url = `${apiBase}/api/services/availability?${params.toString()}`;
+
+  fetch(url)
+    .then((res) => res.json())
+    .then((data) => {
+      if (requestId !== availabilityRequestId) return;
+      console.log('API DATA:', data);
+
+      // 🔥 THIS IS THE FIX
+      state.slotAvailability = data.slots || data.availability || {};
+      state.slotCapacityByService = data.slotCapacityByService || {};
+      state.slotHoldCounts = data.holds || {};
+      state.bookingHoldMinutes = Number(data.holdMinutes || BOOKING_HOLD_MINUTES) || BOOKING_HOLD_MINUTES;
+
+      const todayIso = getTodayIsoDate();
+      const hasFutureSlots = SLOT_OPTIONS.some(
+        (slot) => !isBookingSlotInPast(state.selectedServiceDate, slot.value)
+      );
+      if (!hasFutureSlots && state.selectedServiceDate === todayIso) {
+        state.slotAutoShiftedNotice = 'Today has no remaining slots. Showing the next available day.';
+        state.selectedServiceDate = getTomorrowIsoDate();
+        state.slotAvailability = {};
+        state.slotCapacityByService = {};
+        state.slotHoldCounts = {};
+        state.slotAvailabilityLoading = true;
+        renderServices();
+        loadServiceAvailability();
+        return;
+      }
+
+      state.slotAvailabilityLoading = false;
+      renderServices();
+    })
+    .catch((err) => {
+      if (requestId !== availabilityRequestId) return;
+      console.error(err);
       state.slotAvailability = {};
       state.slotCapacityByService = {};
       state.slotHoldCounts = {};
-      state.slotAvailabilityLoading = true;
+      state.slotAvailabilityLoading = false;
       renderServices();
-      await loadServiceAvailability();
-      return;
-    }
-  } catch {
-    if (requestId !== availabilityRequestId) return;
-    state.slotAvailability = {};
-    state.slotCapacityByService = {};
-    state.slotHoldCounts = {};
-  } finally {
-    if (requestId !== availabilityRequestId) return;
-    state.slotAvailabilityLoading = false;
-    renderServices();
-  }
+    });
 }
 
 function refreshSelectedCategoryAvailability(bookingDate = '') {
@@ -1188,6 +1227,11 @@ function populateTimeSlots() {
 function populateServiceOptions(selectedService = '') {
   elements.serviceName.innerHTML = '';
   for (const service of state.services) {
+    const category = String(service.category || '').toUpperCase();
+    const isExperience = category === 'EXPERIENCE SESSION' || String(service.name || '').toLowerCase().includes('experience');
+    if (isExperience && !state.forceExperienceBooking && selectedService !== service.name) {
+      continue;
+    }
     const option = document.createElement('option');
     option.value = service.name;
     const isIncluded = Boolean(service.membershipOnly) && isCurrentUserMembershipActive();
@@ -1289,11 +1333,38 @@ function openDialog(booking = null) {
     elements.bookingTime.value = SLOT_OPTIONS[0].value;
   }
 
+  if (!booking && state.forceExperienceBooking) {
+    const experienceService =
+      state.services.find((service) => String(service.name || '').trim().toLowerCase() === 'experience session') ||
+      state.services.find((service) => String(service.name || '').trim().toLowerCase().includes('experience')) ||
+      null;
+    if (experienceService && elements.serviceName) {
+      elements.serviceName.value = experienceService.name;
+      elements.serviceName.disabled = true;
+    }
+    const experienceLabel = document.getElementById('experienceServiceLabel');
+    if (experienceLabel) {
+      experienceLabel.hidden = false;
+    }
+    if (elements.serviceName) {
+      elements.serviceName.hidden = true;
+    }
+  }
+
   elements.dialog.showModal();
 }
 
 function closeDialog() {
   elements.dialog.close();
+  state.forceExperienceBooking = false;
+  const experienceLabel = document.getElementById('experienceServiceLabel');
+  if (experienceLabel) {
+    experienceLabel.hidden = true;
+  }
+  if (elements.serviceName) {
+    elements.serviceName.hidden = false;
+    elements.serviceName.disabled = false;
+  }
 }
 
 function openProfileDialog() {
@@ -2306,7 +2377,7 @@ function isCurrentUserMembershipActive() {
   const startedAt = state.user?.membershipStartedAt ? new Date(state.user.membershipStartedAt).getTime() : NaN;
   const storedExpiresAt = state.user?.membershipExpiresAt ? new Date(state.user.membershipExpiresAt).getTime() : NaN;
   const expiresAt = Number.isFinite(startedAt)
-    ? startedAt + 90 * 24 * 60 * 60 * 1000
+    ? startedAt + 365 * 24 * 60 * 60 * 1000
     : storedExpiresAt;
   return Number.isFinite(expiresAt) && expiresAt > Date.now();
 }
@@ -2314,7 +2385,7 @@ function isCurrentUserMembershipActive() {
 function getEffectiveMembershipExpiryDate(startedAtValue, expiresAtValue) {
   const startedAt = startedAtValue ? new Date(startedAtValue).getTime() : NaN;
   if (Number.isFinite(startedAt)) {
-    return new Date(startedAt + 90 * 24 * 60 * 60 * 1000);
+    return new Date(startedAt + 365 * 24 * 60 * 60 * 1000);
   }
   const expiresAt = expiresAtValue ? new Date(expiresAtValue) : null;
   return expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : null;
@@ -2337,6 +2408,12 @@ function renderProfileMembershipBadge() {
 
 function renderServices() {
   if (!elements.serviceGrid) return;
+
+  const experienceCard = document.getElementById('experienceCard');
+  if (experienceCard) {
+    const isMember = isCurrentUserMembershipActive();
+    experienceCard.hidden = isMember;
+  }
 
   elements.serviceGrid.innerHTML = '';
   if (!state.services.length) {
@@ -2489,8 +2566,12 @@ function renderServices() {
 
     const sidebar = document.createElement('aside');
     sidebar.className = 'hydrogen-sidebar';
+    const consultationBenefit = isCurrentUserMembershipActive()
+      ? '<div class="hydrogen-benefit-tag">Free Consultation Session</div>'
+      : '';
     sidebar.innerHTML = `
       <h4 class="hydrogen-sidebar-title">Hydrogen Therapy</h4>
+      ${consultationBenefit}
       <div class="hydrogen-plan-controls">
         <label>
           Session Package
@@ -2605,6 +2686,15 @@ function renderServices() {
         <h3>${escapeHtml(selectedService.name)}</h3>
       </div>
     `;
+    if (String(selectedService.name || '') === 'H2 Single Session' && isCurrentUserMembershipActive()) {
+      const initiationBlock = document.createElement('div');
+      initiationBlock.className = 'service-info-block';
+      initiationBlock.innerHTML = `
+        <strong>Initiation Session (1 hr)</strong>
+        <span>Full doctor consultation + diagnostic &amp; genetic testing</span>
+      `;
+      card.appendChild(initiationBlock);
+    }
 
     const addOnPanel = document.createElement('div');
     addOnPanel.className = 'hydrogen-addon-panel';
@@ -2853,6 +2943,15 @@ function renderServices() {
         ${isMembershipOnly && !hasMemberAccess ? '<p class="service-price-meta">Booking is only available for active members.</p>' : ''}
       </div>
     `;
+    if (String(selectedService.name || '') === 'H2 Single Session') {
+      const initiationBlock = document.createElement('div');
+      initiationBlock.className = 'service-info-block';
+      initiationBlock.innerHTML = `
+        <strong>Initiation Session (1 hr)</strong>
+        <span>Full doctor consultation + diagnostic &amp; genetic testing</span>
+      `;
+      card.appendChild(initiationBlock);
+    }
 
     const editor = document.createElement('div');
     editor.className = 'hydrogen-session-editor';
@@ -3198,6 +3297,118 @@ function getMaxBookingIsoDate() {
   return `${year}-${month}-${day}`;
 }
 
+function getCalendarMonthLabel(date) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+}
+
+function getCalendarDateKey(year, monthIndex, day) {
+  const month = String(monthIndex + 1).padStart(2, '0');
+  const dayValue = String(day).padStart(2, '0');
+  return `${year}-${month}-${dayValue}`;
+}
+
+function buildBookingsByDate(bookings, year, monthIndex) {
+  const map = new Map();
+  const monthKey = `${year}-${String(monthIndex + 1).padStart(2, '0')}-`;
+  for (const booking of bookings) {
+    const rawDate = String(booking?.bookingDate || '').trim();
+    if (!rawDate.startsWith(monthKey)) continue;
+    const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) continue;
+    if (!map.has(rawDate)) map.set(rawDate, []);
+    map.get(rawDate).push(booking);
+  }
+  return map;
+}
+
+function renderMembershipCalendarDetails(dateKey, bookings) {
+  if (!elements.membershipCalendarDetails) return;
+  if (!dateKey) {
+    elements.membershipCalendarDetails.textContent = 'Select a date to view sessions.';
+    return;
+  }
+  const label = formatBookingDateLabel(dateKey);
+  if (!bookings.length) {
+    elements.membershipCalendarDetails.innerHTML = `
+      <div>${escapeHtml(label)}</div>
+      <span>No sessions booked.</span>
+    `;
+    return;
+  }
+  const limited = bookings.slice(0, 3);
+  const lines = limited
+    .map(
+      (booking) => `
+        <div class="membership-calendar-detail-item">
+          <strong>${escapeHtml(booking.serviceName || 'Session')}</strong>
+          <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))}</span>
+        </div>
+      `
+    )
+    .join('');
+  const moreCount = bookings.length - limited.length;
+  const moreLine = moreCount > 0 ? `<span>+${moreCount} more</span>` : '';
+  elements.membershipCalendarDetails.innerHTML = `
+    <div>${escapeHtml(label)}</div>
+    ${lines}
+    ${moreLine}
+  `;
+}
+
+function renderMembershipCalendar(bookings) {
+  if (!elements.membershipCalendarGrid || !elements.membershipCalendarMonth) return;
+  const today = new Date();
+  const year = today.getFullYear();
+  const monthIndex = today.getMonth();
+  elements.membershipCalendarMonth.textContent = getCalendarMonthLabel(today);
+
+  const firstOfMonth = new Date(year, monthIndex, 1);
+  const startDay = firstOfMonth.getDay();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const bookedByDate = buildBookingsByDate(bookings, year, monthIndex);
+  const bookedDates = Array.from(bookedByDate.keys()).sort();
+  const todayKey = getCalendarDateKey(year, monthIndex, today.getDate());
+  if (!state.membershipCalendarSelectedDate || !state.membershipCalendarSelectedDate.startsWith(`${year}-`)) {
+    state.membershipCalendarSelectedDate = bookedDates[0] || todayKey;
+  }
+  if (!state.membershipCalendarSelectedDate.startsWith(`${year}-${String(monthIndex + 1).padStart(2, '0')}-`)) {
+    state.membershipCalendarSelectedDate = bookedDates[0] || todayKey;
+  }
+
+  elements.membershipCalendarGrid.innerHTML = '';
+  const totalCells = 42;
+  for (let index = 0; index < totalCells; index += 1) {
+    const dayNumber = index - startDay + 1;
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'membership-calendar-day';
+    if (dayNumber < 1 || dayNumber > daysInMonth) {
+      cell.classList.add('is-outside');
+      cell.disabled = true;
+      cell.textContent = '';
+    } else {
+      const dateKey = getCalendarDateKey(year, monthIndex, dayNumber);
+      cell.textContent = String(dayNumber);
+      if (dateKey === todayKey) cell.classList.add('is-today');
+      if (dateKey === state.membershipCalendarSelectedDate) cell.classList.add('is-selected');
+      if (bookedByDate.has(dateKey)) cell.classList.add('is-booked');
+      cell.addEventListener('click', () => {
+        state.membershipCalendarSelectedDate = dateKey;
+        renderMembershipCalendar(bookings);
+      });
+    }
+    elements.membershipCalendarGrid.appendChild(cell);
+  }
+
+  renderMembershipCalendarDetails(
+    state.membershipCalendarSelectedDate,
+    bookedByDate.get(state.membershipCalendarSelectedDate) || []
+  );
+}
+
 function renderMembership() {
   if (!elements.membershipPlans || !elements.membershipStatusText) return;
   if (state.user?.role !== 'user') return;
@@ -3231,18 +3442,23 @@ function renderMembership() {
   }
 
   if (elements.membershipDashboard) {
-    elements.membershipDashboard.hidden = false;
+    elements.membershipDashboard.hidden = !active;
   }
 
-  const firstName = String(state.user?.name || 'Member').trim().split(/\s+/)[0] || 'Member';
-  if (elements.membershipWelcomeName) {
-    elements.membershipWelcomeName.textContent = `Welcome, ${firstName}`;
+  if (active) {
+    const firstName = String(state.user?.name || 'Member').trim().split(/\s+/)[0] || 'Member';
+    if (elements.membershipWelcomeName) {
+      elements.membershipWelcomeName.textContent = `Welcome, ${firstName}`;
+    }
+    if (elements.membershipDashboardStatus) {
+      elements.membershipDashboardStatus.textContent = `${activePlanName}${
+        effectiveExpiry ? ` • valid till ${effectiveExpiry.toLocaleDateString()}` : ''
+      }`;
+    }
+  } else if (elements.membershipDashboardStatus) {
+    elements.membershipDashboardStatus.textContent = '';
   }
-  if (elements.membershipDashboardStatus) {
-    elements.membershipDashboardStatus.textContent = active
-      ? `${activePlanName}${effectiveExpiry ? ` • valid till ${effectiveExpiry.toLocaleDateString()}` : ''}`
-      : 'Activate a membership to unlock member pricing and benefits.';
-  }
+
   if (elements.membershipStatSessions) {
     const sessions = Number(activePlan?.h2SessionsIncluded || current.h2SessionsIncluded || 0);
     elements.membershipStatSessions.textContent = Number.isFinite(sessions) ? String(sessions) : '0';
@@ -3290,6 +3506,9 @@ function renderMembership() {
       ? formatDateTime(upcoming.bookingDate, upcoming.bookingTime)
       : 'Book your next session to keep momentum.';
   }
+  if (active) {
+    renderMembershipCalendar((state.bookings || []).filter((booking) => String(booking.status || '').toLowerCase() !== 'cancelled'));
+  }
 
   const orderedPlanIds = ['h2_single', 'h2_two', 'h2_four'];
   const plans = orderedPlanIds
@@ -3333,7 +3552,7 @@ function renderMembership() {
       </div>
       <div class="membership-card-price-block">
         <p class="membership-price">Rs. ${estimatedAmountInr.toLocaleString('en-IN')}</p>
-        <p class="membership-price-caption">3-month access • ${escapeHtml(plan.validityDays)} days</p>
+        <p class="membership-price-caption">1-year access • ${escapeHtml(plan.validityDays)} days</p>
       </div>
       <div class="membership-card-metrics">
         <div class="membership-card-metric">

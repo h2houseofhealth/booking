@@ -126,6 +126,13 @@ const SERVICE_CATALOG = [
       'Long-cycle intensive plan built for deep and sustained wellness transformation. Non-member pricing: Rs. 1,50,000.',
   },
   {
+    category: 'EXPERIENCE SESSION',
+    name: 'Experience Session',
+    priceInr: 4000,
+    includes: '30 min hydrogen therapy + consultation.',
+    description: 'Experience Session (Demo) for non-members.',
+  },
+  {
     category: 'MEMBERSHIP SERVICES',
     name: 'Lab Tests',
     priceInr: 0,
@@ -270,7 +277,7 @@ const MEMBERSHIP_PLANS = [
     name: '1 Person Membership',
     peopleCount: 1,
     priceInr: 84000,
-    validityDays: 90,
+    validityDays: 365,
     h2SessionsIncluded: 16,
     perks:
       'Includes lab tests, oxidative stress marker test, radiology services, concierge primary care, and 16 H2 sessions.',
@@ -280,7 +287,7 @@ const MEMBERSHIP_PLANS = [
     name: '2 Person Membership',
     peopleCount: 2,
     priceInr: 160000,
-    validityDays: 90,
+    validityDays: 365,
     h2SessionsIncluded: 32,
     perks: '',
   },
@@ -289,7 +296,7 @@ const MEMBERSHIP_PLANS = [
     name: '4 Person Membership',
     peopleCount: 4,
     priceInr: 288000,
-    validityDays: 90,
+    validityDays: 365,
     h2SessionsIncluded: 64,
     perks: '',
   },
@@ -298,13 +305,13 @@ const MEMBERSHIP_PLANS = [
     name: 'Add Person',
     peopleCount: 1,
     priceInr: 78000,
-    validityDays: 90,
+    validityDays: 365,
     h2SessionsIncluded: 16,
     perks:
       'Add one more member to an existing plan with lab tests, oxidative stress marker test, radiology services, and hydrogen pricing benefits.',
   },
 ];
-const MEMBERSHIP_VALIDITY_DAYS = Number(MEMBERSHIP_PLANS.find((plan) => plan.id === 'h2_single')?.validityDays || 90);
+const MEMBERSHIP_VALIDITY_DAYS = Number(MEMBERSHIP_PLANS.find((plan) => plan.id === 'h2_single')?.validityDays || 365);
 const app = express();
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");

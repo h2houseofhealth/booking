@@ -173,6 +173,23 @@
               </div>
               <p id="membershipUsageNote" class="membership-copy"></p>
             </div>
+            <div class="membership-calendar-card" aria-label="Monthly calendar">
+              <div class="membership-calendar-head">
+                <h4>Calendar</h4>
+                <span id="membershipCalendarMonth" class="membership-calendar-month"></span>
+              </div>
+              <div class="membership-calendar-weekdays">
+                <span>Sun</span>
+                <span>Mon</span>
+                <span>Tue</span>
+                <span>Wed</span>
+                <span>Thu</span>
+                <span>Fri</span>
+                <span>Sat</span>
+              </div>
+              <div id="membershipCalendarGrid" class="membership-calendar-grid"></div>
+              <div id="membershipCalendarDetails" class="membership-calendar-details"></div>
+            </div>
             <div class="membership-highlight-card">
               <span class="membership-highlight-kicker">Upcoming</span>
               <h4 id="membershipNextSessionTitle">No sessions scheduled</h4>
@@ -187,13 +204,13 @@
               <h3>Structured membership plans built around hydrogen therapy, diagnostics, and long-term care.</h3>
               <p class="membership-copy">
                 Choose the membership that fits your life. Every plan includes hydrogen access, diagnostics support,
-                and member-only wellness benefits across the 90-day membership period.
+                and member-only wellness benefits across the 1-year membership period.
               </p>
             </div>
             <div class="membership-hero-panel">
               <div class="membership-hero-stat">
                 <strong>H2 Sessions</strong>
-                <span>Included in every 3-month plan</span>
+                <span>Included in every 1-year plan</span>
               </div>
               <div class="membership-hero-stat">
                 <strong>Diagnostics</strong>
@@ -238,6 +255,15 @@
         </div>
         <div id="adminClientMeta" class="admin-client-meta admin-only" hidden></div>
         <p id="adminCustomerMessage" class="membership-copy admin-only" hidden></p>
+        <div id="experienceCard" class="experience-card user-only">
+          <div class="experience-card-left">
+            <div class="experience-card-title">Experience Session</div>
+            <div class="experience-card-desc">30 min hydrogen therapy + consultation</div>
+          </div>
+          <div class="experience-card-right">
+            <button id="experienceBookBtn" class="experience-card-btn" type="button">Book</button>
+          </div>
+        </div>
         <div id="serviceGrid" class="doctor-grid"></div>
         <p id="serviceEmpty" class="empty-state" hidden>No services configured.</p>
         <p id="servicePageNote" class="service-page-note user-only">
@@ -470,6 +496,7 @@
           <label>
             Service
             <select id="serviceName" required></select>
+            <div id="experienceServiceLabel" class="experience-service-label" hidden>Hydrogen Therapy</div>
           </label>
           <label>
             Date

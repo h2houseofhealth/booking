@@ -120,13 +120,7 @@ const elements = {
   profileAvatarPreview: document.getElementById('profileAvatarPreview'),
 
   totalCount: document.getElementById('totalCount'),
-  confirmedCount: document.getElementById('confirmedCount'),
-  pendingCount: document.getElementById('pendingCount'),
-  cancelledCount: document.getElementById('cancelledCount'),
   adminStatTotal: document.getElementById('adminStatTotal'),
-  adminStatConfirmed: document.getElementById('adminStatConfirmed'),
-  adminStatPending: document.getElementById('adminStatPending'),
-  adminStatCancelled: document.getElementById('adminStatCancelled'),
   adminHistoryCard: document.getElementById('adminHistoryCard'),
   historyCount: document.getElementById('historyCount'),
   memberChoiceGate: document.getElementById('memberChoiceGate'),
@@ -257,9 +251,7 @@ const elements = {
   adminHistoryToggleBtnWrap: document.getElementById('adminHistoryToggleBtnWrap'),
   adminHistorySection: document.getElementById('adminHistorySection'),
   adminTableTitle: document.getElementById('adminTableTitle'),
-  adminShortcutHydrogen: document.getElementById('adminShortcutHydrogen'),
-  adminShortcutIvTherapy: document.getElementById('adminShortcutIvTherapy'),
-  adminShortcutIvShots: document.getElementById('adminShortcutIvShots'),
+
   adminSessionSearch: document.getElementById('adminSessionSearch'),
   adminMembershipSearch: document.getElementById('adminMembershipSearch'),
 
@@ -720,65 +712,7 @@ function attachEvents() {
     }
   });
 
-  elements.adminShortcutHydrogen?.addEventListener('click', () => {
-    const service = 'HYDROGEN SESSION';
-    if (state.selectedServiceCategory === service) {
-      state.selectedServiceCategory = null;
-      state.adminServiceDetailsExpanded = {};
-    } else {
-      state.selectedServiceCategory = service;
-      state.adminServiceDetailsExpanded[service] = true;
-      if (!state.selectedServiceDate) state.selectedServiceDate = getTodayIsoDate();
-      state.slotAvailability = {};
-      state.slotAvailabilityLoading = true;
-    }
-    render();
-    if (state.selectedServiceCategory) {
-      requestAnimationFrame(() => {
-        elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    }
-  });
 
-  elements.adminShortcutIvTherapy?.addEventListener('click', () => {
-    const service = 'IV THERAPIES';
-    if (state.selectedServiceCategory === service) {
-      state.selectedServiceCategory = null;
-      state.adminServiceDetailsExpanded = {};
-    } else {
-      state.selectedServiceCategory = service;
-      state.adminServiceDetailsExpanded[service] = true;
-      if (!state.selectedServiceDate) state.selectedServiceDate = getTodayIsoDate();
-      state.slotAvailability = {};
-      state.slotAvailabilityLoading = true;
-    }
-    render();
-    if (state.selectedServiceCategory) {
-      requestAnimationFrame(() => {
-        elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    }
-  });
-
-  elements.adminShortcutIvShots?.addEventListener('click', () => {
-    const service = 'IV SHOTS';
-    if (state.selectedServiceCategory === service) {
-      state.selectedServiceCategory = null;
-      state.adminServiceDetailsExpanded = {};
-    } else {
-      state.selectedServiceCategory = service;
-      state.adminServiceDetailsExpanded[service] = true;
-      if (!state.selectedServiceDate) state.selectedServiceDate = getTodayIsoDate();
-      state.slotAvailability = {};
-      state.slotAvailabilityLoading = true;
-    }
-    render();
-    if (state.selectedServiceCategory) {
-      requestAnimationFrame(() => {
-        elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    }
-  });
 
   elements.adminSessionSearch?.addEventListener('input', (event) => {
     state.adminSessionSearch = String(event.target.value || '').trim().toLowerCase();
@@ -791,34 +725,6 @@ function attachEvents() {
   });
 
   elements.adminStatTotal?.addEventListener('click', () => {
-    state.adminStatsActiveFilter = null;
-    state.adminHistoryVisible = false;
-    render();
-    requestAnimationFrame(() => {
-      elements.adminHistorySection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  });
-
-  elements.adminStatConfirmed?.addEventListener('click', () => {
-    state.adminStatsActiveFilter = 'confirmed';
-    state.adminHistoryVisible = false;
-    render();
-    requestAnimationFrame(() => {
-      elements.adminHistorySection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  });
-
-  elements.adminStatPending?.addEventListener('click', () => {
-    state.adminStatsActiveFilter = 'pending';
-    state.adminHistoryVisible = false;
-    render();
-    requestAnimationFrame(() => {
-      elements.adminHistorySection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  });
-
-  elements.adminStatCancelled?.addEventListener('click', () => {
-    state.adminStatsActiveFilter = 'cancelled';
     state.adminHistoryVisible = false;
     render();
     requestAnimationFrame(() => {
@@ -2496,18 +2402,8 @@ function render() {
       adminFiltered = state.bookings;
       tableTitle = "History of All Bookings";
     } else {
-      // Show today's bookings, filtered by status if selected
+      // Show today's bookings
       adminFiltered = todayBookings;
-      if (state.adminStatsActiveFilter === 'confirmed') {
-        tableTitle = "Today's Confirmed Bookings";
-        adminFiltered = todayBookings.filter((booking) => booking.status === 'confirmed');
-      } else if (state.adminStatsActiveFilter === 'pending') {
-        tableTitle = "Today's Pending Bookings";
-        adminFiltered = todayBookings.filter((booking) => booking.status === 'pending' || booking.status === 'booked');
-      } else if (state.adminStatsActiveFilter === 'cancelled') {
-        tableTitle = "Today's Cancelled Bookings";
-        adminFiltered = todayBookings.filter((booking) => booking.status === 'cancelled');
-      }
     }
     
     // Update title and button visibility
@@ -2647,30 +2543,145 @@ function renderServices() {
   }
 
   elements.serviceEmpty.hidden = true;
-  const orderedCategories = ['HYDROGEN SESSION', 'MEMBERSHIP SERVICES', 'IV THERAPIES', 'IV SHOTS'];
+  const orderedCategories = ['HYDROGEN SESSION', 'IV THERAPIES', 'IV SHOTS'];
   const grouped = new Map();
+  
   for (const category of orderedCategories) grouped.set(category, []);
   for (const service of state.services) {
     const category = String(service.category || '').toUpperCase();
     if (grouped.has(category)) grouped.get(category).push(service);
   }
 
-  // Render details only for selected service category
-  if (!state.selectedServiceCategory) {
-    return;
+  // Initialize state for tracking expanded categories
+  if (!state.expandedServiceCategories) {
+    state.expandedServiceCategories = {};
   }
 
-  const selectedCategory = state.selectedServiceCategory;
-  const selectedServices = grouped.get(selectedCategory) || [];
-  const isHydrogenCategory = selectedCategory === 'HYDROGEN SESSION';
-  const isMembershipServicesCategory = selectedCategory === 'MEMBERSHIP SERVICES';
-  const isSingleSessionCategory =
-    selectedCategory === 'IV THERAPIES' ||
-    selectedCategory === 'IV SHOTS' ||
-    selectedCategory === 'MEMBERSHIP SERVICES';
-  const section = document.createElement('section');
-  section.className = 'service-section service-cluster';
-  section.dataset.serviceCategory = selectedCategory;
+  // Display all service categories as collapsible cards
+  for (const category of orderedCategories) {
+    const services = grouped.get(category) || [];
+    if (!services.length) continue;
+
+    const categoryCard = document.createElement('div');
+    categoryCard.className = 'service-category-card';
+    categoryCard.dataset.category = category;
+
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = 'service-category-header';
+    const isExpanded = state.expandedServiceCategories[category];
+    header.innerHTML = `
+      <div class="category-info">
+        <h3 class="category-name">${escapeHtml(category)}</h3>
+        <span class="category-count">${services.length} service${services.length === 1 ? '' : 's'}</span>
+      </div>
+      <span class="expand-icon" aria-label="${isExpanded ? 'collapse' : 'expand'}">${isExpanded ? '−' : '+'}</span>
+    `;
+
+    header.addEventListener('click', () => {
+      state.expandedServiceCategories[category] = !state.expandedServiceCategories[category];
+      renderServices();
+    });
+
+    categoryCard.appendChild(header);
+
+    // Render service details if category is expanded
+    if (isExpanded) {
+      const detailsContainer = document.createElement('div');
+      detailsContainer.className = 'service-category-details';
+
+      for (const service of services) {
+        const serviceCard = createServiceDetailItem(service);
+        detailsContainer.appendChild(serviceCard);
+      }
+
+      categoryCard.appendChild(detailsContainer);
+    }
+
+    elements.serviceGrid.appendChild(categoryCard);
+  }
+}
+
+function createServiceDetailItem(service) {
+  const card = document.createElement('article');
+  card.className = 'service-detail-item';
+
+  const effectivePrice = Number(service.effectivePriceInr ?? service.priceInr ?? 0);
+  const hasMemberAccess = isCurrentUserMembershipActive();
+  const isMembershipOnly = Boolean(service.membershipOnly);
+
+  const infoSection = document.createElement('div');
+  infoSection.className = 'service-item-info';
+  infoSection.innerHTML = `
+    <h4>${escapeHtml(service.name)}</h4>
+    ${service.description ? `<p class="service-description">${escapeHtml(service.description)}</p>` : ''}
+  `;
+
+  const priceSection = document.createElement('div');
+  priceSection.className = 'service-item-pricing';
+  
+  const priceDisplay = document.createElement('span');
+  priceDisplay.className = 'service-price';
+  if (isMembershipOnly && !hasMemberAccess) {
+    priceDisplay.textContent = 'Members Only';
+  } else if (isMembershipOnly && hasMemberAccess) {
+    priceDisplay.textContent = 'Included';
+  } else {
+    priceDisplay.textContent = `₹${effectivePrice.toLocaleString('en-IN')}`;
+  }
+  priceSection.appendChild(priceDisplay);
+
+  // Show session count for multi-session services
+  const sessionCount = getHydrogenSessionCountFromServiceName(service.name);
+  if (sessionCount > 1) {
+    const sessionBadge = document.createElement('span');
+    sessionBadge.className = 'service-sessions';
+    sessionBadge.textContent = `${sessionCount}×`;
+    priceSection.appendChild(sessionBadge);
+  }
+
+  const buttonSection = document.createElement('div');
+  buttonSection.className = 'service-item-actions';
+  
+  const bookButton = document.createElement('button');
+  bookButton.type = 'button';
+  bookButton.className = 'service-book-btn btn btn-primary';
+  bookButton.textContent = 'Book';
+  bookButton.disabled = isMembershipOnly && !hasMemberAccess;
+  bookButton.addEventListener('click', () => {
+    openDialog();
+    elements.serviceName.value = service.name;
+    elements.bookingDate.value = getTodayIsoDate();
+    elements.bookingTime.value = SLOT_OPTIONS[0].value;
+  });
+  buttonSection.appendChild(bookButton);
+
+  card.appendChild(infoSection);
+  card.appendChild(priceSection);
+  card.appendChild(buttonSection);
+
+  return card;
+}
+
+function getHydrogenSessionCountFromServiceName(serviceName) {
+  const raw = String(serviceName || '').trim();
+  const normalized = raw.toLowerCase();
+  if (normalized.includes('single')) return 1;
+
+  // Prefer explicit session count mentions like "(4 Sessions)".
+  let match = raw.match(/\((\d+)\s*session/i);
+  if (match) return Number(match[1]);
+
+  match = raw.match(/\b(\d+)\s*session/i);
+  if (match) return Number(match[1]);
+
+  // Fallback: ignore "H2" prefix and use first standalone number.
+  const cleaned = normalized.replace(/\bh2\b/g, ' ');
+  match = cleaned.match(/\b(\d+)\b/);
+  return match ? Number(match[1]) : 1;
+}
+
+function getHydrogenPlanOptions(services) {
   section.innerHTML = `
     <header class="service-cluster-head">
       <div>
@@ -4194,28 +4205,18 @@ function getInitials(name) {
 }
 
 function renderStats(bookings) {
-  if (!elements.totalCount || !elements.confirmedCount || !elements.pendingCount || !elements.cancelledCount) {
+  if (!elements.totalCount) {
     return;
   }
   const source = state.user?.role === 'admin' ? getTodayAdminBookings(bookings) : bookings;
   const total = source.length;
-  const confirmed = source.filter((b) => b.status === 'confirmed').length;
-  const pending = source.filter((b) => b.status === 'pending' || b.status === 'booked').length;
-  const cancelled = source.filter((b) => b.status === 'cancelled').length;
   const allBookingsCount = Array.isArray(bookings) ? bookings.length : 0;
 
   elements.totalCount.textContent = String(total);
-  elements.confirmedCount.textContent = String(confirmed);
-  elements.pendingCount.textContent = String(pending);
-  elements.cancelledCount.textContent = String(cancelled);
   if (elements.historyCount) elements.historyCount.textContent = String(allBookingsCount);
 
-  // Apply visual feedback for active stat filter
+  // Apply visual feedback for active state
   if (state.user?.role === 'admin') {
-    elements.adminStatTotal?.classList.toggle('is-active', state.adminStatsActiveFilter === null);
-    elements.adminStatConfirmed?.classList.toggle('is-active', state.adminStatsActiveFilter === 'confirmed');
-    elements.adminStatPending?.classList.toggle('is-active', state.adminStatsActiveFilter === 'pending');
-    elements.adminStatCancelled?.classList.toggle('is-active', state.adminStatsActiveFilter === 'cancelled');
     elements.adminHistoryCard?.classList.toggle('is-active', state.adminHistoryVisible);
   }
 }

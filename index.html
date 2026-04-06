@@ -231,7 +231,7 @@
       </section>
 
       <section id="servicesSection" class="panel app-only" aria-label="Services" hidden>
-        <div class="panel-head">
+        <div class="panel-head services-header">
           <div>
             <h2>Services</h2>
             <p id="servicePanelLead" class="service-panel-lead"></p>
@@ -255,24 +255,26 @@
         </div>
         <div id="adminClientMeta" class="admin-client-meta admin-only" hidden></div>
         <p id="adminCustomerMessage" class="membership-copy admin-only" hidden></p>
-        <div id="experienceCard" class="experience-card user-only">
-          <div class="experience-card-left">
-            <div class="experience-card-title">Experience Session</div>
-            <div class="experience-card-desc">30 min hydrogen therapy + consultation</div>
+        <div class="services-card">
+          <div id="experienceCard" class="experience-card user-only">
+            <div class="experience-card-left">
+              <div class="experience-card-title">Experience Session</div>
+              <div class="experience-card-desc">30 min hydrogen therapy + consultation</div>
+            </div>
+            <div class="experience-card-right">
+              <button id="experienceBookBtn" class="experience-card-btn" type="button">Book</button>
+            </div>
           </div>
-          <div class="experience-card-right">
-            <button id="experienceBookBtn" class="experience-card-btn" type="button">Book</button>
+          <div id="serviceGrid" class="doctor-grid"></div>
+          <p id="serviceEmpty" class="empty-state" hidden>No services configured.</p>
+          <p id="servicePageNote" class="service-page-note note-box user-only">
+            ⚠️ Note: IV Therapy/IV Shots require a 2-week gap between sessions. (Whether taken separately or as an add-on
+            with Hydrogen Therapy) Hydrogen Therapy sessions can be taken up to 3 times per day.
+          </p>
+          <div class="dialog-actions user-only">
+            <button id="servicesBackBtn" class="btn btn-secondary" type="button">Back</button>
+            <button id="servicesNextBtn" class="btn btn-primary" type="button">Next</button>
           </div>
-        </div>
-        <div id="serviceGrid" class="doctor-grid"></div>
-        <p id="serviceEmpty" class="empty-state" hidden>No services configured.</p>
-        <p id="servicePageNote" class="service-page-note user-only">
-          ⚠️ Note: IV Therapy/IV Shots require a 2-week gap between sessions. (Whether taken separately or as an add-on
-          with Hydrogen Therapy) Hydrogen Therapy sessions can be taken up to 3 times per day.
-        </p>
-        <div class="dialog-actions user-only">
-          <button id="servicesBackBtn" class="btn btn-secondary" type="button">Back</button>
-          <button id="servicesNextBtn" class="btn btn-primary" type="button">Next</button>
         </div>
       </section>
 

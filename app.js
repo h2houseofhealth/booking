@@ -2432,22 +2432,26 @@ function renderServices() {
     if (grouped.has(category)) grouped.get(category).push(service);
   }
 
-  const categoryGrid = document.createElement('div');
-  categoryGrid.className = 'service-category-grid';
+  const categoryLabels = {
+    'HYDROGEN SESSION': 'Hydrogen Session',
+    'MEMBERSHIP SERVICES': 'Membership Services',
+    'IV THERAPIES': 'IV Therapies',
+    'IV SHOTS': 'IV Shots',
+  };
+
+  const categoryTabs = document.createElement('div');
+  categoryTabs.className = 'service-tabs';
   for (const category of orderedCategories) {
     const categoryServices = grouped.get(category) || [];
-    const tile = document.createElement('button');
-    tile.type = 'button';
-    tile.className = 'service-category-card';
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'service-tab';
     if (state.selectedServiceCategory === category) {
-      tile.classList.add('is-active');
+      tab.classList.add('active');
     }
-    tile.disabled = categoryServices.length === 0;
-    tile.innerHTML = `
-      <span class="service-category-name">${escapeHtml(category)}</span>
-      <span class="service-category-meta">${categoryServices.length} option${categoryServices.length === 1 ? '' : 's'}</span>
-    `;
-    tile.addEventListener('click', () => {
+    tab.disabled = categoryServices.length === 0;
+    tab.textContent = categoryLabels[category] || category;
+    tab.addEventListener('click', () => {
       state.selectedServiceCategory = category;
       resetHydrogenComposer({ keepCategory: true });
       resetSingleSessionComposer();
@@ -2462,9 +2466,9 @@ function renderServices() {
       renderServices();
       loadServiceAvailability();
     });
-    categoryGrid.appendChild(tile);
+    categoryTabs.appendChild(tab);
   }
-  elements.serviceGrid.appendChild(categoryGrid);
+  elements.serviceGrid.appendChild(categoryTabs);
 
   if (!state.selectedServiceCategory) {
     return;

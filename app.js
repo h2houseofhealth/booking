@@ -2543,9 +2543,37 @@ function renderServices() {
   }
 
   elements.serviceEmpty.hidden = true;
+  elements.serviceGrid.classList.add('service-catalog-grid');
+
+  const categoryVisuals = {
+    'HYDROGEN SESSION': {
+      title: 'Hydrogen Session',
+      subtitle: 'Revitalize your cells',
+      image: '/assets/service-hydrogen-session.jpg',
+      imageAlt: 'Hydrogen session equipment',
+    },
+    'IV THERAPIES': {
+      title: 'IV Therapy',
+      subtitle: 'Restore and hydrate',
+      image: '/assets/service-iv-therapies.jpg',
+      imageAlt: 'IV therapy drip setup',
+    },
+    'IV SHOTS': {
+      title: 'IV Shots',
+      subtitle: 'Boost your energy',
+      image: '/assets/service-iv-shots.jpg',
+      imageAlt: 'IV shot ampoules and syringe',
+    },
+  };
+
+  const formatCategoryLabel = (value) =>
+    String(value || '')
+      .toLowerCase()
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+
   const orderedCategories = ['HYDROGEN SESSION', 'IV THERAPIES', 'IV SHOTS'];
   const grouped = new Map();
-  
+
   for (const category of orderedCategories) grouped.set(category, []);
   for (const service of state.services) {
     const category = String(service.category || '').toUpperCase();
@@ -2557,25 +2585,41 @@ function renderServices() {
     state.expandedServiceCategories = {};
   }
 
-  // Display all service categories as collapsible cards
+  // Display all service categories as image-first, clickable cards.
   for (const category of orderedCategories) {
     const services = grouped.get(category) || [];
     if (!services.length) continue;
+    const visual = categoryVisuals[category] || {};
+    const isExpanded = Boolean(state.expandedServiceCategories[category]);
+    const categoryId = `service-category-details-${String(category).toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
-    const categoryCard = document.createElement('div');
-    categoryCard.className = 'service-category-card';
+    const categoryCard = document.createElement('article');
+    categoryCard.className = `service-category-card service-showcase-card${isExpanded ? ' is-expanded' : ''}`;
     categoryCard.dataset.category = category;
 
     const header = document.createElement('button');
     header.type = 'button';
-    header.className = 'service-category-header';
-    const isExpanded = state.expandedServiceCategories[category];
+    header.className = 'service-category-header service-showcase-button';
+    header.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+    header.setAttribute('aria-controls', categoryId);
+    header.setAttribute('aria-label', `${isExpanded ? 'Hide' : 'Explore'} ${visual.title || formatCategoryLabel(category)}`);
     header.innerHTML = `
-      <div class="category-info">
-        <h3 class="category-name">${escapeHtml(category)}</h3>
-        <span class="category-count">${services.length} service${services.length === 1 ? '' : 's'}</span>
-      </div>
-      <span class="expand-icon" aria-label="${isExpanded ? 'collapse' : 'expand'}">${isExpanded ? '−' : '+'}</span>
+      <span class="service-showcase-media">
+        <img
+          class="service-showcase-image"
+          src="${escapeHtml(visual.image || '/assets/service-experience.jpg')}"
+          alt="${escapeHtml(visual.imageAlt || `${formatCategoryLabel(category)} service`)}"
+          loading="lazy"
+        />
+      </span>
+      <span class="service-showcase-content">
+        <h3 class="service-showcase-title">${escapeHtml(visual.title || formatCategoryLabel(category))}</h3>
+        <p class="service-showcase-subtitle">${escapeHtml(visual.subtitle || 'Choose and book your session.')}</p>
+        <span class="service-showcase-footer">
+          <span class="service-showcase-cta">${isExpanded ? 'Hide' : 'Explore'}</span>
+          <span class="service-showcase-count">${services.length} service${services.length === 1 ? '' : 's'}</span>
+        </span>
+      </span>
     `;
 
     header.addEventListener('click', () => {
@@ -2585,18 +2629,15 @@ function renderServices() {
 
     categoryCard.appendChild(header);
 
-    // Render service details if category is expanded
-    if (isExpanded) {
-      const detailsContainer = document.createElement('div');
-      detailsContainer.className = 'service-category-details';
-
-      for (const service of services) {
-        const serviceCard = createServiceDetailItem(service);
-        detailsContainer.appendChild(serviceCard);
-      }
-
-      categoryCard.appendChild(detailsContainer);
+    const detailsContainer = document.createElement('div');
+    detailsContainer.className = 'service-category-details';
+    detailsContainer.id = categoryId;
+    detailsContainer.hidden = !isExpanded;
+    for (const service of services) {
+      const serviceCard = createServiceDetailItem(service);
+      detailsContainer.appendChild(serviceCard);
     }
+    categoryCard.appendChild(detailsContainer);
 
     elements.serviceGrid.appendChild(categoryCard);
   }
@@ -5881,4 +5922,3 @@ function escapeHtml(value) {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 }
-

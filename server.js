@@ -107,6 +107,16 @@ const SERVICE_CATALOG = [
   },
   {
     category: 'HYDROGEN SESSION',
+    name: 'H2 2 Month Program (32 Sessions)',
+    priceInr: 48000,
+    nonMemberPriceInr: 96000,
+    memberPriceInr: 48000,
+    includes: '32 Hydrogen Sessions in 2 months',
+    description:
+      'Extended two-month hydrogen program for consistent support and deeper wellness outcomes. Non-member pricing: Rs. 96,000.',
+  },
+  {
+    category: 'HYDROGEN SESSION',
     name: 'H2 Intensive 1 Month (30 Sessions)',
     priceInr: 46000,
     nonMemberPriceInr: 90000,

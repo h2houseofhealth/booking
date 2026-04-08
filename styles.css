@@ -164,10 +164,7 @@ h3,
 }
 
 .cart-btn {
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 14px);
-  right: 14px;
-  z-index: 40;
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4689,9 +4686,7 @@ th {
   }
 
   .top-actions .cart-btn {
-    position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 10px);
-    right: 10px;
+    position: relative;
     width: 44px !important;
     height: 44px;
     min-height: 44px;

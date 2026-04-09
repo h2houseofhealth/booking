@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Booking Management Portal</title>
     <link rel="icon" type="image/png" href="assets/brand/H2_icon.png" />
-    <link rel="stylesheet" href="styles.css?v=20260404-2" />
+    <link rel="stylesheet" href="styles.css?v=20260408-1" />
   </head>
   <body>
     <div class="background-shape shape-a"></div>
@@ -27,6 +27,11 @@
                 <span class="membership-badge" id="userMembershipBadge" hidden>★ Member</span>
               </span>
             </span>
+          </button>
+          <button id="cartBtn" class="btn btn-secondary cart-btn user-only" type="button" aria-label="Cart">
+            <span class="cart-btn-icon" aria-hidden="true">&#128722;</span>
+            <span class="cart-btn-text">Cart</span>
+            <span id="cartCount" class="cart-count" hidden>0</span>
           </button>
           <button id="logoutBtn" class="btn btn-secondary">Logout</button>
         </div>
@@ -193,11 +198,12 @@
         <div id="membershipBrowsePanel">
           <section class="membership-hero" aria-label="Membership Highlights">
             <div class="membership-hero-copy">
-              <span class="membership-hero-kicker">Wellness Access</span>
-              <h3>Structured membership plans built around hydrogen therapy, diagnostics, and long-term care.</h3>
+              <div class="membership-billing-toggle" aria-hidden="true">
+                <span class="is-active">Annual</span>
+              </div>
+              <h3>Pricing</h3>
               <p class="membership-copy">
-                Choose the membership that fits your life. Every plan includes hydrogen access, diagnostics support,
-                and member-only wellness benefits across the 1-year membership period.
+                Choose a membership plan that fits your wellness goals and get hydrogen therapy benefits across the year.
               </p>
             </div>
             <div class="membership-hero-panel">
@@ -254,7 +260,7 @@
             <div class="experience-card-desc">30 min hydrogen therapy + consultation</div>
           </div>
           <div class="experience-card-right">
-            <button id="experienceBookBtn" class="experience-card-btn" type="button">Book</button>
+            <button id="experienceBookBtn" class="experience-card-btn" type="button">Add to Cart</button>
           </div>
         </div>
         <div id="serviceGrid" class="doctor-grid"></div>
@@ -616,8 +622,23 @@
           <h2 id="membershipDialogTitle">Membership Details</h2>
           <button id="closeMembershipDialogBtn" class="icon-btn" type="button" aria-label="Close">×</button>
         </div>
-        <div class="membership-dialog-content"></div>
-        <div class="membership-dialog-actions"></div>
+        <div class="membership-dialog-content">
+          <p id="membershipPlanSummary" class="membership-checkout-summary"></p>
+          <div class="coupon-entry">
+            <label>
+              Coupon Code
+              <div class="coupon-entry-row">
+                <input id="membershipCouponCode" type="text" placeholder="Enter coupon code" />
+                <button id="membershipApplyCouponBtn" class="btn btn-secondary" type="button">Apply</button>
+              </div>
+            </label>
+          </div>
+          <div id="membershipCouponPreview" class="coupon-preview" hidden></div>
+          <div id="membershipMembersGrid" class="membership-members-grid"></div>
+        </div>
+        <div class="membership-dialog-actions">
+          <button class="btn btn-primary" type="submit">Proceed to Payment</button>
+        </div>
         <div class="dialog-actions">
           <button class="btn btn-secondary" type="button" id="cancelMembershipBtn">Close</button>
         </div>
@@ -645,6 +666,6 @@
     </dialog>
 
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-    <script src="app.js?v=5"></script>
+    <script src="app.js?v=8"></script>
   </body>
 </html>

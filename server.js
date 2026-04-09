@@ -321,6 +321,7 @@ const MEMBERSHIP_PLANS = [
       'Add one more member to an existing plan with lab tests, oxidative stress marker test, radiology services, and hydrogen pricing benefits.',
   },
 ];
+const HYDROGEN_FREE_SESSIONS_PER_USER = 16;
 const MEMBERSHIP_VALIDITY_DAYS = Number(MEMBERSHIP_PLANS.find((plan) => plan.id === 'h2_single')?.validityDays || 365);
 const DEFAULT_MEMBERSHIP_INCLUDED_HYDROGEN_SESSIONS = 16;
 const app = express();
@@ -2489,18 +2490,17 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
     }
   }
   const addOnPriceInr = addOnService ? getEffectiveServicePriceInr(addOnService, req.user) : 0;
-  const membershipCoverage = getHydrogenMembershipCoverage(req.user, { userId: req.user.id });
-  const pricingAdjustments = getHydrogenMembershipPricingAdjustments({
-    user: req.user,
-    userId: req.user.id,
-    hydrogenSessionCount: totalSessions,
-    packagePriceInr,
-    extraSessionPriceInr,
-    extraSessions,
-    addOnAmountInr: addOnPriceInr,
-    coverage: membershipCoverage,
-  });
-  const totalAmountInr = Number(pricingAdjustments.totalAmountInr || 0);
+
+  const membershipActive = isMembershipActiveForUser(req.user);
+  const usedHydrogenSessions = membershipActive ? countHydrogenSessionsUsedForMembership(req.user.id, req.user) : 0;
+  const freeRemaining = membershipActive ? Math.max(0, HYDROGEN_FREE_SESSIONS_PER_USER - usedHydrogenSessions) : 0;
+  const freeSessionsApplied = membershipActive ? Math.min(totalSessions, freeRemaining) : 0;
+  const chargeableHydrogenSessions = membershipActive ? Math.max(0, totalSessions - freeSessionsApplied) : 0;
+  const memberSessionPriceInr = membershipActive ? Number(extraSessionPriceInr || 0) : 0;
+  const hydrogenAmountInr = membershipActive
+    ? chargeableHydrogenSessions * memberSessionPriceInr
+    : Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions;
+  const totalAmountInr = Number(hydrogenAmountInr || 0) + Number(addOnPriceInr || 0);
   const hydrogenDailyLimitConflict = validateHydrogenDailySessionLimit(req.user.id, normalizedSlots);
   if (hydrogenDailyLimitConflict) {
     return res.status(409).json({
@@ -2777,7 +2777,7 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
       `INSERT INTO bookings (
         user_id, doctor_id, client_name, client_email, client_phone,
         service_name, booking_date, booking_time, assigned_staff, status, payment_status, booking_group_id, notes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
     );
     const countActiveForSlot = db.prepare(
       `SELECT
@@ -2793,9 +2793,15 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
     const inRequestCounter = new Map();
     const createdIds = [];
     let addOnSummary = null;
+    const freeSlotIndexes = new Set();
+    if (membershipActive && freeSessionsApplied > 0) {
+      const indexed = normalizedSlots.map((slot, idx) => ({ ...slot, idx }));
+      indexed.sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
+      indexed.slice(0, freeSessionsApplied).forEach((slot) => freeSlotIndexes.add(slot.idx));
+    }
 
     const txn = db.transaction((entries) => {
-      for (const entry of entries) {
+      for (const [idx, entry] of entries.entries()) {
         const key = `${entry.bookingDate}|${entry.bookingTime}`;
         const alreadyInRequest = Number(inRequestCounter.get(key) || 0);
         const slotStats = countActiveForSlot.get(service.name, entry.bookingDate, entry.bookingTime) || {};
@@ -2806,6 +2812,7 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
         }
         inRequestCounter.set(key, alreadyInRequest + 1);
 
+        const paymentStatus = freeSlotIndexes.has(idx) ? 'paid' : 'unpaid';
         const result = insertBooking.run(
           req.user.id,
           null,
@@ -2816,8 +2823,7 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
           entry.bookingDate,
           entry.bookingTime,
           'H2 House Of Health',
-          bookingStatus,
-          bookingPaymentStatus,
+          paymentStatus,
           bookingGroupId,
           `Hydrogen package ${packageSessions} + extra ${extraSessions}`,
           getCurrentSqliteTimestamp()
@@ -2858,8 +2864,7 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
           addOnSlot.bookingDate,
           addOnSlot.bookingTime,
           'H2 House Of Health',
-          bookingStatus,
-          bookingPaymentStatus,
+          'unpaid',
           bookingGroupId,
           `IV add-on for ${service.name} (Session ${addOnSessionIndex + 1})`,
           getCurrentSqliteTimestamp()
@@ -2886,6 +2891,8 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
       )
       .all(...createdIds);
 
+    const paymentBookingId = bookings.find((entry) => entry.paymentStatus !== 'paid')?.id || null;
+
     return res.status(201).json({
       message: 'Hydrogen bookings saved successfully.',
       summary: {
@@ -2895,16 +2902,19 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
         totalSessions,
         packagePriceInr,
         extraSessionPriceInr,
-        hydrogenSubtotalInr: Number(pricingAdjustments.hydrogenSubtotalInr || 0),
-        hydrogenIncludedDiscountInr: Number(pricingAdjustments.hydrogenIncludedDiscountInr || 0),
-        hydrogenPayableAmountInr: Number(pricingAdjustments.hydrogenPayableAmountInr || 0),
-        membershipIncludedSessions: Number(pricingAdjustments.membershipIncludedSessions || 0),
-        membershipIncludedSessionsTotal: Number(pricingAdjustments.membershipIncludedSessionsTotal || 0),
-        membershipSessionsRemaining: Number(pricingAdjustments.membershipSessionsRemaining || 0),
-        totalAmountInr: Number(pricingAdjustments.totalAmountInr || 0),
+        membershipActive,
+        freeLimitPerUser: HYDROGEN_FREE_SESSIONS_PER_USER,
+        usedHydrogenSessions,
+        freeSessionsApplied,
+        chargeableHydrogenSessions,
+        memberSessionPriceInr,
+        hydrogenAmountInr,
+        addOnAmountInr: Number(addOnPriceInr || 0),
+        totalAmountInr,
         addOn: addOnSummary,
       },
       bookings,
+      paymentBookingId,
     });
   } catch (error) {
     return res.status(409).json({ message: error?.message || 'Unable to save hydrogen bookings' });
@@ -2987,20 +2997,17 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
     }
   }
   const addOnPriceInr = addOnService ? getEffectiveServicePriceInr(addOnService, targetUser) : 0;
-  const membershipCoverage = getHydrogenMembershipCoverage(targetUser, { userId: targetUser.id });
-  const pricingAdjustments = getHydrogenMembershipPricingAdjustments({
-    user: targetUser,
-    userId: targetUser.id,
-    hydrogenSessionCount: totalSessions,
-    packagePriceInr,
-    extraSessionPriceInr,
-    extraSessions,
-    addOnAmountInr: addOnPriceInr,
-    coverage: membershipCoverage,
-  });
-  const totalAmountInr = Number(pricingAdjustments.totalAmountInr || 0);
-  const bookingStatus = totalAmountInr <= 0 ? 'booked' : 'pending';
-  const bookingPaymentStatus = totalAmountInr <= 0 ? 'paid' : 'unpaid';
+
+  const membershipActive = isMembershipActiveForUser(targetUser);
+  const usedHydrogenSessions = membershipActive ? countHydrogenSessionsUsedForMembership(targetUser.id, targetUser) : 0;
+  const freeRemaining = membershipActive ? Math.max(0, HYDROGEN_FREE_SESSIONS_PER_USER - usedHydrogenSessions) : 0;
+  const freeSessionsApplied = membershipActive ? Math.min(totalSessions, freeRemaining) : 0;
+  const chargeableHydrogenSessions = membershipActive ? Math.max(0, totalSessions - freeSessionsApplied) : 0;
+  const memberSessionPriceInr = membershipActive ? Number(extraSessionPriceInr || 0) : 0;
+  const hydrogenAmountInr = membershipActive
+    ? chargeableHydrogenSessions * memberSessionPriceInr
+    : Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions;
+  const totalAmountInr = Number(hydrogenAmountInr || 0) + Number(addOnPriceInr || 0);
   const hydrogenDailyLimitConflict = validateHydrogenDailySessionLimit(targetUser.id, normalizedSlots);
   if (hydrogenDailyLimitConflict) {
     return res.status(409).json({
@@ -3014,7 +3021,7 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
       `INSERT INTO bookings (
         user_id, doctor_id, client_name, client_email, client_phone,
         service_name, booking_date, booking_time, assigned_staff, status, payment_status, booking_group_id, notes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
     );
     const countActiveForSlot = db.prepare(
       `SELECT
@@ -3030,9 +3037,15 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
     const inRequestCounter = new Map();
     const createdIds = [];
     let addOnSummary = null;
+    const freeSlotIndexes = new Set();
+    if (membershipActive && freeSessionsApplied > 0) {
+      const indexed = normalizedSlots.map((slot, idx) => ({ ...slot, idx }));
+      indexed.sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
+      indexed.slice(0, freeSessionsApplied).forEach((slot) => freeSlotIndexes.add(slot.idx));
+    }
 
     const txn = db.transaction((entries) => {
-      for (const entry of entries) {
+      for (const [idx, entry] of entries.entries()) {
         const key = `${entry.bookingDate}|${entry.bookingTime}`;
         const alreadyInRequest = Number(inRequestCounter.get(key) || 0);
         const slotStats = countActiveForSlot.get(service.name, entry.bookingDate, entry.bookingTime) || {};
@@ -3043,6 +3056,7 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
         }
         inRequestCounter.set(key, alreadyInRequest + 1);
 
+        const paymentStatus = freeSlotIndexes.has(idx) ? 'paid' : 'unpaid';
         const result = insertBooking.run(
           targetUser.id,
           null,
@@ -3053,8 +3067,7 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
           entry.bookingDate,
           entry.bookingTime,
           'H2 House Of Health',
-          bookingStatus,
-          bookingPaymentStatus,
+          paymentStatus,
           bookingGroupId,
           `Hydrogen package ${packageSessions} + extra ${extraSessions} (booked by admin)`,
           getCurrentSqliteTimestamp()
@@ -3095,8 +3108,7 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
           addOnSlot.bookingDate,
           addOnSlot.bookingTime,
           'H2 House Of Health',
-          bookingStatus,
-          bookingPaymentStatus,
+          'unpaid',
           bookingGroupId,
           `IV add-on for ${service.name} (Session ${addOnSessionIndex + 1}) (booked by admin)`,
           getCurrentSqliteTimestamp()
@@ -3123,6 +3135,8 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
       )
       .all(...createdIds);
 
+    const paymentBookingId = bookings.find((entry) => entry.paymentStatus !== 'paid')?.id || null;
+
     return res.status(201).json({
       message: 'Hydrogen bookings saved successfully.',
       summary: {
@@ -3132,13 +3146,15 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
         totalSessions,
         packagePriceInr,
         extraSessionPriceInr,
-        hydrogenSubtotalInr: Number(pricingAdjustments.hydrogenSubtotalInr || 0),
-        hydrogenIncludedDiscountInr: Number(pricingAdjustments.hydrogenIncludedDiscountInr || 0),
-        hydrogenPayableAmountInr: Number(pricingAdjustments.hydrogenPayableAmountInr || 0),
-        membershipIncludedSessions: Number(pricingAdjustments.membershipIncludedSessions || 0),
-        membershipIncludedSessionsTotal: Number(pricingAdjustments.membershipIncludedSessionsTotal || 0),
-        membershipSessionsRemaining: Number(pricingAdjustments.membershipSessionsRemaining || 0),
-        totalAmountInr: Number(pricingAdjustments.totalAmountInr || 0),
+        membershipActive,
+        freeLimitPerUser: HYDROGEN_FREE_SESSIONS_PER_USER,
+        usedHydrogenSessions,
+        freeSessionsApplied,
+        chargeableHydrogenSessions,
+        memberSessionPriceInr,
+        hydrogenAmountInr,
+        addOnAmountInr: Number(addOnPriceInr || 0),
+        totalAmountInr,
         addOn: addOnSummary,
       },
       bookings,
@@ -3151,7 +3167,8 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
         membershipExpiresAt: targetUser.membershipExpiresAt || null,
         membershipPeopleCount: targetUser.membershipPeopleCount ?? null,
       },
-      paymentLinkUrl: totalAmountInr > 0 && bookings[0] ? buildBookingPaymentLink(req, bookings[0].id, targetUser.id) : '',
+      paymentLinkUrl: totalAmountInr > 0 && paymentBookingId ? buildBookingPaymentLink(req, paymentBookingId, targetUser.id) : '',
+      paymentBookingId,
     });
   } catch (error) {
     return res.status(409).json({ message: error?.message || 'Unable to save hydrogen bookings' });
@@ -3805,6 +3822,54 @@ app.get('/api/bookings/:id/payment-link', requireAuth, (req, res) => {
 
   return res.json({
     paymentLinkUrl: buildBookingPaymentLink(req, booking.id, booking.userId),
+  });
+});
+
+app.post('/api/bookings/:id/send-payment-link-sms', requireAuth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ message: 'Only admins can send payment links via SMS' });
+  }
+
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const phoneNumber = String(req.body?.phoneNumber || '').trim();
+  if (!phoneNumber || phoneNumber.length < 7) {
+    return res.status(400).json({ message: 'valid phoneNumber is required' });
+  }
+
+  const booking = db
+    .prepare(
+      'SELECT id, user_id AS userId, status, payment_status AS paymentStatus, service_name AS serviceName, created_at AS createdAt FROM bookings WHERE id = ?'
+    )
+    .get(bookingId);
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+  if (!canAccessBooking(req.user, booking.userId)) {
+    return res.status(403).json({ message: 'forbidden' });
+  }
+
+  const service = getServiceByName(booking.serviceName);
+  if (!service || service.membershipOnly || booking.paymentStatus === 'paid') {
+    return res.status(409).json({ message: 'payment link is not required for this booking' });
+  }
+  if (isHoldExpiredBooking(booking)) {
+    return res.status(409).json({ message: 'This booking hold has expired. Please book another slot.' });
+  }
+
+  const paymentLink = buildBookingPaymentLink(req, booking.id, booking.userId);
+  
+  // For demo/test: Log the SMS instead of actually sending
+  // In production, integrate with a real SMS provider (Twilio, AWS SNS, etc.)
+  console.log(`SMS to ${phoneNumber}: Payment link: ${paymentLink}`);
+  
+  return res.json({
+    message: `Payment link sent successfully to ${phoneNumber}`,
+    phoneNumber,
+    paymentLinkUrl: paymentLink,
   });
 });
 
@@ -5879,6 +5944,7 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
   if (payload.error) return res.status(400).json({ message: payload.error });
 
   const selectedService = getServiceByName(payload.data.serviceName);
+  const selectedCategory = String(selectedService?.category || '').toUpperCase();
   if (
     selectedService &&
     isAddOnService(selectedService) &&
@@ -5926,13 +5992,13 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
     return res.status(409).json({ message });
   }
 
-  const isHydrogenService = String(selectedService?.category || '').toUpperCase() === 'HYDROGEN SESSION';
-  const hydrogenCoverage = isHydrogenService
-    ? getHydrogenMembershipCoverage(targetUser, { userId: targetUser.id })
-    : null;
-  const autoCoveredHydrogen = Boolean(isHydrogenService && Number(hydrogenCoverage?.remainingSessions || 0) > 0);
-  const bookingStatus = autoCoveredHydrogen ? 'booked' : 'pending';
-  const bookingPaymentStatus = selectedService?.membershipOnly || autoCoveredHydrogen ? 'paid' : 'unpaid';
+  let paymentStatus = selectedService?.membershipOnly ? 'paid' : 'unpaid';
+  if (selectedCategory === 'HYDROGEN SESSION') {
+    const remainingFree = getHydrogenFreeSessionsRemaining(targetUser);
+    if (remainingFree > 0) {
+      paymentStatus = 'paid';
+    }
+  }
 
   const result = db
     .prepare(
@@ -5951,8 +6017,7 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
       payload.data.bookingDate,
       payload.data.bookingTime,
       'H2 House Of Health',
-      bookingStatus,
-      bookingPaymentStatus,
+      paymentStatus,
       payload.data.notes || defaultNotes,
       getCurrentSqliteTimestamp()
     );
@@ -5993,7 +6058,7 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
       membershipExpiresAt: targetUser.membershipExpiresAt || null,
       membershipPeopleCount: targetUser.membershipPeopleCount ?? null,
     },
-    paymentLinkUrl: bookingPaymentStatus === 'paid' ? '' : buildBookingPaymentLink(req, booking.id, targetUser.id),
+    paymentLinkUrl: paymentStatus === 'paid' ? '' : buildBookingPaymentLink(req, booking.id, targetUser.id),
   });
 }
 
@@ -6475,16 +6540,19 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
     throw new Error('Invalid hydrogen service configured on booking group.');
   }
 
-  const packageSessions = getHydrogenSessionCountFromServiceName(baseService.name);
   const singleSessionService =
     SERVICE_CATALOG.find(
       (item) =>
         String(item.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
         getHydrogenSessionCountFromServiceName(item.name) === 1
     ) || baseService;
-  const extraSessions = Math.max(0, hydrogenBookings.length - packageSessions);
-  const packagePriceInr = getEffectiveServicePriceInr(baseService, user);
-  const extraSessionPriceInr = getEffectiveServicePriceInr(singleSessionService, user);
+
+  const membershipActive = isMembershipActiveForUser(user);
+  const memberSessionPriceInr = membershipActive ? getEffectiveServicePriceInr(singleSessionService, user) : 0;
+  const packageSessions = membershipActive ? hydrogenBookings.length : getHydrogenSessionCountFromServiceName(baseService.name);
+  const extraSessions = membershipActive ? 0 : Math.max(0, hydrogenBookings.length - packageSessions);
+  const packagePriceInr = membershipActive ? 0 : getEffectiveServicePriceInr(baseService, user);
+  const extraSessionPriceInr = membershipActive ? memberSessionPriceInr : getEffectiveServicePriceInr(singleSessionService, user);
   const addOnBookings = bookings.filter((entry) => {
     const service = getServiceByName(entry.serviceName);
     return isAddOnService(service);
@@ -6500,18 +6568,10 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
     };
   });
   const addOnAmountInr = addOnItems.reduce((sum, item) => sum + Number(item.amountInr || 0), 0);
-  const bookingOwnerId = Number(hydrogenBookings[0]?.userId || bookings[0]?.userId || user?.id || 0);
-  const userContext = normalizeMembershipPricingUser(user, bookingOwnerId || null);
-  const pricingAdjustments = getHydrogenMembershipPricingAdjustments({
-    user: userContext,
-    userId: bookingOwnerId || null,
-    hydrogenSessionCount: hydrogenBookings.length,
-    packagePriceInr,
-    extraSessionPriceInr,
-    extraSessions,
-    addOnAmountInr,
-    hydrogenBookingIds: hydrogenBookings.map((entry) => Number(entry.id)).filter((id) => Number.isInteger(id)),
-  });
+  const hydrogenAmountInr = membershipActive
+    ? hydrogenBookings.length * Number(memberSessionPriceInr || 0)
+    : Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions;
+  const totalAmountInr = Number(hydrogenAmountInr || 0) + Number(addOnAmountInr || 0);
 
   return {
     serviceName: baseService.name,
@@ -6519,12 +6579,9 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
     extraSessions,
     packagePriceInr,
     extraSessionPriceInr,
-    hydrogenSubtotalInr: Number(pricingAdjustments.hydrogenSubtotalInr || 0),
-    hydrogenIncludedDiscountInr: Number(pricingAdjustments.hydrogenIncludedDiscountInr || 0),
-    hydrogenPayableAmountInr: Number(pricingAdjustments.hydrogenPayableAmountInr || 0),
-    membershipIncludedSessions: Number(pricingAdjustments.membershipIncludedSessions || 0),
-    membershipIncludedSessionsTotal: Number(pricingAdjustments.membershipIncludedSessionsTotal || 0),
-    membershipSessionsRemaining: Number(pricingAdjustments.membershipSessionsRemaining || 0),
+    membershipActive,
+    memberSessionPriceInr,
+    hydrogenAmountInr,
     addOnItems,
     totalAmountInr: Number(pricingAdjustments.totalAmountInr || 0),
     bookingCount: bookings.length,
@@ -7099,7 +7156,15 @@ function isBookingSlotInPast(bookingDate, bookingTime) {
   const normalizedDate = String(bookingDate || '').trim();
   const normalizedTime = String(bookingTime || '').trim();
   if (!normalizedDate || !normalizedTime) return false;
-  const slotDateTime = new Date(`${normalizedDate}T${normalizedTime}:00`);
+  const dateMatch = normalizedDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const timeMatch = normalizedTime.match(/^(\d{2}):(\d{2})$/);
+  if (!dateMatch || !timeMatch) return false;
+  const year = Number(dateMatch[1]);
+  const monthIndex = Number(dateMatch[2]) - 1;
+  const day = Number(dateMatch[3]);
+  const hours = Number(timeMatch[1]);
+  const minutes = Number(timeMatch[2]);
+  const slotDateTime = new Date(year, monthIndex, day, hours, minutes, 0, 0);
   if (Number.isNaN(slotDateTime.getTime())) return false;
   return slotDateTime.getTime() < Date.now();
 }
@@ -7155,12 +7220,91 @@ function isMembershipActiveForUser(user) {
   return expiresAt > Date.now();
 }
 
+function formatLocalIsoDate(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getMembershipIsoDateRange(user) {
+  if (!isMembershipActiveForUser(user)) return null;
+
+  const startedAtMs = user?.membershipStartedAt ? new Date(user.membershipStartedAt).getTime() : null;
+  const storedExpiresAtMs = user?.membershipExpiresAt ? new Date(user.membershipExpiresAt).getTime() : null;
+  const expiresAtMs =
+    Number.isFinite(startedAtMs) && startedAtMs > 0
+      ? startedAtMs + MEMBERSHIP_VALIDITY_DAYS * 24 * 60 * 60 * 1000
+      : storedExpiresAtMs;
+
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= 0) return null;
+
+  let effectiveStartedAtMs = startedAtMs;
+  if (!Number.isFinite(effectiveStartedAtMs) || effectiveStartedAtMs <= 0) {
+    effectiveStartedAtMs = expiresAtMs - MEMBERSHIP_VALIDITY_DAYS * 24 * 60 * 60 * 1000;
+  }
+
+  return {
+    startIso: formatLocalIsoDate(effectiveStartedAtMs),
+    endIso: formatLocalIsoDate(expiresAtMs),
+  };
+}
+
+function getHydrogenServiceNames() {
+  return SERVICE_CATALOG.filter((service) => String(service.category || '').toUpperCase() === 'HYDROGEN SESSION').map((service) => service.name);
+}
+
+function countHydrogenSessionsUsedForMembership(userId, user) {
+  const normalizedUserId = Number(userId);
+  if (!Number.isInteger(normalizedUserId)) return 0;
+  const hydrogenServiceNames = getHydrogenServiceNames();
+  if (!hydrogenServiceNames.length) return 0;
+
+  const dateRange = getMembershipIsoDateRange(user);
+  const placeholders = hydrogenServiceNames.map(() => '?').join(', ');
+  const params = [normalizedUserId, ...hydrogenServiceNames];
+  let dateClause = '';
+  if (dateRange?.startIso && dateRange?.endIso) {
+    dateClause = ' AND booking_date BETWEEN ? AND ?';
+    params.push(dateRange.startIso, dateRange.endIso);
+  }
+
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM bookings
+       WHERE user_id = ?
+         AND service_name IN (${placeholders})
+         AND status <> 'cancelled'
+         AND (
+           status IN ('booked', 'confirmed', 'completed')
+           OR (status = 'pending' AND payment_status = 'paid')
+         )
+         ${dateClause}`
+    )
+    .get(...params);
+
+  return Number(row?.count || 0);
+}
+
+function getHydrogenFreeSessionsRemaining(user) {
+  if (!isMembershipActiveForUser(user)) return 0;
+  const used = countHydrogenSessionsUsedForMembership(user?.id, user);
+  return Math.max(0, HYDROGEN_FREE_SESSIONS_PER_USER - used);
+}
+
 function getEffectiveServicePriceInr(service, user) {
   if (!service) return 0;
   const category = String(service.category || '').toUpperCase();
   const isHydrogen = category === 'HYDROGEN SESSION';
   const membershipActive = isMembershipActiveForUser(user);
   const userPhone = user?.mobile || '';
+
+  if (category === 'EXPERIENCE SESSION') {
+    return Number(service.priceInr || 0);
+  }
 
   if (service.membershipOnly) {
     return membershipActive ? Number(service.priceInr || 0) : 0;

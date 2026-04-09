@@ -15,6 +15,7 @@
       <header class="portal-header">
         <div class="brand-lockup">
           <h1 class="sr-only">H2 House of Health Patient Booking Portal</h1>
+          <img class="brand-logo-wordmark" src="assets/h2-logo-wordmark.svg" alt="H2 House of Health" />
         </div>
         <div class="top-actions" id="appArea" hidden>
           <button id="profileBtn" class="profile-btn" type="button">
@@ -102,7 +103,7 @@
 
       <section class="stats-grid admin-stats-grid app-only admin-only" aria-label="Booking summary" hidden>
         <button id="adminStatTotal" class="stat-card" type="button">
-          <h2>Total Bookings Today</h2>
+          <h2>Today's Bookings</h2>
           <p id="totalCount">0</p>
         </button>
         <button id="adminHistoryCard" class="stat-card" type="button">
@@ -276,10 +277,13 @@
 
       <section id="bookingFiltersSection" class="panel app-only admin-only" aria-label="Filter bookings" hidden>
         <div class="filters">
-          <label>
-            Search
-            <input id="searchInput" type="text" placeholder="Client, service" />
-          </label>
+          <div class="search-wrapper">
+            <label>
+              Search
+              <input id="searchInput" type="text" placeholder="Client, service" />
+            </label>
+            <button id="searchBtn" class="btn btn-primary search-btn" type="button" title="Search bookings">Search</button>
+          </div>
           <label>
             Status
             <select id="statusFilter">
@@ -517,15 +521,30 @@
             Time Slot
             <select id="bookingTime" required></select>
           </label>
+          <label id="addOnServiceLabel" class="full-width" hidden>
+            Add-on Service (Optional)
+            <select id="addOnService">
+              <option value="">No add-on</option>
+            </select>
+          </label>
           <label class="full-width">
             Notes
             <textarea id="bookingNotes" rows="3" placeholder="Optional notes"></textarea>
           </label>
         </div>
 
+        <div id="bookingSummary" class="booking-summary" hidden>
+          <div class="summary-title">Payment Summary</div>
+          <div id="summaryContent" class="summary-content"></div>
+          <div class="summary-total">
+            <strong>Total Payable:</strong>
+            <span id="totalPayable">Rs. 0</span>
+          </div>
+        </div>
+
         <div class="dialog-actions">
           <button class="btn btn-secondary" type="button" id="cancelDialogBtn">Cancel</button>
-          <button class="btn btn-primary" type="submit">Save Booking</button>
+          <button class="btn btn-primary" type="submit">Confirm Book</button>
         </div>
       </form>
     </dialog>

@@ -1667,7 +1667,7 @@ async function upsertBooking() {
 
     await loadDashboardData();
     
-    // For new bookings, handle payment flow
+    // For new bookings, handle post-save flow
     if (isNewBooking) {
       const bookingId = result?.booking?.id || result?.bookings?.[0]?.id;
       if (isAdmin) {
@@ -1677,21 +1677,14 @@ async function upsertBooking() {
         render();
         await showAdminPaymentLinkDialog(bookingId, registeredMobile);
       } else {
-        // User flow: redirect to payment
+        // User flow: add to cart and let checkout happen only from "Pay Now"
         closeDialog();
+        state.activeUserTab = 'bookings';
+        const cartSummary = buildUserCartSummary(state.bookings || []);
         render();
-        if (bookingId) {
-          try {
-            const linkResult = await api(`/api/bookings/${bookingId}/payment-link`);
-            if (linkResult?.paymentLinkUrl) {
-              await openPaymentWithBookingId(bookingId);
-            } else {
-              alert('Booking confirmed.');
-            }
-          } catch {
-            alert('Booking confirmed.');
-          }
-        }
+        alert(
+          `Added to cart.\n\nCart items: ${Number(cartSummary.unitCount || 0)}\nUse Pay Now in cart to continue payment.`
+        );
       }
     } else {
       // Editing existing booking
@@ -1985,7 +1978,7 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
     `Total Payable: Rs. ${totalAmountInr.toLocaleString('en-IN')}`,
     '',
     isAdmin ? 'Saved to All User Bookings.' : 'Saved to My Bookings.',
-    isAdmin ? 'Share the payment link with the customer.' : totalAmountInr > 0 ? 'Redirecting to payment...' : 'No payment required.',
+    isAdmin ? 'Share the payment link with the customer.' : totalAmountInr > 0 ? 'Added to cart. Use Pay Now in cart.' : 'No payment required.',
   ];
 
   state.selectedHydrogenSlots = [];
@@ -1998,14 +1991,14 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
   state.selectedServiceCategory = null;
   state.selectedHydrogenServiceName = '';
   await loadDashboardData();
+  if (!isAdmin) {
+    state.activeUserTab = 'bookings';
+  }
   render();
-  if (totalAmountInr > 0 && paymentBookingId) {
-    if (isAdmin) {
-      const registeredMobile = String(result?.customer?.mobile || '').trim() || String(state.adminCustomerForm.phone || '').trim();
-      await showAdminPaymentLinkDialog(paymentBookingId, registeredMobile);
-    } else {
-      await openPaymentWithBookingId(paymentBookingId);
-    }
+
+  if (isAdmin && totalAmountInr > 0 && paymentBookingId) {
+    const registeredMobile = String(result?.customer?.mobile || '').trim() || String(state.adminCustomerForm.phone || '').trim();
+    await showAdminPaymentLinkDialog(paymentBookingId, registeredMobile);
     return;
   }
 

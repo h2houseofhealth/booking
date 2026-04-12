@@ -2534,6 +2534,12 @@ h3,
   gap: 0.8rem;
 }
 
+#adminUserCards {
+  max-height: 640px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
 .admin-user-card {
   width: 100%;
   text-align: left;
@@ -5505,8 +5511,8 @@ table tbody td {
 #membershipPlans .membership-card-actions .btn.btn-primary {
   border: 0;
   color: #fff;
-  background: linear-gradient(180deg, #e87937, #cb5b1d);
-  box-shadow: 0 12px 22px rgba(203, 91, 29, 0.4);
+  background: linear-gradient(180deg, rgb(189, 103, 68), rgb(174, 84, 49));
+  box-shadow: 0 12px 22px rgba(174, 84, 49, 0.4);
   transition: transform 0.22s ease, box-shadow 0.22s ease, filter 0.22s ease;
 }
 
@@ -5521,7 +5527,7 @@ table tbody td {
 }
 
 #membershipPlans .membership-card-actions .btn.btn-primary:disabled {
-  background: linear-gradient(180deg, rgba(216, 128, 84, 0.86), rgba(171, 85, 45, 0.86));
+  background: linear-gradient(180deg, rgba(189, 103, 68, 0.86), rgba(174, 84, 49, 0.86));
   box-shadow: none;
 }
 

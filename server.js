@@ -2752,6 +2752,12 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
     addOnAmountInr: addOnPriceInr,
     coverage: membershipCoverage,
   });
+  const membershipActive = isMembershipActiveForUser(req.user);
+  const usedHydrogenSessions = Number(membershipCoverage.usedSessions || 0);
+  const freeSessionsApplied = Number(pricingAdjustments.membershipIncludedSessions || 0);
+  const chargeableHydrogenSessions = Math.max(0, totalSessions - freeSessionsApplied);
+  const memberSessionPriceInr = membershipActive ? Number(extraSessionPriceInr || 0) : 0;
+  const hydrogenAmountInr = Number(pricingAdjustments.hydrogenPayableAmountInr || 0);
   const totalAmountInr = Number(pricingAdjustments.totalAmountInr || 0);
   const bookingStatus = totalAmountInr <= 0 ? 'booked' : 'pending';
   const bookingPaymentStatus = totalAmountInr <= 0 ? 'paid' : 'unpaid';
@@ -2777,7 +2783,7 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
       `INSERT INTO bookings (
         user_id, doctor_id, client_name, client_email, client_phone,
         service_name, booking_date, booking_time, assigned_staff, status, payment_status, booking_group_id, notes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const countActiveForSlot = db.prepare(
       `SELECT
@@ -2793,15 +2799,9 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
     const inRequestCounter = new Map();
     const createdIds = [];
     let addOnSummary = null;
-    const freeSlotIndexes = new Set();
-    if (membershipActive && freeSessionsApplied > 0) {
-      const indexed = normalizedSlots.map((slot, idx) => ({ ...slot, idx }));
-      indexed.sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
-      indexed.slice(0, freeSessionsApplied).forEach((slot) => freeSlotIndexes.add(slot.idx));
-    }
 
     const txn = db.transaction((entries) => {
-      for (const [idx, entry] of entries.entries()) {
+      for (const entry of entries) {
         const key = `${entry.bookingDate}|${entry.bookingTime}`;
         const alreadyInRequest = Number(inRequestCounter.get(key) || 0);
         const slotStats = countActiveForSlot.get(service.name, entry.bookingDate, entry.bookingTime) || {};
@@ -2812,7 +2812,6 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
         }
         inRequestCounter.set(key, alreadyInRequest + 1);
 
-        const paymentStatus = freeSlotIndexes.has(idx) ? 'paid' : 'unpaid';
         const result = insertBooking.run(
           req.user.id,
           null,
@@ -2823,7 +2822,8 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
           entry.bookingDate,
           entry.bookingTime,
           'H2 House Of Health',
-          paymentStatus,
+          bookingStatus,
+          bookingPaymentStatus,
           bookingGroupId,
           `Hydrogen package ${packageSessions} + extra ${extraSessions}`,
           getCurrentSqliteTimestamp()
@@ -2864,7 +2864,8 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
           addOnSlot.bookingDate,
           addOnSlot.bookingTime,
           'H2 House Of Health',
-          'unpaid',
+          bookingStatus,
+          bookingPaymentStatus,
           bookingGroupId,
           `IV add-on for ${service.name} (Session ${addOnSessionIndex + 1})`,
           getCurrentSqliteTimestamp()
@@ -5490,6 +5491,12 @@ function buildInvoiceBusinessLines() {
   ].filter(Boolean);
 }
 
+function normalizeInvoiceItemLabel(label) {
+  const raw = String(label || '').trim();
+  if (!raw) return 'Service';
+  return raw.toLowerCase() === 'experience session' ? 'Demo Session' : raw;
+}
+
 function buildInvoicePdfModel(source, invoiceRecord) {
   const invoiceSettings = getInvoiceSettings();
   const customer = source.customer || {};
@@ -5516,7 +5523,7 @@ function buildInvoicePdfModel(source, invoiceRecord) {
       payment.paidAt ? `Booked on: ${formatInvoiceDateTime(payment.paidAt)}` : '',
     ].filter(Boolean),
     items: items.map((item) => ({
-      label: String(item.label || '').trim() || 'Service',
+      label: normalizeInvoiceItemLabel(item.label),
       description: String(item.description || '').trim(),
       amountText: formatInrFromPaise(item.amountPaise || 0),
     })),
@@ -5621,7 +5628,7 @@ async function renderInvoicePdf(source, invoiceRecord) {
 
 function buildServiceInvoiceItems(bookings) {
   return (Array.isArray(bookings) ? bookings : []).map((booking) => ({
-    label: booking.serviceName,
+    label: normalizeInvoiceItemLabel(booking.serviceName),
     description: `Schedule: ${formatInvoiceBookingSlot(booking.bookingDate, booking.bookingTime)}`,
     amountPaise: Number(booking.amountPaise || 0),
   }));
@@ -5999,6 +6006,7 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
       paymentStatus = 'paid';
     }
   }
+  const bookingStatus = paymentStatus === 'paid' ? 'booked' : 'pending';
 
   const result = db
     .prepare(
@@ -6017,6 +6025,7 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
       payload.data.bookingDate,
       payload.data.bookingTime,
       'H2 House Of Health',
+      bookingStatus,
       paymentStatus,
       payload.data.notes || defaultNotes,
       getCurrentSqliteTimestamp()
@@ -6568,10 +6577,22 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
     };
   });
   const addOnAmountInr = addOnItems.reduce((sum, item) => sum + Number(item.amountInr || 0), 0);
-  const hydrogenAmountInr = membershipActive
-    ? hydrogenBookings.length * Number(memberSessionPriceInr || 0)
-    : Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions;
-  const totalAmountInr = Number(hydrogenAmountInr || 0) + Number(addOnAmountInr || 0);
+  const membershipCoverage = getHydrogenMembershipCoverage(user, {
+    userId: user?.id,
+    excludeBookingIds: [],
+  });
+  const pricingAdjustments = getHydrogenMembershipPricingAdjustments({
+    user,
+    userId: user?.id,
+    hydrogenSessionCount: hydrogenBookings.length,
+    packagePriceInr,
+    extraSessionPriceInr,
+    extraSessions,
+    addOnAmountInr,
+    hydrogenBookingIds: hydrogenBookings.map((entry) => Number(entry.id)).filter((id) => Number.isInteger(id)),
+    coverage: membershipCoverage,
+  });
+  const hydrogenAmountInr = Number(pricingAdjustments.hydrogenPayableAmountInr || 0);
 
   return {
     serviceName: baseService.name,
@@ -7144,7 +7165,7 @@ function validateBookingPayload(body, user) {
 
   return {
     data: {
-      serviceName,
+      serviceName: service.name,
       bookingDate,
       bookingTime,
       notes,
@@ -8383,6 +8404,7 @@ function migrate() {
   db.exec("UPDATE users SET role = 'user' WHERE role = 'doctor'");
   db.exec("UPDATE users SET membership_status = 'inactive' WHERE membership_status IS NULL OR membership_status = ''");
   db.exec("UPDATE doctors SET approval_status = 'approved' WHERE approval_status IS NULL OR approval_status = ''");
+  db.exec("UPDATE bookings SET service_name = 'Demo Session' WHERE lower(service_name) = 'experience session'");
 
   backfillMembershipSubscriptionsFromOrders();
   refreshMembershipSubscriptionStates();

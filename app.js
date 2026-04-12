@@ -83,6 +83,7 @@ const IV_REBOOK_COOLDOWN_DAYS = 14;
 const MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER = 3;
 const BOOKING_HOLD_MINUTES = 10;
 const HYDROGEN_FREE_SESSIONS_PER_USER = 16;
+const ADMIN_USER_CARD_DEFAULT_LIMIT = 4;
 
 const elements = {
   authCard: document.getElementById('authCard'),
@@ -2487,8 +2488,34 @@ function getFilteredBookings(sourceBookings = state.bookings) {
 function getFilteredAdminUsers() {
   const users = Array.isArray(state.adminUsers) ? state.adminUsers : [];
   const query = String(state.adminSessionSearch || '').trim().toLowerCase();
-  if (!query) return users;
-  return users.filter((user) => {
+  const latestBookingByUser = new Map();
+
+  (Array.isArray(state.bookings) ? state.bookings : []).forEach((booking) => {
+    const userId = String(booking?.userId || '').trim();
+    if (!userId) return;
+    const createdAtMs = booking?.createdAt ? new Date(booking.createdAt).getTime() : Number.NaN;
+    const scheduledAtMs = getBookingStartTime(booking);
+    const timestamp = Number.isFinite(createdAtMs)
+      ? createdAtMs
+      : Number.isFinite(scheduledAtMs)
+        ? scheduledAtMs
+        : 0;
+    const current = Number(latestBookingByUser.get(userId) || 0);
+    if (timestamp > current) latestBookingByUser.set(userId, timestamp);
+  });
+
+  const sortedUsers = [...users].sort((a, b) => {
+    const aTs = Number(latestBookingByUser.get(String(a?.id || '')) || 0);
+    const bTs = Number(latestBookingByUser.get(String(b?.id || '')) || 0);
+    if (bTs !== aTs) return bTs - aTs;
+    return String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' });
+  });
+
+  if (!query) {
+    return sortedUsers.slice(0, ADMIN_USER_CARD_DEFAULT_LIMIT);
+  }
+
+  return sortedUsers.filter((user) => {
     const haystack = [user?.id, user?.name, user?.email, user?.mobile].join(' ').toLowerCase();
     return haystack.includes(query);
   });

@@ -4186,10 +4186,13 @@ table tbody td {
   box-shadow: none;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .service-category-card.service-showcase-card.is-expanded {
+  grid-column: 1 / -1;
   width: 100%;
+  max-width: none;
   border: 0;
   box-shadow: none;
   border-radius: 18px;
@@ -4293,7 +4296,7 @@ table tbody td {
   border-radius: 0 0 18px 18px;
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   padding: 1rem;
   background: transparent;
@@ -4320,6 +4323,11 @@ table tbody td {
   display: grid;
   gap: 0.85rem;
   padding: 0.4rem 0.28rem 0;
+  min-width: 0;
+}
+
+.service-detail-page > * {
+  min-width: 0;
 }
 
 .service-detail-topbar {
@@ -4486,6 +4494,12 @@ table tbody td {
 
   .service-category-card.service-showcase-card.is-expanded {
     width: 100%;
+  }
+}
+
+@media (max-width: 1200px) {
+  .service-detail-page .hydrogen-layout {
+    grid-template-columns: 1fr;
   }
 }
 

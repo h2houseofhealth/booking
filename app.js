@@ -2941,7 +2941,20 @@ function renderServices() {
     `;
 
     header.addEventListener('click', () => {
-      state.expandedServiceCategories[category] = !state.expandedServiceCategories[category];
+      const isCurrentlyExpanded = Boolean(state.expandedServiceCategories[category]);
+      if (isCurrentlyExpanded) {
+        state.expandedServiceCategories[category] = false;
+      } else {
+        const nextExpandedState = {};
+        for (const item of orderedCategories) {
+          nextExpandedState[item] = false;
+        }
+        nextExpandedState[category] = true;
+        state.expandedServiceCategories = {
+          ...state.expandedServiceCategories,
+          ...nextExpandedState,
+        };
+      }
       renderServices();
     });
 

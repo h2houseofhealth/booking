@@ -130,9 +130,7 @@ body.auth-mode .portal {
 }
 
 body.auth-mode .portal-header {
-  margin-bottom: 0;
-  text-align: center;
-  justify-content: center;
+  display: none;
 }
 
 h1 {
@@ -5200,8 +5198,7 @@ table tbody td {
   }
 
   body.auth-mode .portal-header {
-    text-align: left;
-    justify-content: flex-start;
+    display: none;
   }
 
   .brand-logo-wordmark {

@@ -1847,6 +1847,24 @@ async function sendPaymentLinkViaSMS(bookingId, phoneNumber) {
   }
 }
 
+async function notifyMissedSession(booking) {
+  if (!booking?.id) return;
+  const serviceLabel = booking.serviceName || 'Session';
+  const scheduleLabel = formatDateTime(booking.bookingDate, booking.bookingTime);
+  const confirmed = confirm(
+    `Notify user about missed session?\n\n${serviceLabel}\n${scheduleLabel}`
+  );
+  if (!confirmed) return;
+  try {
+    const result = await api(`/api/admin/bookings/${booking.id}/notify-missed`, {
+      method: 'POST',
+    });
+    alert(result.message || 'Missed session notification sent.');
+  } catch (error) {
+    alert(error?.message || 'Unable to notify user for missed session.');
+  }
+}
+
 async function changeStatus(id, status) {
   await api(`/api/bookings/${id}/status`, {
     method: 'PATCH',
@@ -2930,8 +2948,22 @@ function getHydrogenSessionsUsedThisMembership() {
   const range = getCurrentMembershipIsoRange();
   const bookings = Array.isArray(state.bookings) ? state.bookings : [];
   return bookings.filter((booking) => {
-    if (String(booking.status || '').toLowerCase() === 'cancelled') return false;
+    if (String(booking.status || '').toLowerCase() !== 'completed') return false;
     if (getBookingCategory(booking.serviceName) !== 'HYDROGEN SESSION') return false;
+    if (!range?.startIso || !range?.endIso) return true;
+    const bookingDate = String(booking.bookingDate || '').trim();
+    return bookingDate >= range.startIso && bookingDate <= range.endIso;
+  }).length;
+}
+
+function getHydrogenMissedSessionsThisMembership() {
+  const range = getCurrentMembershipIsoRange();
+  const bookings = Array.isArray(state.bookings) ? state.bookings : [];
+  return bookings.filter((booking) => {
+    const status = String(booking.status || '').toLowerCase();
+    if (status === 'cancelled' || status === 'completed') return false;
+    if (getBookingCategory(booking.serviceName) !== 'HYDROGEN SESSION') return false;
+    if (!isBookingMissed(booking)) return false;
     if (!range?.startIso || !range?.endIso) return true;
     const bookingDate = String(booking.bookingDate || '').trim();
     return bookingDate >= range.startIso && bookingDate <= range.endIso;
@@ -2977,20 +3009,15 @@ function getMembershipHydrogenSessionSummary() {
       fallbackSessionsByPlan[String(current.plan || '').trim()] ||
       0
   );
-  const usedSessions = active
-    ? (state.bookings || []).filter(
-        (booking) =>
-          getBookingCategory(booking.serviceName) === 'HYDROGEN SESSION' &&
-          String(booking.status || '').toLowerCase() !== 'cancelled' &&
-          !booking.holdExpired
-      ).length
-    : 0;
+  const usedSessions = active ? getHydrogenSessionsUsedThisMembership() : 0;
+  const missedSessions = active ? getHydrogenMissedSessionsThisMembership() : 0;
   const remainingSessions = totalSessions > 0 ? Math.max(0, totalSessions - usedSessions) : 0;
 
   return {
     active,
     totalSessions,
     usedSessions,
+    missedSessions,
     remainingSessions,
     usagePercent: totalSessions > 0 ? Math.min(100, Math.round((usedSessions / totalSessions) * 100)) : 0,
   };
@@ -4777,12 +4804,15 @@ function renderMembershipCalendarDetails(dateKey, bookings) {
   const limited = bookings.slice(0, 3);
   const lines = limited
     .map(
-      (booking) => `
+      (booking) => {
+        const derivedStatus = getDerivedBookingStatus(booking);
+        return `
         <div class="membership-calendar-detail-item">
           <strong>${escapeHtml(booking.serviceName || 'Session')}</strong>
-          <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))}</span>
+          <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))} • ${escapeHtml(derivedStatus)}</span>
         </div>
-      `
+      `;
+      }
     )
     .join('');
   const moreCount = bookings.length - limited.length;
@@ -4915,6 +4945,7 @@ function renderMembership() {
   );
   const totalSessions = active ? HYDROGEN_FREE_SESSIONS_PER_USER : 0;
   const usedSessions = active ? getHydrogenSessionsUsedThisMembership() : 0;
+  const missedSessions = active ? Number(hydrogenSessionSummary.missedSessions || 0) : 0;
   const remainingSessions = totalSessions > 0 ? Math.max(0, totalSessions - usedSessions) : 0;
   const usagePercent = totalSessions > 0 ? Math.min(100, Math.round((usedSessions / totalSessions) * 100)) : 0;
 
@@ -4928,7 +4959,7 @@ function renderMembership() {
   }
   if (elements.membershipUsageNote) {
     elements.membershipUsageNote.textContent = active
-      ? `${remainingSessions} sessions remaining (per member)`
+      ? `${remainingSessions} sessions remaining (per member)${missedSessions > 0 ? ` • Missed sessions: ${missedSessions}` : ''}`
       : 'Start a membership to begin tracking sessions.';
   }
 
@@ -5432,6 +5463,14 @@ function isBookingMissed(booking) {
   return Number.isFinite(bookingStart) && bookingStart < Date.now();
 }
 
+function getDerivedBookingStatus(booking) {
+  const status = String(booking?.status || '').trim().toLowerCase();
+  if (isBookingMissed(booking) && !['completed', 'cancelled', 'missed'].includes(status)) {
+    return 'missed';
+  }
+  return status || 'pending';
+}
+
 function buildAdminUserSessionSummary(user) {
   const bookings = getAdminUserBookings(user?.id);
   const activeBookings = bookings.filter((booking) => String(booking?.status || '').toLowerCase() !== 'cancelled');
@@ -5586,11 +5625,7 @@ function renderAdminUserSessionDialog() {
   [...summary.bookings]
     .sort((a, b) => `${b.bookingDate}T${b.bookingTime}`.localeCompare(`${a.bookingDate}T${a.bookingTime}`))
     .forEach((booking) => {
-      const status = String(booking?.status || '').toLowerCase();
-      const derivedStatus =
-        isBookingMissed(booking) && !['completed', 'cancelled', 'missed'].includes(status)
-          ? 'missed'
-          : status || 'pending';
+      const derivedStatus = getDerivedBookingStatus(booking);
       const row = document.createElement('article');
       row.className = 'admin-user-session-row';
       row.innerHTML = `
@@ -5995,12 +6030,13 @@ function renderAdminRows(bookings) {
   elements.adminEmptyState.hidden = true;
 
   for (const booking of bookings) {
+    const derivedStatus = getDerivedBookingStatus(booking);
     const tr = document.createElement('tr');
     tr.appendChild(multilineCell(`${booking.clientName}\n${booking.clientMobile || '-'}`));
     tr.appendChild(cell(booking.serviceName));
     tr.appendChild(multilineCell(formatAdminBookingDateTime(booking.bookingDate, booking.bookingTime)));
     tr.appendChild(cell(formatBookingCreatedAtIndia(booking.createdAt)));
-    tr.appendChild(statusCell(booking.status));
+    tr.appendChild(statusCell(derivedStatus));
     tr.appendChild(paymentCell(booking.paymentStatus || 'unpaid'));
 
     const actionCell = document.createElement('td');
@@ -6019,6 +6055,9 @@ function renderAdminRows(bookings) {
       createActionButton('Complete', () => changeStatus(booking.id, 'completed')),
       createActionButton('Cancel', () => changeStatus(booking.id, 'cancelled'))
     );
+    if (derivedStatus === 'missed') {
+      actions.append(createActionButton('Notify Missed', () => notifyMissedSession(booking)));
+    }
     actions.append(createActionButton('Notes', () => openBookingNotesDialog(booking.id)));
 
     actionCell.appendChild(actions);

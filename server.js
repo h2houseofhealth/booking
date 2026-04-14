@@ -3874,6 +3874,59 @@ app.post('/api/bookings/:id/send-payment-link-sms', requireAuth, async (req, res
   });
 });
 
+async function notifyMissedBookingHandler(req, res) {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = db
+    .prepare(
+      `SELECT b.id,
+              b.user_id AS userId,
+              b.service_name AS serviceName,
+              b.booking_date AS bookingDate,
+              b.booking_time AS bookingTime,
+              b.status,
+              u.name AS clientName,
+              u.email AS clientEmail,
+              u.mobile AS clientMobile
+       FROM bookings b
+       JOIN users u ON u.id = b.user_id
+       WHERE b.id = ?`
+    )
+    .get(bookingId);
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+  if (!canAccessBooking(req.user, booking.userId)) {
+    return res.status(403).json({ message: 'forbidden' });
+  }
+  if (!isBookingMissedServer(booking)) {
+    return res.status(409).json({ message: 'This booking is not missed yet.' });
+  }
+
+  const emailResult = await sendMissedSessionEmail({
+    toEmail: booking.clientEmail,
+    recipientName: booking.clientName,
+    serviceName: booking.serviceName,
+    bookingDate: booking.bookingDate,
+    bookingTime: booking.bookingTime,
+  });
+
+  if (!emailResult.ok) {
+    return res.status(409).json({ message: emailResult.message || 'Unable to send missed session email.' });
+  }
+
+  return res.json({
+    message: 'Missed session notification email sent successfully.',
+    delivery: emailResult.delivery || 'email',
+  });
+}
+
+app.post('/api/admin/bookings/:id/notify-missed', requireAuth, requireAdmin, notifyMissedBookingHandler);
+app.post('/api/bookings/:id/notify-missed', requireAuth, requireAdmin, notifyMissedBookingHandler);
+
 app.get('/api/public/payments/booking', (req, res) => {
   const access = verifyPaymentAccessToken(req.query?.token);
   if (!access || !Number.isInteger(access.bookingId) || !Number.isInteger(access.userId)) {
@@ -7488,6 +7541,17 @@ function isValidStatus(status) {
   return ['pending', 'booked', 'confirmed', 'completed', 'cancelled'].includes(status);
 }
 
+function isBookingMissedServer(booking) {
+  const status = String(booking?.status || '').trim().toLowerCase();
+  if (status === 'missed') return true;
+  if (status === 'completed' || status === 'cancelled') return false;
+  const bookingDate = String(booking?.bookingDate || '').trim();
+  const bookingTime = String(booking?.bookingTime || '').trim();
+  if (!bookingDate || !bookingTime) return false;
+  const bookingStart = new Date(`${bookingDate}T${bookingTime}:00`).getTime();
+  return Number.isFinite(bookingStart) && bookingStart < Date.now();
+}
+
 function hasColumn(tableName, columnName) {
   const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
   return columns.some((column) => column.name === columnName);
@@ -7778,6 +7842,86 @@ async function sendSignupConfirmationEmail(toEmail, name) {
       statusCode: 500,
       message: 'Unable to send verification check email. Please try again.',
     };
+  }
+}
+
+async function sendMissedSessionEmail({ toEmail, recipientName, serviceName, bookingDate, bookingTime }) {
+  const normalizedToEmail = String(toEmail || '').trim().toLowerCase();
+  if (!normalizedToEmail || !isValidEmail(normalizedToEmail)) {
+    return { ok: false, message: 'valid user email is not available' };
+  }
+
+  const safeServiceName = String(serviceName || 'Session').trim() || 'Session';
+  const safeBookingDate = String(bookingDate || '').trim();
+  const safeBookingTime = String(bookingTime || '').trim();
+  const scheduleLabel = [safeBookingDate, safeBookingTime].filter(Boolean).join(' at ');
+  const greeting = recipientName ? `Hi ${recipientName},` : 'Hi,';
+  const subject = 'Missed session notice - H2 House Of Health';
+  const text =
+    `${greeting}\n\n` +
+    `You missed your scheduled session: ${safeServiceName}\n` +
+    `Schedule: ${scheduleLabel || 'scheduled time'}\n\n` +
+    `Please log in to your dashboard to reschedule your session.\n\n` +
+    `If you believe this is a mistake, please contact support.`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">
+      <p style="margin: 0 0 12px;">${escapeHtml(greeting)}</p>
+      <p style="margin: 0 0 12px;">You missed your scheduled session:</p>
+      <p style="margin: 0 0 6px;"><strong>${escapeHtml(safeServiceName)}</strong></p>
+      <p style="margin: 0 0 12px;">Schedule: ${escapeHtml(scheduleLabel || 'scheduled time')}</p>
+      <p style="margin: 0;">Please log in to your dashboard to reschedule your session.</p>
+      <p style="margin: 12px 0 0; color: #6b7280;">If you believe this is a mistake, please contact support.</p>
+    </div>
+  `;
+
+  if (SENDGRID_API_KEY && SENDGRID_FROM_EMAIL) {
+    try {
+      await sgMail.send({
+        to: normalizedToEmail,
+        from: SENDGRID_FROM_EMAIL,
+        subject,
+        text,
+        html,
+      });
+      return { ok: true, delivery: 'sendgrid' };
+    } catch (error) {
+      const sendGridError = extractSendGridErrorDetails(error);
+      console.error('Failed to send missed-session email via SendGrid:', {
+        statusCode: sendGridError.statusCode,
+        detail: sendGridError.detail,
+        responseBody: sendGridError.responseBody,
+      });
+      return {
+        ok: false,
+        message:
+          sendGridError.statusCode === 403
+            ? 'SendGrid rejected the sender identity. Verify sender email/domain.'
+            : 'Unable to send missed-session email.',
+      };
+    }
+  }
+
+  const transporter = getTransporter();
+  const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+  if (!transporter || !fromEmail) {
+    console.log(
+      `Email missed session alert to ${normalizedToEmail}: You missed ${safeServiceName} on ${scheduleLabel || 'scheduled time'}.`
+    );
+    return { ok: true, delivery: 'console' };
+  }
+
+  try {
+    await transporter.sendMail({
+      from: fromEmail,
+      to: normalizedToEmail,
+      subject,
+      text,
+      html,
+    });
+    return { ok: true, delivery: 'smtp' };
+  } catch (error) {
+    console.error('Failed to send missed-session email via SMTP:', error);
+    return { ok: false, message: 'Unable to send missed-session email.' };
   }
 }
 

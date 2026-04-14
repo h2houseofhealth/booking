@@ -3575,6 +3575,11 @@ th {
   color: #8a3d2f;
 }
 
+.status-missed {
+  background: #f4d7cc;
+  color: #8b3d2a;
+}
+
 .payment-paid {
   background: #d9c2ab;
   color: #5d3a22;

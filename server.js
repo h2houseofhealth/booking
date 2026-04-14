@@ -60,6 +60,10 @@ const SES_API_SECRET_ACCESS_KEY = (
   ''
 ).trim();
 const SES_API_SESSION_TOKEN = normalizeEnvValue(process.env.SES_API_SESSION_TOKEN || process.env.AWS_SESSION_TOKEN || '');
+const MISSED_NOTIFICATION_SWEEP_INTERVAL_MS = Math.max(
+  60 * 1000,
+  Number(process.env.MISSED_NOTIFICATION_SWEEP_INTERVAL_MS || 5 * 60 * 1000)
+);
 
 if (SENDGRID_API_KEY) {
   sgMail.setApiKey(SENDGRID_API_KEY);
@@ -362,6 +366,7 @@ migrate();
 seedAdmin();
 
 const requestCounters = new Map();
+let missedNotificationSweepRunning = false;
 
 function loadEnvFromFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -3887,6 +3892,7 @@ async function notifyMissedBookingHandler(req, res) {
               b.service_name AS serviceName,
               b.booking_date AS bookingDate,
               b.booking_time AS bookingTime,
+              b.created_at AS createdAt,
               b.status,
               u.name AS clientName,
               u.email AS clientEmail,
@@ -4913,6 +4919,9 @@ app.listen(PORT, "0.0.0.0", () => {
   } else {
     console.warn('SendGrid OTP mailer is not fully configured. Check SENDGRID_API_KEY and SENDGRID_FROM_EMAIL.');
   }
+  processMissedSessionNotifications();
+  setInterval(processMissedSessionNotifications, MISSED_NOTIFICATION_SWEEP_INTERVAL_MS);
+  console.log(`Missed-session notifier started (interval: ${Math.round(MISSED_NOTIFICATION_SWEEP_INTERVAL_MS / 1000)}s).`);
 });
 function canAccessBooking(user, ownerId) {
   return user.role === 'admin' || user.id === Number(ownerId);
@@ -7552,6 +7561,51 @@ function isBookingMissedServer(booking) {
   return Number.isFinite(bookingStart) && bookingStart < Date.now();
 }
 
+async function processMissedSessionNotifications() {
+  if (missedNotificationSweepRunning) return;
+  missedNotificationSweepRunning = true;
+  try {
+    const candidates = db
+      .prepare(
+        `SELECT b.id,
+                b.user_id AS userId,
+                b.service_name AS serviceName,
+                b.booking_date AS bookingDate,
+                b.booking_time AS bookingTime,
+                b.created_at AS createdAt,
+                b.status,
+                b.missed_notified_at AS missedNotifiedAt,
+                u.name AS clientName,
+                u.email AS clientEmail
+         FROM bookings b
+         JOIN users u ON u.id = b.user_id
+         WHERE (b.missed_notified_at IS NULL OR trim(b.missed_notified_at) = '')
+           AND lower(COALESCE(b.status, '')) NOT IN ('completed', 'cancelled')`
+      )
+      .all();
+
+    for (const booking of candidates) {
+      if (!isBookingMissedServer(booking)) continue;
+      const emailResult = await sendMissedSessionEmail({
+        toEmail: booking.clientEmail,
+        recipientName: booking.clientName,
+        serviceName: booking.serviceName,
+        bookingDate: booking.bookingDate,
+        bookingTime: booking.bookingTime,
+      });
+      if (emailResult.ok) {
+        db.prepare('UPDATE bookings SET missed_notified_at = ? WHERE id = ?').run(new Date().toISOString(), booking.id);
+      } else {
+        console.error(`Missed-session email failed for booking ${booking.id}: ${emailResult.message || 'Unknown error'}`);
+      }
+    }
+  } catch (error) {
+    console.error('Missed-session notification sweep failed:', error);
+  } finally {
+    missedNotificationSweepRunning = false;
+  }
+}
+
 function hasColumn(tableName, columnName) {
   const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
   return columns.some((column) => column.name === columnName);
@@ -7860,7 +7914,7 @@ async function sendMissedSessionEmail({ toEmail, recipientName, serviceName, boo
   const text =
     `${greeting}\n\n` +
     `You missed your scheduled session: ${safeServiceName}\n` +
-    `Schedule: ${scheduleLabel || 'scheduled time'}\n\n` +
+    `Scheduled At: ${scheduleLabel || 'scheduled time'}\n\n` +
     `Please log in to your dashboard to reschedule your session.\n\n` +
     `If you believe this is a mistake, please contact support.`;
   const html = `
@@ -7868,7 +7922,7 @@ async function sendMissedSessionEmail({ toEmail, recipientName, serviceName, boo
       <p style="margin: 0 0 12px;">${escapeHtml(greeting)}</p>
       <p style="margin: 0 0 12px;">You missed your scheduled session:</p>
       <p style="margin: 0 0 6px;"><strong>${escapeHtml(safeServiceName)}</strong></p>
-      <p style="margin: 0 0 12px;">Schedule: ${escapeHtml(scheduleLabel || 'scheduled time')}</p>
+      <p style="margin: 0 0 12px;">Scheduled At: ${escapeHtml(scheduleLabel || 'scheduled time')}</p>
       <p style="margin: 0;">Please log in to your dashboard to reschedule your session.</p>
       <p style="margin: 12px 0 0; color: #6b7280;">If you believe this is a mistake, please contact support.</p>
     </div>
@@ -7904,10 +7958,7 @@ async function sendMissedSessionEmail({ toEmail, recipientName, serviceName, boo
   const transporter = getTransporter();
   const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
   if (!transporter || !fromEmail) {
-    console.log(
-      `Email missed session alert to ${normalizedToEmail}: You missed ${safeServiceName} on ${scheduleLabel || 'scheduled time'}.`
-    );
-    return { ok: true, delivery: 'console' };
+    return { ok: false, message: 'Email service is not configured for missed-session notifications.' };
   }
 
   try {
@@ -8143,6 +8194,7 @@ function migrate() {
       paid_at TEXT,
       payment_order_id TEXT,
       payment_reference TEXT,
+      missed_notified_at TEXT,
       notes TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -8518,6 +8570,9 @@ function migrate() {
 
   if (!hasColumn('bookings', 'payment_order_id')) {
     db.exec('ALTER TABLE bookings ADD COLUMN payment_order_id TEXT');
+  }
+  if (!hasColumn('bookings', 'missed_notified_at')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN missed_notified_at TEXT');
   }
 
   db.exec(`

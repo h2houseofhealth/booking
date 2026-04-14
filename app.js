@@ -1847,24 +1847,6 @@ async function sendPaymentLinkViaSMS(bookingId, phoneNumber) {
   }
 }
 
-async function notifyMissedSession(booking) {
-  if (!booking?.id) return;
-  const serviceLabel = booking.serviceName || 'Session';
-  const scheduleLabel = formatDateTime(booking.bookingDate, booking.bookingTime);
-  const confirmed = confirm(
-    `Notify user about missed session?\n\n${serviceLabel}\n${scheduleLabel}`
-  );
-  if (!confirmed) return;
-  try {
-    const result = await api(`/api/admin/bookings/${booking.id}/notify-missed`, {
-      method: 'POST',
-    });
-    alert(result.message || 'Missed session notification sent.');
-  } catch (error) {
-    alert(error?.message || 'Unable to notify user for missed session.');
-  }
-}
-
 async function changeStatus(id, status) {
   await api(`/api/bookings/${id}/status`, {
     method: 'PATCH',
@@ -6055,9 +6037,6 @@ function renderAdminRows(bookings) {
       createActionButton('Complete', () => changeStatus(booking.id, 'completed')),
       createActionButton('Cancel', () => changeStatus(booking.id, 'cancelled'))
     );
-    if (derivedStatus === 'missed') {
-      actions.append(createActionButton('Notify Missed', () => notifyMissedSession(booking)));
-    }
     actions.append(createActionButton('Notes', () => openBookingNotesDialog(booking.id)));
 
     actionCell.appendChild(actions);

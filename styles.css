@@ -3498,6 +3498,26 @@ th {
   color: rgba(var(--brand-primary-rgb), 0.92);
 }
 
+.user-cart-notice {
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 32px rgba(96, 62, 34, 0.08);
+}
+
+.user-cart-notice p {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  color: rgba(var(--ink-rgb), 0.8);
+  font-size: 0.92rem;
+}
+
 .dialog-actions {
   align-items: flex-end;
 }
@@ -5583,4 +5603,52 @@ table tbody td {
   #membershipBrowsePanel .membership-copy {
     font-size: 0.86rem;
   }
+  #myBookingsSummary,
+  #myBookingsUpcoming,
+  #myBookingsRemaining {
+    margin-bottom: 1rem;
+  }
+  .my-bookings-card {
+    background: #fff;
+    border-radius: 18px;
+    padding: 1.2rem;
+    border: 1px solid rgba(176, 90, 43, 0.15);
+    box-shadow: 0 10px 24px rgba(0,0,0,0.06);
+    margin-bottom: 1rem;
+  }
+  .my-bookings-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #2B2B2B;
+    margin-bottom: 0.6rem;
+  }
+  .my-bookings-stat {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #B05A2B;
+  }
+  .my-bookings-sub {
+    font-size: 0.8rem;
+    color: #7B6F68;
+  }
+  .my-booking-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.7rem 0.5rem;
+    border-bottom: 1px solid #eee;
+  }
+  .my-booking-item:last-child {
+    border-bottom: none;
+  }
+
+  .my-booking-name {
+    font-weight: 600;
+  }
+
+  .my-booking-time {
+    font-size: 0.8rem;
+    color: #7B6F68;
+  }
+
+
 }

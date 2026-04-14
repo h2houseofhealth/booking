@@ -117,6 +117,7 @@
           <button id="userTabMembership" class="user-tab-btn" type="button">Membership</button>
           <button id="userTabServices" class="user-tab-btn" type="button">Services</button>
           <button id="userTabBookings" class="user-tab-btn" type="button">My Bookings</button>
+          <button id="userTabCart" class="user-tab-btn" type="button">Cart</button>
         </div>
       </section>
 
@@ -307,6 +308,16 @@
         <div class="panel-head">
           <h2>My Bookings</h2>
         </div>
+        <div id="bookingsCartNotice" class="user-cart-notice" hidden>
+          <p>
+            You have items waiting in your cart.
+            <button id="bookingsViewCartBtn" class="link-btn" type="button">View cart</button>
+          </p>
+        </div>
+        <div id="myBookingsSummary"></div>
+        <div id="myBookingsUpcoming"></div>
+        <div id="myBookingsRemaining"></div>
+  
         <div class="table-wrap">
           <table>
             <thead>
@@ -323,6 +334,32 @@
           <p id="emptyState" class="empty-state">No bookings found.</p>
         </div>
         <div class="dialog-actions">
+          <button id="bookingsBackBtn" class="btn btn-secondary" type="button">Back</button>
+        </div>
+      </section>
+
+      <section id="userCartSection" class="panel app-only user-only" aria-label="User cart" hidden>
+        <div class="panel-head">
+          <div>
+            <h2>Cart</h2>
+            <p class="service-panel-lead">Review all items and pay in one checkout.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th>Date & Time</th>
+                <th>Amount</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="cartTableBody"></tbody>
+          </table>
+          <p id="cartEmptyState" class="empty-state" hidden>Your cart is empty.</p>
+        </div>
+        <div class="dialog-actions">
           <div class="coupon-entry user-only">
             <label>
               Coupon Code
@@ -335,7 +372,8 @@
           </div>
           <div id="userCheckoutSummary" class="user-checkout-summary" hidden></div>
           <button id="bookingsPayAllBtn" class="btn btn-primary" type="button" hidden>Pay Now</button>
-          <button id="bookingsBackBtn" class="btn btn-secondary" type="button">Back</button>
+          <button id="cartContinueShoppingBtn" class="btn btn-secondary" type="button">Continue Shopping</button>
+          <button id="cartViewBookingsBtn" class="btn btn-secondary" type="button">My Bookings</button>
         </div>
       </section>
 

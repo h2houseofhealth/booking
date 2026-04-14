@@ -16,6 +16,7 @@ const state = {
   },
   postLoginChoice: '',
   activeUserTab: 'services',
+  returnUserTabAfterEdit: '',
   membership: {
     plans: [],
     active: false,
@@ -134,6 +135,7 @@ const elements = {
   userTabServices: document.getElementById('userTabServices'),
   userTabMembership: document.getElementById('userTabMembership'),
   userTabBookings: document.getElementById('userTabBookings'),
+  userTabCart: document.getElementById('userTabCart'),
   joinAsMemberBtn: document.getElementById('joinAsMemberBtn'),
   continueAsMemberBtn: document.getElementById('continueAsMemberBtn'),
   continueAsNonMemberBtn: document.getElementById('continueAsNonMemberBtn'),
@@ -141,6 +143,9 @@ const elements = {
   servicesSection: document.getElementById('servicesSection'),
   bookingFiltersSection: document.getElementById('bookingFiltersSection'),
   userBookingsSection: document.getElementById('userBookingsSection'),
+  userCartSection: document.getElementById('userCartSection'),
+  bookingsCartNotice: document.getElementById('bookingsCartNotice'),
+  bookingsViewCartBtn: document.getElementById('bookingsViewCartBtn'),
 
   serviceGrid: document.getElementById('serviceGrid'),
   serviceEmpty: document.getElementById('serviceEmpty'),
@@ -185,6 +190,8 @@ const elements = {
   bookingsBackBtn: document.getElementById('bookingsBackBtn'),
   bookingsPayAllBtn: document.getElementById('bookingsPayAllBtn'),
   userCheckoutSummary: document.getElementById('userCheckoutSummary'),
+  cartContinueShoppingBtn: document.getElementById('cartContinueShoppingBtn'),
+  cartViewBookingsBtn: document.getElementById('cartViewBookingsBtn'),
   membershipDialog: document.getElementById('membershipDialog'),
   membershipForm: document.getElementById('membershipForm'),
   membershipDialogTitle: document.getElementById('membershipDialogTitle'),
@@ -201,6 +208,8 @@ const elements = {
 
   bookingTableBody: document.getElementById('bookingTableBody'),
   emptyState: document.getElementById('emptyState'),
+  cartTableBody: document.getElementById('cartTableBody'),
+  cartEmptyState: document.getElementById('cartEmptyState'),
   adminBookingTableBody: document.getElementById('adminBookingTableBody'),
   adminEmptyState: document.getElementById('adminEmptyState'),
   adminMembershipOrdersList: document.getElementById('adminMembershipOrdersList'),
@@ -294,7 +303,21 @@ let adminDiscountSearchTimer = 0;
 
 bootstrap();
 
+function getUserTabFromHash(hash) {
+  const normalized = String(hash || '')
+    .trim()
+    .replace(/^#/, '')
+    .toLowerCase();
+  if (normalized === 'services') return 'services';
+  if (normalized === 'membership') return 'membership';
+  if (normalized === 'bookings') return 'bookings';
+  if (normalized === 'cart') return 'cart';
+  return '';
+}
+
 async function bootstrap() {
+  const initialTab = getUserTabFromHash(window.location.hash);
+  if (initialTab) state.activeUserTab = initialTab;
   attachEvents();
   populateTimeSlots();
   await loadCurrentUser();
@@ -306,6 +329,27 @@ async function bootstrap() {
 }
 
 function attachEvents() {
+  window.addEventListener('hashchange', () => {
+    const nextTab = getUserTabFromHash(window.location.hash);
+    if (!nextTab) return;
+    if (!state.user || state.user.role !== 'user' || !state.postLoginChoice) return;
+    if (state.activeUserTab === nextTab) return;
+    resetServiceBrowserState();
+    state.activeUserTab = nextTab;
+    render();
+    requestAnimationFrame(() => {
+      const section =
+        nextTab === 'membership'
+          ? elements.membershipSection
+          : nextTab === 'bookings'
+            ? elements.userBookingsSection
+            : nextTab === 'cart'
+              ? elements.userCartSection
+              : elements.servicesSection;
+      section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
   elements.authSwitchBtn.addEventListener('click', () => {
     isRegisterMode = !isRegisterMode;
     isForgotPasswordMode = false;
@@ -447,6 +491,7 @@ function attachEvents() {
   elements.joinAsMemberBtn?.addEventListener('click', () => {
     state.postLoginChoice = 'join-member';
     state.activeUserTab = 'membership';
+    window.location.hash = '#membership';
     render();
     requestAnimationFrame(() => {
       document.querySelector('[aria-label="Membership"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -456,6 +501,7 @@ function attachEvents() {
     if (!isCurrentUserMembershipActive()) {
       state.postLoginChoice = 'join-member';
       state.activeUserTab = 'membership';
+      window.location.hash = '#membership';
       render();
       requestAnimationFrame(() => {
         document.querySelector('[aria-label="Membership"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -465,6 +511,7 @@ function attachEvents() {
     }
     state.postLoginChoice = 'continue-member';
     state.activeUserTab = 'services';
+    window.location.hash = '#services';
     render();
     requestAnimationFrame(() => {
       document.querySelector('[aria-label="Services"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -473,6 +520,7 @@ function attachEvents() {
   elements.continueAsNonMemberBtn?.addEventListener('click', () => {
     state.postLoginChoice = 'continue-non-member';
     state.activeUserTab = 'services';
+    window.location.hash = '#services';
     render();
     requestAnimationFrame(() => {
       document.querySelector('[aria-label="Services"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -483,30 +531,57 @@ function attachEvents() {
       resetServiceBrowserState();
     }
     state.activeUserTab = 'services';
+    window.location.hash = '#services';
     render();
   });
   elements.userTabMembership?.addEventListener('click', () => {
     resetServiceBrowserState();
     state.activeUserTab = 'membership';
+    window.location.hash = '#membership';
     render();
   });
   elements.userTabBookings?.addEventListener('click', () => {
     resetServiceBrowserState();
     state.activeUserTab = 'bookings';
-    render();
-  });
-  elements.cartBtn?.addEventListener('click', () => {
-    if (state.user?.role !== 'user' || !state.postLoginChoice) return;
-    resetServiceBrowserState();
-    state.activeUserTab = 'bookings';
+    window.location.hash = '#bookings';
     render();
     requestAnimationFrame(() => {
       elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
+  elements.userTabCart?.addEventListener('click', () => {
+    resetServiceBrowserState();
+    state.activeUserTab = 'cart';
+    window.location.hash = '#cart';
+    render();
+    requestAnimationFrame(() => {
+      elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  elements.cartBtn?.addEventListener('click', () => {
+    if (state.user?.role !== 'user' || !state.postLoginChoice) return;
+    resetServiceBrowserState();
+    state.activeUserTab = 'cart';
+    window.location.hash = '#cart';
+    render();
+    requestAnimationFrame(() => {
+      elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  elements.bookingsViewCartBtn?.addEventListener('click', () => {
+    if (state.user?.role !== 'user' || !state.postLoginChoice) return;
+    resetServiceBrowserState();
+    state.activeUserTab = 'cart';
+    window.location.hash = '#cart';
+    render();
+    requestAnimationFrame(() => {
+      elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
   elements.membershipBackBtn?.addEventListener('click', () => {
     state.postLoginChoice = '';
     state.activeUserTab = 'services';
+    window.location.hash = '#services';
     render();
     requestAnimationFrame(() => {
       elements.memberChoiceGate?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -515,6 +590,7 @@ function attachEvents() {
   elements.membershipNextBtn?.addEventListener('click', () => {
     resetServiceBrowserState();
     state.activeUserTab = 'services';
+    window.location.hash = '#services';
     render();
     requestAnimationFrame(() => {
       elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -523,6 +599,7 @@ function attachEvents() {
   elements.membershipQuickBookBtn?.addEventListener('click', () => {
     resetServiceBrowserState();
     state.activeUserTab = 'services';
+    window.location.hash = '#services';
     render();
     requestAnimationFrame(() => {
       elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -531,6 +608,7 @@ function attachEvents() {
   elements.membershipQuickHistoryBtn?.addEventListener('click', () => {
     resetServiceBrowserState();
     state.activeUserTab = 'bookings';
+    window.location.hash = '#bookings';
     render();
     requestAnimationFrame(() => {
       elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -540,6 +618,7 @@ function attachEvents() {
     resetServiceBrowserState();
     if (state.postLoginChoice === 'join-member') {
       state.activeUserTab = 'membership';
+      window.location.hash = '#membership';
       render();
       requestAnimationFrame(() => {
         elements.membershipSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -548,6 +627,7 @@ function attachEvents() {
     }
     state.postLoginChoice = '';
     state.activeUserTab = 'services';
+    window.location.hash = '#services';
     render();
     requestAnimationFrame(() => {
       elements.memberChoiceGate?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -555,18 +635,38 @@ function attachEvents() {
   });
   elements.servicesNextBtn?.addEventListener('click', () => {
     resetServiceBrowserState();
-    state.activeUserTab = 'bookings';
+    state.activeUserTab = 'cart';
+    window.location.hash = '#cart';
     render();
     requestAnimationFrame(() => {
-      elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
   elements.bookingsBackBtn?.addEventListener('click', () => {
     resetServiceBrowserState();
     state.activeUserTab = 'services';
+    window.location.hash = '#services';
     render();
     requestAnimationFrame(() => {
       elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  elements.cartContinueShoppingBtn?.addEventListener('click', () => {
+    resetServiceBrowserState();
+    state.activeUserTab = 'services';
+    window.location.hash = '#services';
+    render();
+    requestAnimationFrame(() => {
+      elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  elements.cartViewBookingsBtn?.addEventListener('click', () => {
+    resetServiceBrowserState();
+    state.activeUserTab = 'bookings';
+    window.location.hash = '#bookings';
+    render();
+    requestAnimationFrame(() => {
+      elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
   elements.bookingsPayAllBtn?.addEventListener('click', async () => {
@@ -1679,9 +1779,13 @@ async function upsertBooking() {
       } else {
         // User flow: add to cart and let checkout happen only from "Pay Now"
         closeDialog();
-        state.activeUserTab = 'bookings';
+        state.activeUserTab = 'cart';
+        window.location.hash = '#cart';
         const cartSummary = buildUserCartSummary(state.bookings || []);
         render();
+        requestAnimationFrame(() => {
+          elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
         alert(
           `Added to cart.\n\nCart items: ${Number(cartSummary.unitCount || 0)}\nUse Pay Now in cart to continue payment.`
         );
@@ -1852,7 +1956,7 @@ async function payAllUserBookings() {
       amount: result.amount,
       currency: result.currency || 'INR',
       name: 'H2 House Of Health',
-      description: `My Bookings Payment`,
+      description: `Cart Payment`,
       order_id: result.orderId,
       prefill: {
         name: result.user?.name || '',
@@ -1992,9 +2096,15 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
   state.selectedHydrogenServiceName = '';
   await loadDashboardData();
   if (!isAdmin) {
-    state.activeUserTab = 'bookings';
+    state.activeUserTab = 'cart';
+    window.location.hash = '#cart';
   }
   render();
+  if (!isAdmin) {
+    requestAnimationFrame(() => {
+      elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
 
   if (isAdmin && totalAmountInr > 0 && paymentBookingId) {
     const registeredMobile = String(result?.customer?.mobile || '').trim() || String(state.adminCustomerForm.phone || '').trim();
@@ -2063,13 +2173,20 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
 
   resetHydrogenComposer();
   await loadDashboardData();
+  const returnTab =
+    state.user?.role !== 'admin' ? state.returnUserTabAfterEdit || 'cart' : '';
+  state.returnUserTabAfterEdit = '';
   if (state.user?.role !== 'admin') {
-    state.activeUserTab = 'bookings';
+    state.activeUserTab = returnTab;
+    window.location.hash = `#${returnTab}`;
   }
   render();
   if (state.user?.role !== 'admin') {
     requestAnimationFrame(() => {
-      elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      (returnTab === 'cart' ? elements.userCartSection : elements.userBookingsSection)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
     });
   }
   alert(`Booking Updated\n\n${lines.join('\n')}`);
@@ -2357,12 +2474,19 @@ async function saveSingleSessionServiceBooking(serviceName) {
   state.singleSessionEditingBookingId = '';
   await loadDashboardData();
   if (editingBookingId && !isAdmin) {
-    state.activeUserTab = 'bookings';
+    const returnTab = state.returnUserTabAfterEdit || 'bookings';
+    state.returnUserTabAfterEdit = '';
+    state.activeUserTab = returnTab;
+    window.location.hash = `#${returnTab}`;
   }
   render();
   if (editingBookingId && !isAdmin) {
     requestAnimationFrame(() => {
-      elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const returnTab = state.activeUserTab || 'bookings';
+      (returnTab === 'cart' ? elements.userCartSection : elements.userBookingsSection)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
     });
   }
   if (isAdmin && result.paymentLinkUrl) {
@@ -2401,7 +2525,9 @@ function openSingleSessionBookingEditor(booking) {
     return;
   }
 
+  state.returnUserTabAfterEdit = state.activeUserTab || 'services';
   state.activeUserTab = 'services';
+  window.location.hash = '#services';
   state.selectedServiceCategory = category;
   state.selectedSingleSessionServiceName = booking.serviceName;
   state.singleSessionEditingBookingId = String(booking.id);
@@ -2415,6 +2541,7 @@ function openSingleSessionBookingEditor(booking) {
     paymentStatus: booking.paymentStatus || 'unpaid',
   };
   refreshSelectedCategoryAvailability(booking.bookingDate);
+  render();
   requestAnimationFrame(() => {
     document.querySelector(`[data-service-category="${category}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
@@ -2439,7 +2566,9 @@ function openHydrogenPackageEditor(row) {
       )
     : 0;
 
+  state.returnUserTabAfterEdit = state.activeUserTab || 'services';
   state.activeUserTab = 'services';
+  window.location.hash = '#services';
   state.selectedServiceCategory = 'HYDROGEN SESSION';
   state.selectedHydrogenServiceName = row.baseServiceName || hydrogenEntries[0].serviceName;
   state.selectedHydrogenExtraSessions = Math.max(0, Number(row.extraSessions || 0));
@@ -2455,6 +2584,7 @@ function openHydrogenPackageEditor(row) {
   state.activeHydrogenSessionTime = hydrogenEntries[0].bookingTime || SLOT_OPTIONS[0].value;
   state.selectedServiceDate = hydrogenEntries[0].bookingDate || getTodayIsoDate();
   refreshSelectedCategoryAvailability(hydrogenEntries[0].bookingDate || getTodayIsoDate());
+  render();
   requestAnimationFrame(() => {
     const target = document.querySelector('[data-hydrogen-editor="true"]') || document.querySelector('[data-service-category="HYDROGEN SESSION"]');
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2570,6 +2700,7 @@ function render() {
       el.hidden = true;
     });
     elements.bookingTableBody.innerHTML = '';
+    if (elements.cartTableBody) elements.cartTableBody.innerHTML = '';
     elements.adminBookingTableBody.innerHTML = '';
     if (elements.adminMembershipOrdersList) elements.adminMembershipOrdersList.innerHTML = '';
     return;
@@ -2615,14 +2746,15 @@ function render() {
     if (elements.userTabServices) elements.userTabServices.classList.toggle('is-active', activeTab === 'services');
     if (elements.userTabMembership) elements.userTabMembership.classList.toggle('is-active', activeTab === 'membership');
     if (elements.userTabBookings) elements.userTabBookings.classList.toggle('is-active', activeTab === 'bookings');
+    if (elements.userTabCart) elements.userTabCart.classList.toggle('is-active', activeTab === 'cart');
     if (elements.membershipSection) elements.membershipSection.hidden = activeTab !== 'membership';
     if (elements.servicesSection) elements.servicesSection.hidden = activeTab !== 'services';
     if (elements.userBookingsSection) elements.userBookingsSection.hidden = activeTab !== 'bookings';
+    if (elements.userCartSection) elements.userCartSection.hidden = activeTab !== 'cart';
   } else {
     if (elements.bookingFiltersSection) elements.bookingFiltersSection.hidden = false;
   }
 
-  const filtered = getFilteredBookings(state.bookings);
   renderStats(state.bookings);
   renderMembership();
   renderServices();
@@ -2661,7 +2793,16 @@ function render() {
     renderAdminDiscountUsers();
     renderAdminCoupons();
   } else {
-    renderUserRows(filtered);
+    const cartPayableBookings = getUserCartPayableBookings(state.bookings || []);
+    const cartDisplayBookings = getUserCartDisplayBookings(state.bookings || []);
+    const historyBookings = getUserHistoryBookings(state.bookings || []);
+    renderUserRows(getFilteredBookings(historyBookings));
+    renderCartRows(cartDisplayBookings);
+    renderUserCheckoutSummary(cartPayableBookings);
+
+    if (elements.bookingsCartNotice) {
+      elements.bookingsCartNotice.hidden = !(state.activeUserTab === 'bookings' && cartPayableBookings.length);
+    }
   }
 }
 
@@ -3699,7 +3840,16 @@ async function saveIvUnifiedBookingToCart({ serviceName, bookingDate, bookingTim
   });
 
   await loadDashboardData();
+  if (!isAdmin) {
+    state.activeUserTab = 'cart';
+    window.location.hash = '#cart';
+  }
   render();
+  if (!isAdmin) {
+    requestAnimationFrame(() => {
+      elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
   if (isAdmin && result.paymentLinkUrl) {
     copyTextToClipboard(result.paymentLinkUrl);
     alert(`Booking saved to All User Bookings.\n\nPayment Link: ${result.paymentLinkUrl}\n\nPayment link copied.`);
@@ -5447,13 +5597,11 @@ function renderUserRows(bookings) {
 
   if (bookings.length === 0) {
     elements.emptyState.hidden = false;
-    renderUserCheckoutSummary([]);
     return;
   }
 
   elements.emptyState.hidden = true;
-  const displayRows = buildUserBookingRows(bookings, state.bookings);
-  renderUserCheckoutSummary(state.bookings);
+  const displayRows = buildUserBookingRows(bookings, bookings);
 
   for (const row of displayRows) {
     const tr = document.createElement('tr');
@@ -5491,6 +5639,65 @@ function renderUserRows(bookings) {
     actionCell.appendChild(actions);
     tr.appendChild(actionCell);
     elements.bookingTableBody.appendChild(tr);
+  }
+}
+
+function cartAmountCell(row) {
+  const td = document.createElement('td');
+  let amountInr = 0;
+  if (row.isGroupedHydrogen) {
+    const payableHydrogenEntries = (row.hydrogenEntries || []).filter(
+      (entry) => entry.status !== 'cancelled' && String(entry.paymentStatus || 'unpaid').toLowerCase() !== 'paid'
+    );
+    const payableAddOnEntries = (row.addOnEntries || []).filter(
+      (entry) => entry.status !== 'cancelled' && String(entry.paymentStatus || 'unpaid').toLowerCase() !== 'paid'
+    );
+    amountInr = Number(getHydrogenGroupBreakdown(payableHydrogenEntries, payableAddOnEntries).totalAmountInr || 0);
+  } else {
+    amountInr = Number(getDisplayedServicePriceInr(row.booking?.serviceName || row.serviceTitle || '') || 0);
+  }
+  td.textContent = amountInr > 0 ? `Rs. ${amountInr.toLocaleString('en-IN')}` : 'Included';
+  return td;
+}
+
+function renderCartRows(cartBookings) {
+  if (!elements.cartTableBody || !elements.cartEmptyState) return;
+  elements.cartTableBody.innerHTML = '';
+
+  const displayRows = buildUserBookingRows(cartBookings, cartBookings);
+  if (!displayRows.length) {
+    elements.cartEmptyState.hidden = false;
+    return;
+  }
+
+  elements.cartEmptyState.hidden = true;
+  for (const row of displayRows) {
+    const tr = document.createElement('tr');
+    tr.appendChild(userBookingServiceCell(row));
+    tr.appendChild(userBookingScheduleCell(row));
+    tr.appendChild(cartAmountCell(row));
+
+    const actionCell = document.createElement('td');
+    const actions = document.createElement('div');
+    actions.className = 'action-row';
+
+    const canEdit = !['completed', 'cancelled'].includes(String(row.status || '').toLowerCase());
+    if (canEdit) {
+      actions.append(
+        createActionButton(row.isGroupedHydrogen ? 'Edit Package' : 'Edit', () => {
+          if (row.isGroupedHydrogen) {
+            openHydrogenPackageEditor(row);
+            return;
+          }
+          openSingleSessionBookingEditor(row.booking);
+        })
+      );
+    }
+    actions.append(createDangerButton('Remove', () => deleteBooking(row.booking)));
+    actionCell.appendChild(actions);
+    tr.appendChild(actionCell);
+
+    elements.cartTableBody.appendChild(tr);
   }
 }
 
@@ -5671,14 +5878,39 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
   return rows.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 }
 
-function buildUserCartSummary(bookings = state.bookings) {
-  const payableBookings = (Array.isArray(bookings) ? bookings : []).filter((booking) => {
+function getBookingGroupKey(booking) {
+  if (!booking) return '';
+  return booking.bookingGroupId || `single_${booking.id}`;
+}
+
+function getUserCartPayableBookings(bookings = state.bookings) {
+  return (Array.isArray(bookings) ? bookings : []).filter((booking) => {
     if (String(booking.status || '').toLowerCase() === 'cancelled') return false;
     if (String(booking.paymentStatus || '').toLowerCase() === 'paid') return false;
     if (booking.holdExpired) return false;
     const service = getServiceCatalogEntry(booking.serviceName);
     return !service?.membershipOnly;
   });
+}
+
+function getUserCartGroupKeys(bookings = state.bookings) {
+  const payable = getUserCartPayableBookings(bookings);
+  return new Set(payable.map((booking) => getBookingGroupKey(booking)).filter(Boolean));
+}
+
+function getUserCartDisplayBookings(bookings = state.bookings) {
+  const keys = getUserCartGroupKeys(bookings);
+  if (!keys.size) return [];
+  return (Array.isArray(bookings) ? bookings : []).filter((booking) => keys.has(getBookingGroupKey(booking)));
+}
+
+function getUserHistoryBookings(bookings = state.bookings) {
+  const keys = getUserCartGroupKeys(bookings);
+  return (Array.isArray(bookings) ? bookings : []).filter((booking) => !keys.has(getBookingGroupKey(booking)));
+}
+
+function buildUserCartSummary(bookings = state.bookings) {
+  const payableBookings = getUserCartPayableBookings(bookings);
 
   const rows = buildUserBookingRows(payableBookings, payableBookings);
   let totalAmountInr = 0;
@@ -5724,7 +5956,7 @@ function renderCartButtonState() {
   const count = Number(summary.unitCount || 0);
   elements.cartBtn.hidden = false;
   elements.cartBtn.classList.toggle('has-items', count > 0);
-  elements.cartBtn.classList.toggle('is-active', (state.activeUserTab || 'services') === 'bookings');
+  elements.cartBtn.classList.toggle('is-active', (state.activeUserTab || 'services') === 'cart');
   if (count > 0) {
     elements.cartCount.hidden = false;
     elements.cartCount.textContent = count > 99 ? '99+' : String(count);

@@ -2682,7 +2682,19 @@ function getTodayAdminBookings(bookings = state.bookings) {
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const dd = String(today.getDate()).padStart(2, '0');
   const todayKey = `${yyyy}-${mm}-${dd}`;
-  return (Array.isArray(bookings) ? bookings : []).filter((booking) => String(booking?.bookingDate || '') === todayKey);
+  return getAdminDashboardVisibleBookings(bookings).filter((booking) => String(booking?.bookingDate || '') === todayKey);
+}
+
+function isAdminDashboardBookingVisible(booking) {
+  const status = String(booking?.status || '').trim().toLowerCase();
+  const paymentStatus = String(booking?.paymentStatus || 'unpaid').trim().toLowerCase();
+  if (status === 'pending') return false;
+  if (paymentStatus === 'unpaid') return false;
+  return true;
+}
+
+function getAdminDashboardVisibleBookings(bookings = state.bookings) {
+  return (Array.isArray(bookings) ? bookings : []).filter(isAdminDashboardBookingVisible);
 }
 
 function render() {
@@ -2764,14 +2776,15 @@ function render() {
 
   if (isAdmin) {
     const todayBookings = getTodayAdminBookings(state.bookings);
+    const visibleAdminBookings = getAdminDashboardVisibleBookings(state.bookings);
     renderAdminUserCards();
     
     // Determine what to show in the table
     let adminFiltered;
     let tableTitle = "Today's Bookings";
     if (state.adminHistoryVisible) {
-      // Show ALL bookings when history is open
-      adminFiltered = state.bookings;
+      // Show paid and non-pending bookings when history is open
+      adminFiltered = visibleAdminBookings;
       tableTitle = "History of All Bookings";
     } else {
       // Show today's bookings
@@ -3650,7 +3663,6 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
       : `₹${price.toLocaleString('en-IN')}`;
     summary.innerHTML = `
       <strong>${escapeHtml(service.name)}</strong>
-      ${service.description ? `<p>${escapeHtml(service.description)}</p>` : ''}
       <span>${escapeHtml(priceText)}</span>
     `;
   };
@@ -5381,7 +5393,12 @@ function renderStats(bookings) {
   }
   const source = state.user?.role === 'admin' ? getTodayAdminBookings(bookings) : bookings;
   const total = source.length;
-  const allBookingsCount = Array.isArray(bookings) ? bookings.length : 0;
+  const allBookingsCount =
+    state.user?.role === 'admin'
+      ? getAdminDashboardVisibleBookings(bookings).length
+      : Array.isArray(bookings)
+        ? bookings.length
+        : 0;
 
   elements.totalCount.textContent = String(total);
   if (elements.historyCount) elements.historyCount.textContent = String(allBookingsCount);

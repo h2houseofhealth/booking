@@ -314,9 +314,65 @@
             <button id="bookingsViewCartBtn" class="link-btn" type="button">View cart</button>
           </p>
         </div>
-        <div id="myBookingsSummary"></div>
-        <div id="myBookingsUpcoming"></div>
-        <div id="myBookingsRemaining"></div>
+        <div id="myBookingsSummary" class="my-bookings-summary">
+          <div class="my-bookings-stats-grid">
+            <div class="my-bookings-stat-card">
+              <span class="stat-icon">◎</span>
+              <span class="stat-label">Total Sessions</span>
+              <strong id="myBookingsTotalSessions">0</strong>
+              <small>All bookings</small>
+            </div>
+            <div class="my-bookings-stat-card">
+              <span class="stat-icon">◉</span>
+              <span class="stat-label">Upcoming</span>
+              <strong id="myBookingsUpcomingCount">0</strong>
+              <small>Scheduled</small>
+            </div>
+            <div class="my-bookings-stat-card">
+              <span class="stat-icon">◑</span>
+              <span class="stat-label">Completed</span>
+              <strong id="myBookingsCompletedCount">0</strong>
+              <small>Finished</small>
+            </div>
+          </div>
+          
+          <div class="my-bookings-progress-card">
+            <div class="my-bookings-progress-head">
+              <h4>Session Progress</h4>
+              <span id="myBookingsProgressLabel">0 of 0 sessions</span>
+            </div>
+            <div class="my-bookings-progress-bar">
+              <span id="myBookingsProgressBar"></span>
+            </div>
+            <p id="myBookingsProgressNote" class="membership-copy"></p>
+          </div>
+        </div>
+        
+        <div id="myBookingsUpcoming" class="my-bookings-upcoming">
+          <div class="panel-head">
+            <h3>Upcoming Sessions</h3>
+          </div>
+          <div id="myBookingsUpcomingList" class="my-bookings-upcoming-list"></div>
+          <p id="myBookingsUpcomingEmpty" class="empty-state" hidden>No upcoming sessions.</p>
+        </div>
+        
+        <div id="myBookingsRemaining" class="my-bookings-calendar">
+          <div class="panel-head">
+            <h3>Session Calendar</h3>
+            <span id="myBookingsCalendarMonth" class="my-bookings-calendar-month"></span>
+          </div>
+          <div class="my-bookings-calendar-weekdays">
+            <span>Sun</span>
+            <span>Mon</span>
+            <span>Tue</span>
+            <span>Wed</span>
+            <span>Thu</span>
+            <span>Fri</span>
+            <span>Sat</span>
+          </div>
+          <div id="myBookingsCalendarGrid" class="my-bookings-calendar-grid"></div>
+          <div id="myBookingsCalendarDetails" class="my-bookings-calendar-details"></div>
+        </div>
   
         <div class="table-wrap">
           <table>

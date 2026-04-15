@@ -147,6 +147,19 @@ const elements = {
   bookingsCartNotice: document.getElementById('bookingsCartNotice'),
   bookingsViewCartBtn: document.getElementById('bookingsViewCartBtn'),
 
+  // My Bookings Session Tracking
+  myBookingsTotalSessions: document.getElementById('myBookingsTotalSessions'),
+  myBookingsUpcomingCount: document.getElementById('myBookingsUpcomingCount'),
+  myBookingsCompletedCount: document.getElementById('myBookingsCompletedCount'),
+  myBookingsProgressLabel: document.getElementById('myBookingsProgressLabel'),
+  myBookingsProgressBar: document.getElementById('myBookingsProgressBar'),
+  myBookingsProgressNote: document.getElementById('myBookingsProgressNote'),
+  myBookingsUpcomingList: document.getElementById('myBookingsUpcomingList'),
+  myBookingsUpcomingEmpty: document.getElementById('myBookingsUpcomingEmpty'),
+  myBookingsCalendarMonth: document.getElementById('myBookingsCalendarMonth'),
+  myBookingsCalendarGrid: document.getElementById('myBookingsCalendarGrid'),
+  myBookingsCalendarDetails: document.getElementById('myBookingsCalendarDetails'),
+
   serviceGrid: document.getElementById('serviceGrid'),
   serviceEmpty: document.getElementById('serviceEmpty'),
   servicePanelLead: document.getElementById('servicePanelLead'),
@@ -2799,12 +2812,13 @@ function render() {
       elements.adminHistoryToggleBtnWrap.hidden = !state.adminHistoryVisible;
     }
     
-    renderAdminRows(adminFiltered);
-    renderAdminUserSessionDialog();
-    renderAdminMembershipOrders();
-    renderAdminDiscountPhones();
-    renderAdminDiscountUsers();
-    renderAdminCoupons();
+  renderAdminRows(adminFiltered);
+  renderAdminUserSessionDialog();
+  renderAdminMembershipOrders();
+  renderAdminDiscountPhones();
+  renderAdminDiscountUsers();
+  renderAdminCoupons();
+  renderMyBookingsSessionTracking();
   } else {
     const cartPayableBookings = getUserCartPayableBookings(state.bookings || []);
     const cartDisplayBookings = getUserCartDisplayBookings(state.bookings || []);
@@ -5627,53 +5641,192 @@ function renderAdminUserSessionDialog() {
 }
 
 function renderUserRows(bookings) {
-  elements.bookingTableBody.innerHTML = '';
+  const userBookingsSection = document.getElementById('userBookingsSection');
+  if (!userBookingsSection) return;
+
+  // Clear existing content
+  userBookingsSection.innerHTML = '';
 
   if (bookings.length === 0) {
-    elements.emptyState.hidden = false;
+    const emptyState = document.createElement('div');
+    emptyState.className = 'booking-empty-state';
+    emptyState.innerHTML = `
+      <div class="booking-empty-state-icon">📅</div>
+      <h3>No bookings found</h3>
+      <p>Book your first session to get started with your wellness journey</p>
+    `;
+    userBookingsSection.appendChild(emptyState);
     return;
   }
 
-  elements.emptyState.hidden = true;
   const displayRows = buildUserBookingRows(bookings, bookings);
 
+  // Create cards grid container
+  const cardsGrid = document.createElement('div');
+  cardsGrid.className = 'booking-cards-grid';
+
   for (const row of displayRows) {
-    const tr = document.createElement('tr');
-
-    tr.appendChild(userBookingServiceCell(row));
-    tr.appendChild(userBookingScheduleCell(row));
-    tr.appendChild(statusCell(row.status));
-    tr.appendChild(paymentCell(row.paymentStatus || 'unpaid'));
-
-    const actionCell = document.createElement('td');
-    const actions = document.createElement('div');
-    actions.className = 'action-row';
-
-    const canEdit = !['completed', 'cancelled'].includes(String(row.status || '').toLowerCase());
-    const canCancel = row.status !== 'cancelled';
-    if ((row.paymentStatus || 'unpaid') === 'paid') {
-      actions.append(createActionButton('Invoice', () => openBookingInvoice(row.booking?.id || row.id)));
-    }
-    if (canEdit) {
-      actions.append(
-        createActionButton(row.isGroupedHydrogen ? 'Edit Package' : 'Edit', () => {
-          if (row.isGroupedHydrogen) {
-            openHydrogenPackageEditor(row);
-            return;
-          }
-          openSingleSessionBookingEditor(row.booking);
-        })
-      );
-    }
-    if (canCancel) {
-      actions.append(createActionButton('Cancel', () => changeStatus(row.id, 'cancelled')));
-    }
-    actions.append(createDangerButton('Delete', () => deleteBooking(row.booking)));
-
-    actionCell.appendChild(actions);
-    tr.appendChild(actionCell);
-    elements.bookingTableBody.appendChild(tr);
+    const card = createBookingCard(row);
+    cardsGrid.appendChild(card);
   }
+
+  userBookingsSection.appendChild(cardsGrid);
+}
+
+function createBookingCard(row) {
+  const card = document.createElement('div');
+  card.className = 'booking-card';
+  card.setAttribute('data-status', row.status || 'pending');
+  
+  // Top Row: Service Name + Status Badge
+  const header = document.createElement('div');
+  header.className = 'booking-card-header';
+  
+  const serviceInfo = document.createElement('div');
+  serviceInfo.className = 'booking-card-service';
+  
+  const serviceName = document.createElement('h3');
+  serviceName.textContent = row.serviceTitle || row.booking?.serviceName || 'Service';
+  serviceInfo.appendChild(serviceName);
+  
+  const serviceType = document.createElement('span');
+  serviceType.className = 'booking-card-service-type';
+  serviceType.textContent = row.isGroupedHydrogen ? 'Hydrogen Package' : 'Single Session';
+  serviceInfo.appendChild(serviceType);
+  
+  header.appendChild(serviceInfo);
+  
+  const statusBadge = document.createElement('div');
+  statusBadge.className = 'booking-card-status';
+  const statusChip = document.createElement('span');
+  statusChip.className = `status-chip status-${row.status}`;
+  statusChip.textContent = row.status || 'pending';
+  statusBadge.appendChild(statusChip);
+  header.appendChild(statusBadge);
+  
+  // Middle Row: 2-column grid (Date/Time | Payment)
+  const body = document.createElement('div');
+  body.className = 'booking-card-body';
+  
+  // Left: Date & Time
+  const scheduleInfo = document.createElement('div');
+  scheduleInfo.className = 'booking-card-info';
+  
+  const scheduleLabel = document.createElement('span');
+  scheduleLabel.className = 'booking-card-info-label';
+  scheduleLabel.textContent = 'Date & Time';
+  scheduleInfo.appendChild(scheduleLabel);
+  
+  const scheduleValue = document.createElement('div');
+  scheduleValue.className = 'booking-card-info-value';
+  scheduleValue.textContent = getScheduleDisplayText(row);
+  scheduleInfo.appendChild(scheduleValue);
+  
+  body.appendChild(scheduleInfo);
+  
+  // Right: Payment Status
+  const paymentInfo = document.createElement('div');
+  paymentInfo.className = 'booking-card-info';
+  
+  const paymentLabel = document.createElement('span');
+  paymentLabel.className = 'booking-card-info-label';
+  paymentLabel.textContent = 'Payment';
+  paymentInfo.appendChild(paymentLabel);
+  
+  const paymentValue = document.createElement('div');
+  paymentValue.className = 'booking-card-info-value';
+  const paymentChip = document.createElement('span');
+  paymentChip.className = `status-chip payment-${row.paymentStatus || 'unpaid'}`;
+  paymentChip.textContent = row.paymentStatus || 'unpaid';
+  paymentValue.appendChild(paymentChip);
+  paymentInfo.appendChild(paymentValue);
+  
+  body.appendChild(paymentInfo);
+  
+  // Bottom Row: Price (left) + Actions (right)
+  const footer = document.createElement('div');
+  footer.className = 'booking-card-footer';
+  
+  const price = document.createElement('div');
+  price.className = 'booking-card-price';
+  const amountInr = getDisplayedServicePriceInr(row.booking?.serviceName || row.serviceTitle || '');
+  price.innerHTML = `Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}<span> per session</span>`;
+  footer.appendChild(price);
+  
+  const actions = document.createElement('div');
+  actions.className = 'booking-card-actions';
+  
+  const canEdit = !['completed', 'cancelled'].includes(String(row.status || '').toLowerCase());
+  
+  if ((row.paymentStatus || 'unpaid') === 'paid') {
+    const invoiceBtn = document.createElement('button');
+    invoiceBtn.type = 'button';
+    invoiceBtn.className = 'booking-card-btn booking-card-btn-secondary';
+    invoiceBtn.textContent = 'Invoice';
+    invoiceBtn.addEventListener('click', () => openBookingInvoice(row.booking?.id || row.id));
+    actions.appendChild(invoiceBtn);
+  }
+  
+  if (canEdit) {
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'booking-card-btn booking-card-btn-primary';
+    editBtn.textContent = row.isGroupedHydrogen ? 'Edit Package' : 'Edit';
+    editBtn.addEventListener('click', () => {
+      if (row.isGroupedHydrogen) {
+        openHydrogenPackageEditor(row);
+      } else {
+        openSingleSessionBookingEditor(row.booking);
+      }
+    });
+    actions.appendChild(editBtn);
+  }
+  
+  if (row.status !== 'cancelled') {
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'booking-card-btn booking-card-btn-secondary';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', () => changeStatus(row.id, 'cancelled'));
+    actions.appendChild(cancelBtn);
+  }
+  
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'booking-card-btn booking-card-btn-danger';
+  deleteBtn.textContent = 'Delete';
+  deleteBtn.addEventListener('click', () => deleteBooking(row.booking));
+  actions.appendChild(deleteBtn);
+  
+  footer.appendChild(actions);
+  
+  card.appendChild(header);
+  card.appendChild(body);
+  card.appendChild(footer);
+  
+  return card;
+}
+
+function getScheduleDisplayText(row) {
+  if (row.isGroupedHydrogen) {
+    const dates = (row.hydrogenEntries || []).map(e => e.date).filter(Boolean);
+    const uniqueDates = [...new Set(dates)];
+    if (uniqueDates.length === 1) {
+      return `${uniqueDates[0]} • ${row.hydrogenEntries?.length || 0} sessions`;
+    } else {
+      return `${uniqueDates.length} dates • ${row.hydrogenEntries?.length || 0} sessions`;
+    }
+  } else {
+    return `${row.booking?.date || ''} • ${row.booking?.time || ''}`;
+  }
+}
+
+function createCardActionButton(text, type, onClick) {
+  const btn = document.createElement('button');
+  btn.className = `booking-card-btn booking-card-btn-${type}`;
+  btn.textContent = text;
+  btn.addEventListener('click', onClick);
+  return btn;
 }
 
 function cartAmountCell(row) {
@@ -7224,9 +7377,169 @@ function getServiceDisplayName(serviceOrName) {
 
 function escapeHtml(value) {
   return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
+    .replaceAll('&', '&')
+    .replaceAll('<', '<')
+    .replaceAll('>', '>')
+    .replaceAll('"', '"')
     .replaceAll("'", '&#039;');
+}
+
+function renderMyBookingsSessionTracking() {
+  if (state.user?.role !== 'user') return;
+
+  const bookings = state.bookings || [];
+  const now = new Date();
+  const todayKey = getTodayIsoDate();
+
+  // Count sessions
+  let totalSessions = 0;
+  let upcomingCount = 0;
+  let completedCount = 0;
+  const upcomingBookings = [];
+
+  bookings.forEach((booking) => {
+    if (String(booking.status || '').toLowerCase() === 'cancelled') return;
+    if (getBookingCategory(booking.serviceName) === 'HYDROGEN SESSION') {
+      // Each hydrogen booking counts as one session
+      totalSessions++;
+      if (booking.bookingDate > todayKey || (booking.bookingDate === todayKey && !isBookingSlotInPast(booking.bookingDate, booking.bookingTime))) {
+        upcomingCount++;
+        upcomingBookings.push(booking);
+      } else if (String(booking.status || '').toLowerCase() === 'completed') {
+        completedCount++;
+      }
+    } else if (getBookingCategory(booking.serviceName) === 'IV ADD-ON') {
+      // Each IV therapy/shot counts as one session
+      totalSessions++;
+      if (booking.bookingDate > todayKey || (booking.bookingDate === todayKey && !isBookingSlotInPast(booking.bookingDate, booking.bookingTime))) {
+        upcomingCount++;
+        upcomingBookings.push(booking);
+      } else if (String(booking.status || '').toLowerCase() === 'completed') {
+        completedCount++;
+      }
+    }
+  });
+
+  // Update KPI cards
+  if (elements.myBookingsTotalSessions) {
+    elements.myBookingsTotalSessions.textContent = String(totalSessions);
+  }
+  if (elements.myBookingsUpcomingCount) {
+    elements.myBookingsUpcomingCount.textContent = String(upcomingCount);
+  }
+  if (elements.myBookingsCompletedCount) {
+    elements.myBookingsCompletedCount.textContent = String(completedCount);
+  }
+
+  // Progress bar
+  const progressPercent = totalSessions > 0 ? Math.round((completedCount / totalSessions) * 100) : 0;
+  if (elements.myBookingsProgressLabel) {
+    elements.myBookingsProgressLabel.textContent = `${completedCount} of ${totalSessions} sessions completed`;
+  }
+  if (elements.myBookingsProgressBar) {
+    elements.myBookingsProgressBar.style.width = `${progressPercent}%`;
+  }
+  if (elements.myBookingsProgressNote) {
+    elements.myBookingsProgressNote.textContent = totalSessions === 0
+      ? 'No sessions booked yet. Book your first session to get started.'
+      : `${totalSessions - completedCount} sessions remaining`;
+  }
+
+  // Upcoming sessions list
+  if (elements.myBookingsUpcomingList) {
+    elements.myBookingsUpcomingList.innerHTML = '';
+  }
+  if (elements.myBookingsUpcomingEmpty) {
+    elements.myBookingsUpcomingEmpty.hidden = upcomingBookings.length > 0;
+  }
+
+  const sortedUpcoming = upcomingBookings
+    .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`))
+    .slice(0, 5);
+
+  sortedUpcoming.forEach((booking) => {
+    const item = document.createElement('div');
+    item.className = 'mybookings-upcoming-item';
+    const derivedStatus = getDerivedBookingStatus(booking);
+    item.innerHTML = `
+      <div class="mybookings-upcoming-info">
+        <strong>${escapeHtml(booking.serviceName)}</strong>
+        <span>${formatDateTime(booking.bookingDate, booking.bookingTime)}</span>
+      </div>
+      <span class="status-chip status-${escapeHtml(derivedStatus)}">${escapeHtml(derivedStatus)}</span>
+    `;
+    elements.myBookingsUpcomingList?.appendChild(item);
+  });
+
+  // Calendar
+  if (elements.myBookingsCalendarGrid && elements.myBookingsCalendarMonth) {
+    const today = new Date();
+    const year = today.getFullYear();
+    const monthIndex = today.getMonth();
+    elements.myBookingsCalendarMonth.textContent = getCalendarMonthLabel(today);
+
+    const firstOfMonth = new Date(year, monthIndex, 1);
+    const startDay = firstOfMonth.getDay();
+    const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+    const bookedByDate = buildBookingsByDate(bookings, year, monthIndex);
+    const todayKey2 = getCalendarDateKey(year, monthIndex, today.getDate());
+
+    if (!state.myBookingsCalendarSelectedDate || !state.myBookingsCalendarSelectedDate.startsWith(`${year}-${String(monthIndex + 1).padStart(2, '0')}-`)) {
+      const bookedDates = Array.from(bookedByDate.keys()).sort();
+      state.myBookingsCalendarSelectedDate = bookedDates[0] || todayKey2;
+    }
+
+    elements.myBookingsCalendarGrid.innerHTML = '';
+    const totalCells = 42;
+    for (let index = 0; index < totalCells; index += 1) {
+      const dayNumber = index - startDay + 1;
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'mybookings-calendar-day';
+      if (dayNumber < 1 || dayNumber > daysInMonth) {
+        cell.classList.add('is-outside');
+        cell.disabled = true;
+        cell.textContent = '';
+      } else {
+        const dateKey = getCalendarDateKey(year, monthIndex, dayNumber);
+        cell.textContent = String(dayNumber);
+        if (dateKey === todayKey2) cell.classList.add('is-today');
+        if (dateKey === state.myBookingsCalendarSelectedDate) cell.classList.add('is-selected');
+        if (bookedByDate.has(dateKey)) cell.classList.add('is-booked');
+        cell.addEventListener('click', () => {
+          state.myBookingsCalendarSelectedDate = dateKey;
+          renderMyBookingsSessionTracking();
+        });
+      }
+      elements.myBookingsCalendarGrid.appendChild(cell);
+    }
+
+    // Calendar details
+    if (elements.myBookingsCalendarDetails) {
+      const selectedDate = state.myBookingsCalendarSelectedDate;
+      const label = formatBookingDateLabel(selectedDate);
+      const dayBookings = bookedByDate.get(selectedDate) || [];
+
+      if (!dayBookings.length) {
+        elements.myBookingsCalendarDetails.innerHTML = `
+          <div>${escapeHtml(label)}</div>
+          <span>No sessions booked.</span>
+        `;
+      } else {
+        const lines = dayBookings.slice(0, 3).map((booking) => `
+          <div class="mybookings-calendar-detail-item">
+            <strong>${escapeHtml(booking.serviceName || 'Session')}</strong>
+            <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))} • ${escapeHtml(getDerivedBookingStatus(booking))}</span>
+          </div>
+        `).join('');
+        const moreCount = dayBookings.length - 3;
+        const moreLine = moreCount > 0 ? `<span>+${moreCount} more</span>` : '';
+        elements.myBookingsCalendarDetails.innerHTML = `
+          <div>${escapeHtml(label)}</div>
+          ${lines}
+          ${moreLine}
+        `;
+      }
+    }
+  }
 }

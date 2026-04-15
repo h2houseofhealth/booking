@@ -6299,3 +6299,28 @@ table tbody td {
 
 
 }
+
+/* My Bookings summary layout */
+.my-bookings-summary {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.my-bookings-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 0;
+}
+
+.my-bookings-progress-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Remove duplicate upcoming section below summary */
+.my-bookings-upcoming {
+  display: none !important;
+}

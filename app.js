@@ -5641,192 +5641,51 @@ function renderAdminUserSessionDialog() {
 }
 
 function renderUserRows(bookings) {
-  const userBookingsSection = document.getElementById('userBookingsSection');
-  if (!userBookingsSection) return;
-
-  // Clear existing content
-  userBookingsSection.innerHTML = '';
-
-  if (bookings.length === 0) {
-    const emptyState = document.createElement('div');
-    emptyState.className = 'booking-empty-state';
-    emptyState.innerHTML = `
-      <div class="booking-empty-state-icon">📅</div>
-      <h3>No bookings found</h3>
-      <p>Book your first session to get started with your wellness journey</p>
-    `;
-    userBookingsSection.appendChild(emptyState);
-    return;
-  }
+  if (!elements.bookingTableBody || !elements.emptyState) return;
+  elements.bookingTableBody.innerHTML = '';
 
   const displayRows = buildUserBookingRows(bookings, bookings);
-
-  // Create cards grid container
-  const cardsGrid = document.createElement('div');
-  cardsGrid.className = 'booking-cards-grid';
+  if (!displayRows.length) {
+    elements.emptyState.hidden = false;
+    return;
+  }
+  elements.emptyState.hidden = true;
 
   for (const row of displayRows) {
-    const card = createBookingCard(row);
-    cardsGrid.appendChild(card);
-  }
+    const tr = document.createElement('tr');
+    tr.appendChild(userBookingServiceCell(row));
+    tr.appendChild(userBookingScheduleCell(row));
+    tr.appendChild(statusCell(row.status || 'pending'));
+    tr.appendChild(paymentCell(row.paymentStatus || 'unpaid'));
 
-  userBookingsSection.appendChild(cardsGrid);
-}
+    const actionCell = document.createElement('td');
+    const actions = document.createElement('div');
+    actions.className = 'action-row';
 
-function createBookingCard(row) {
-  const card = document.createElement('div');
-  card.className = 'booking-card';
-  card.setAttribute('data-status', row.status || 'pending');
-  
-  // Top Row: Service Name + Status Badge
-  const header = document.createElement('div');
-  header.className = 'booking-card-header';
-  
-  const serviceInfo = document.createElement('div');
-  serviceInfo.className = 'booking-card-service';
-  
-  const serviceName = document.createElement('h3');
-  serviceName.textContent = row.serviceTitle || row.booking?.serviceName || 'Service';
-  serviceInfo.appendChild(serviceName);
-  
-  const serviceType = document.createElement('span');
-  serviceType.className = 'booking-card-service-type';
-  serviceType.textContent = row.isGroupedHydrogen ? 'Hydrogen Package' : 'Single Session';
-  serviceInfo.appendChild(serviceType);
-  
-  header.appendChild(serviceInfo);
-  
-  const statusBadge = document.createElement('div');
-  statusBadge.className = 'booking-card-status';
-  const statusChip = document.createElement('span');
-  statusChip.className = `status-chip status-${row.status}`;
-  statusChip.textContent = row.status || 'pending';
-  statusBadge.appendChild(statusChip);
-  header.appendChild(statusBadge);
-  
-  // Middle Row: 2-column grid (Date/Time | Payment)
-  const body = document.createElement('div');
-  body.className = 'booking-card-body';
-  
-  // Left: Date & Time
-  const scheduleInfo = document.createElement('div');
-  scheduleInfo.className = 'booking-card-info';
-  
-  const scheduleLabel = document.createElement('span');
-  scheduleLabel.className = 'booking-card-info-label';
-  scheduleLabel.textContent = 'Date & Time';
-  scheduleInfo.appendChild(scheduleLabel);
-  
-  const scheduleValue = document.createElement('div');
-  scheduleValue.className = 'booking-card-info-value';
-  scheduleValue.textContent = getScheduleDisplayText(row);
-  scheduleInfo.appendChild(scheduleValue);
-  
-  body.appendChild(scheduleInfo);
-  
-  // Right: Payment Status
-  const paymentInfo = document.createElement('div');
-  paymentInfo.className = 'booking-card-info';
-  
-  const paymentLabel = document.createElement('span');
-  paymentLabel.className = 'booking-card-info-label';
-  paymentLabel.textContent = 'Payment';
-  paymentInfo.appendChild(paymentLabel);
-  
-  const paymentValue = document.createElement('div');
-  paymentValue.className = 'booking-card-info-value';
-  const paymentChip = document.createElement('span');
-  paymentChip.className = `status-chip payment-${row.paymentStatus || 'unpaid'}`;
-  paymentChip.textContent = row.paymentStatus || 'unpaid';
-  paymentValue.appendChild(paymentChip);
-  paymentInfo.appendChild(paymentValue);
-  
-  body.appendChild(paymentInfo);
-  
-  // Bottom Row: Price (left) + Actions (right)
-  const footer = document.createElement('div');
-  footer.className = 'booking-card-footer';
-  
-  const price = document.createElement('div');
-  price.className = 'booking-card-price';
-  const amountInr = getDisplayedServicePriceInr(row.booking?.serviceName || row.serviceTitle || '');
-  price.innerHTML = `Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}<span> per session</span>`;
-  footer.appendChild(price);
-  
-  const actions = document.createElement('div');
-  actions.className = 'booking-card-actions';
-  
-  const canEdit = !['completed', 'cancelled'].includes(String(row.status || '').toLowerCase());
-  
-  if ((row.paymentStatus || 'unpaid') === 'paid') {
-    const invoiceBtn = document.createElement('button');
-    invoiceBtn.type = 'button';
-    invoiceBtn.className = 'booking-card-btn booking-card-btn-secondary';
-    invoiceBtn.textContent = 'Invoice';
-    invoiceBtn.addEventListener('click', () => openBookingInvoice(row.booking?.id || row.id));
-    actions.appendChild(invoiceBtn);
-  }
-  
-  if (canEdit) {
-    const editBtn = document.createElement('button');
-    editBtn.type = 'button';
-    editBtn.className = 'booking-card-btn booking-card-btn-primary';
-    editBtn.textContent = row.isGroupedHydrogen ? 'Edit Package' : 'Edit';
-    editBtn.addEventListener('click', () => {
-      if (row.isGroupedHydrogen) {
-        openHydrogenPackageEditor(row);
-      } else {
-        openSingleSessionBookingEditor(row.booking);
-      }
-    });
-    actions.appendChild(editBtn);
-  }
-  
-  if (row.status !== 'cancelled') {
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'booking-card-btn booking-card-btn-secondary';
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.addEventListener('click', () => changeStatus(row.id, 'cancelled'));
-    actions.appendChild(cancelBtn);
-  }
-  
-  const deleteBtn = document.createElement('button');
-  deleteBtn.type = 'button';
-  deleteBtn.className = 'booking-card-btn booking-card-btn-danger';
-  deleteBtn.textContent = 'Delete';
-  deleteBtn.addEventListener('click', () => deleteBooking(row.booking));
-  actions.appendChild(deleteBtn);
-  
-  footer.appendChild(actions);
-  
-  card.appendChild(header);
-  card.appendChild(body);
-  card.appendChild(footer);
-  
-  return card;
-}
-
-function getScheduleDisplayText(row) {
-  if (row.isGroupedHydrogen) {
-    const dates = (row.hydrogenEntries || []).map(e => e.date).filter(Boolean);
-    const uniqueDates = [...new Set(dates)];
-    if (uniqueDates.length === 1) {
-      return `${uniqueDates[0]} • ${row.hydrogenEntries?.length || 0} sessions`;
-    } else {
-      return `${uniqueDates.length} dates • ${row.hydrogenEntries?.length || 0} sessions`;
+    const canEdit = !['completed', 'cancelled'].includes(String(row.status || '').toLowerCase());
+    if ((row.paymentStatus || 'unpaid') === 'paid') {
+      actions.append(createActionButton('Invoice', () => openBookingInvoice(row.booking?.id || row.id)));
     }
-  } else {
-    return `${row.booking?.date || ''} • ${row.booking?.time || ''}`;
-  }
-}
+    if (canEdit) {
+      actions.append(
+        createActionButton(row.isGroupedHydrogen ? 'Edit Package' : 'Edit', () => {
+          if (row.isGroupedHydrogen) {
+            openHydrogenPackageEditor(row);
+            return;
+          }
+          openSingleSessionBookingEditor(row.booking);
+        })
+      );
+    }
+    if (String(row.status || '').toLowerCase() !== 'cancelled') {
+      actions.append(createActionButton('Cancel', () => changeStatus(row.id, 'cancelled')));
+    }
+    actions.append(createDangerButton('Delete', () => deleteBooking(row.booking)));
 
-function createCardActionButton(text, type, onClick) {
-  const btn = document.createElement('button');
-  btn.className = `booking-card-btn booking-card-btn-${type}`;
-  btn.textContent = text;
-  btn.addEventListener('click', onClick);
-  return btn;
+    actionCell.appendChild(actions);
+    tr.appendChild(actionCell);
+    elements.bookingTableBody.appendChild(tr);
+  }
 }
 
 function cartAmountCell(row) {
@@ -7543,3 +7402,4 @@ function renderMyBookingsSessionTracking() {
     }
   }
 }
+

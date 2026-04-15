@@ -80,27 +80,75 @@
       </section>
 
       <section id="memberChoiceGate" class="panel app-only user-only member-choice-gate" aria-label="Choose membership mode" hidden>
-        <p class="auth-kicker">Continue</p>
-        <h2>Choose How You Want To Continue</h2>
-        <p class="membership-copy">
-          Choose whether you want to activate membership first, enter with member benefits, or continue with non-member access.
-        </p>
-        <div class="member-choice-grid">
-          <button id="joinAsMemberBtn" class="member-choice-card" type="button">
-            <strong>Join Membership</strong>
-            <span>Open the membership plans first, complete payment, then continue to services.</span>
-          </button>
-          <button id="continueAsMemberBtn" class="member-choice-card" type="button">
-            <strong>Member Login</strong>
-            <span>Go directly to services with member pricing and membership-only access.</span>
-          </button>
-          <button id="continueAsNonMemberBtn" class="member-choice-card" type="button">
-            <strong>Non-member Login</strong>
-            <span>Go directly to services with non-member access and regular pricing.</span>
-          </button>
-        </div>
-      </section>
+  <p class="auth-kicker">Continue</p>
+  <h2>Choose How You Want To Continue</h2>
+  <p class="membership-copy">
+    Choose whether you want to activate membership first, enter with member benefits, or continue with non-member access.
+  </p>
+  <div class="member-choice-benefits">
+    <p><span class="member-choice-check">✓</span> Book hydrogen, IV therapy &amp; IV shots in one place.</p>
+    <p><span class="member-choice-check">✓</span> Member pricing and exclusive session access.</p>
+    <p><span class="member-choice-check">✓</span> Change or cancel your plan anytime.</p>
+  </div>
+  <div class="member-choice-table-wrap">
+    <div class="member-choice-plan-headers">
+      <div class="member-choice-spacer"></div>
+      <div class="member-choice-plan-col">
+        <button id="joinAsMemberBtn" class="member-choice-plan-btn" type="button"> Membership</button>
+      </div>
+      
+      <div class="member-choice-plan-col">
+        <button id="continueAsNonMemberBtn" class="member-choice-plan-btn" type="button">Non-member Login</button>
+      </div>
+    </div>
+    <div class="member-choice-row">
+  <div class="member-choice-label">Hydrogen Sessions</div>
 
+  <div class="member-choice-cell" data-col="0">
+    16 sessions<br><small>₹84,000 / year</small>
+  </div>
+
+  <div class="member-choice-cell" data-col="1">
+    Pay per session<br><small> Regular pricing</small>
+  </div>
+</div>
+
+<div class="member-choice-row">
+  <div class="member-choice-label">IV Therapy</div>
+
+  <div class="member-choice-cell" data-col="0">
+    ---
+  </div>
+
+  <div class="member-choice-cell" data-col="1">
+    ---
+  </div>
+</div>
+
+<div class="member-choice-row">
+  <div class="member-choice-label">IV Shots</div>
+
+  <div class="member-choice-cell" data-col="0">
+    ---
+  </div>
+
+  <div class="member-choice-cell" data-col="1">
+    ---
+  </div>
+</div>
+<div class="member-choice-row">
+  <div class="member-choice-label">Membership Services</div>
+
+  <div class="member-choice-cell" data-col="0">
+    ✔
+  </div>
+
+  <div class="member-choice-cell" data-col="1">
+    X
+  </div>
+</div>
+  </div>
+</section>
       <section class="stats-grid admin-stats-grid app-only admin-only" aria-label="Booking summary" hidden>
         <button id="adminStatTotal" class="stat-card" type="button">
           <h2>Today's Bookings</h2>

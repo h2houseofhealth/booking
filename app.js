@@ -7402,4 +7402,17 @@ function renderMyBookingsSessionTracking() {
     }
   }
 }
-
+function setMemberChoiceActive(colIndex) {
+  document.querySelectorAll('.member-choice-plan-btn').forEach((btn, i) => {
+    btn.classList.toggle('is-active', i === colIndex);
+  });
+  document.querySelectorAll('.member-choice-cell').forEach(cell => {
+    const col = parseInt(cell.dataset.col);
+    cell.classList.toggle('is-active', col === colIndex);
+    const dot = cell.querySelector('.member-choice-dot');
+    if (dot) dot.classList.toggle('is-active', col === colIndex);
+  });
+}
+document.getElementById('joinAsMemberBtn').addEventListener('click', () => setMemberChoiceActive(0));
+document.getElementById('continueAsMemberBtn').addEventListener('click', () => setMemberChoiceActive(1));
+document.getElementById('continueAsNonMemberBtn').addEventListener('click', () => setMemberChoiceActive(2));

@@ -7416,3 +7416,16 @@ function setMemberChoiceActive(colIndex) {
 document.getElementById('joinAsMemberBtn').addEventListener('click', () => setMemberChoiceActive(0));
 document.getElementById('continueAsMemberBtn').addEventListener('click', () => setMemberChoiceActive(1));
 document.getElementById('continueAsNonMemberBtn').addEventListener('click', () => setMemberChoiceActive(2));
+
+const memberBtn = document.getElementById("joinAsMemberBtn");
+const nonMemberBtn = document.getElementById("continueAsNonMemberBtn");
+
+memberBtn.addEventListener("click", () => {
+  memberBtn.classList.add("active");
+  nonMemberBtn.classList.remove("active");
+});
+
+nonMemberBtn.addEventListener("click", () => {
+  nonMemberBtn.classList.add("active");
+  memberBtn.classList.remove("active");
+});

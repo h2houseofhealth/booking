@@ -6348,14 +6348,17 @@ table tbody td {
 }
 .member-choice-plan-headers {
   display: grid;
-  grid-template-columns: 1fr repeat(3, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--line);
+  grid-template-columns: 1.3fr 1fr 1fr;  /* ✅ SAME AS ROW */
+  align-items: center;
 }
 .member-choice-spacer { background: var(--panel); }
-.member-choice-plan-col { background: var(--panel); }
+.member-choice-plan-col {
+  display: flex;
+  justify-content: center;
+}
 .member-choice-plan-btn {
   width: 100%;
+  text-align: center;
   padding: 1rem 0.5rem;
   border: 0;
   cursor: pointer;
@@ -6384,55 +6387,174 @@ table tbody td {
   z-index: 2;
 }
 .member-choice-rows {
-  background: var(--panel);
-}
-.member-choice-row {
-  display: grid;
-  grid-template-columns: 1fr repeat(3, minmax(0, 1fr));
-  border-top: 1px solid var(--line);
-}
-.member-choice-label {
-  padding: 0.85rem;
-  font-size: 0.88rem;
-  color: var(--ink);
-  display: flex;
-  align-items: center;
-}
-.member-choice-cell {
-  padding: 0.85rem 0.5rem;
-  font-size: 0.82rem;
-  color: rgba(var(--ink-rgb), 0.72);
-  text-align: center;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.member-choice-cell.is-active {
-  color: var(--brand-primary);
-  font-weight: 600;
-}
-.member-choice-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background: rgba(var(--brand-primary-rgb), 0.18);
-  display: inline-block;
-}
-.member-choice-dot.is-active {
-  background: var(--brand-primary);
-}
-@media (max-width: 640px) {
-  .member-choice-plan-btn { font-size: 0.75rem; padding: 0.8rem 0.25rem; }
-  .member-choice-label { font-size: 0.8rem; padding: 0.7rem 0.6rem; }
-  .member-choice-cell { font-size: 0.75rem; padding: 0.7rem 0.3rem; }
-}
-.member-choice-cell .price {
-  font-weight: 700;
-  color: var(--brand-primary);
-  font-size: 0.95rem;
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.05);
 }
 
-.member-choice-cell strong {
-  display: block;
+/* GRID FIX */
+.member-choice-row {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr;
+  align-items: center;
+  padding: 1rem 1.2rem;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
+.member-choice-row:hover {
+  background: rgba(0,0,0,0.02);
+}
+
+/* LABEL */
+.member-choice-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #333;
+}
+
+/* CELLS */
+.member-choice-cell {
+  text-align: center;
   font-size: 0.85rem;
+  color: #666;
+}
+
+/* PRICE STYLE */
+.member-choice-cell .price {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #AE5431;
+}
+
+/* MEMBERSHIP COLUMN HIGHLIGHT */
+.member-choice-cell[data-col="0"]::before {
+  content: none;
+}
+
+/* CHECK / CROSS */
+.member-choice-cell:contains("✔") {
+  color: #16a34a;
+  font-weight: bold;
+}
+
+.member-choice-cell:contains("X") {
+  color: #dc2626;
+  font-weight: bold;
+}
+
+/* SECTION SPACING */
+.member-choice-row:nth-child(odd) {
+  background: #fafafa;
+}
+
+/* MOBILE */
+@media (max-width: 640px) {
+  .member-choice-row {
+    grid-template-columns: 1fr 1fr;
+    row-gap: 0.5rem;
+  }
+}
+/* 🔥 Membership column modern highlight */
+.member-choice-cell[data-col="0"] {
+  position: relative;
+}
+
+.member-choice-cell[data-col="0"]::before {
+  content: "";
+  position: absolute;
+  inset: 6px 10px;
+  z-index: 0;
+}
+
+.member-choice-cell[data-col="0"] * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Price styling */
+.member-choice-cell .price {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #c96a1b;
+}
+
+/* Sub text */
+.sub {
+  font-size: 0.75rem;
+  color: #888;
+}
+
+/* Hover effect */
+.member-choice-row:not(.header):hover {
+  background: rgba(0,0,0,0.025);
+}
+.member-choice-plan-btn {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: #f5efe9;
+  color: #7a4b1f;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.member-choice-plan-btn:hover {
+  background: #e9ddd2;
+  transform: translateY(-1px);
+}
+@media (max-width: 640px) {
+
+  .member-choice-plan-headers {
+    display: none; /* hide header buttons row */
+  }
+
+  .member-choice-row {
+    grid-template-columns: 1fr; /* stack everything */
+    gap: 6px;
+    padding: 0.8rem;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+  }
+
+  .member-choice-label {
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .member-choice-cell {
+    justify-content: space-between;
+    width: 100%;
+    font-size: 0.8rem;
+  }
+
+  /* Add labels dynamically */
+  .member-choice-cell[data-col="0"]::before {
+    content: "Member";
+    font-weight: 500;
+    color: #888;
+  }
+
+  .member-choice-cell[data-col="1"]::before {
+    content: "Non-member";
+    font-weight: 500;
+    color: #888;
+  }
+
+  .member-choice-cell {
+    display: flex;
+    justify-content: space-between;
+  }
+}
+.check {
+  color: #16a34a;   /* green */
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.cross {
+  color: #dc2626;   /* red */
+  font-weight: 700;
+  font-size: 1rem;
 }

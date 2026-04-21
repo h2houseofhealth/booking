@@ -131,6 +131,9 @@ const elements = {
   adminHistoryCard: document.getElementById('adminHistoryCard'),
   historyCount: document.getElementById('historyCount'),
   memberChoiceGate: document.getElementById('memberChoiceGate'),
+  comparisonMatrixBtn: document.getElementById('comparisonMatrixBtn'),
+  comparisonMatrixDialog: document.getElementById('comparisonMatrixDialog'),
+  closeComparisonMatrixDialogBtn: document.getElementById('closeComparisonMatrixDialogBtn'),
   userTabNav: document.getElementById('userTabNav'),
   userTabServices: document.getElementById('userTabServices'),
   userTabMembership: document.getElementById('userTabMembership'),
@@ -473,6 +476,7 @@ function attachEvents() {
     if (elements.profileDialog.open) elements.profileDialog.close();
     if (elements.membershipDialog?.open) elements.membershipDialog.close();
     if (elements.adminUserSessionDialog?.open) elements.adminUserSessionDialog.close();
+    if (elements.comparisonMatrixDialog?.open) elements.comparisonMatrixDialog.close();
     renderAuthMode();
     render();
   });
@@ -538,6 +542,25 @@ function attachEvents() {
     requestAnimationFrame(() => {
       document.querySelector('[aria-label="Services"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
+  });
+
+  elements.comparisonMatrixBtn?.addEventListener('click', () => {
+    if (!elements.comparisonMatrixDialog) return;
+    if (elements.comparisonMatrixDialog.open) {
+      elements.comparisonMatrixDialog.close();
+      return;
+    }
+    elements.comparisonMatrixDialog.showModal();
+  });
+
+  elements.closeComparisonMatrixDialogBtn?.addEventListener('click', () => {
+    elements.comparisonMatrixDialog?.close();
+  });
+
+  elements.comparisonMatrixDialog?.addEventListener('click', (event) => {
+    if (event.target === elements.comparisonMatrixDialog) {
+      elements.comparisonMatrixDialog.close();
+    }
   });
   elements.userTabServices?.addEventListener('click', () => {
     if (state.activeUserTab !== 'services') {
@@ -1557,7 +1580,7 @@ function updateBookingSummary() {
   
   const summaryLines = [];
   summaryLines.push(
-    `<div><span>${escapeHtml(getServiceDisplayName(selectedService))}${isHydrogenFree ? ` <small>(Free â€¢ ${hydrogenFreeRemaining} left)</small>` : ''}</span><span>Rs. ${basePrice.toLocaleString('en-IN')}</span></div>`
+    `<div><span>${escapeHtml(getServiceDisplayName(selectedService))}${isHydrogenFree ? ` <small>(Free • ${hydrogenFreeRemaining} left)</small>` : ''}</span><span>Rs. ${basePrice.toLocaleString('en-IN')}</span></div>`
   );
   
   if (selectedAddOn) {
@@ -7402,30 +7425,3 @@ function renderMyBookingsSessionTracking() {
     }
   }
 }
-function setMemberChoiceActive(colIndex) {
-  document.querySelectorAll('.member-choice-plan-btn').forEach((btn, i) => {
-    btn.classList.toggle('is-active', i === colIndex);
-  });
-  document.querySelectorAll('.member-choice-cell').forEach(cell => {
-    const col = parseInt(cell.dataset.col);
-    cell.classList.toggle('is-active', col === colIndex);
-    const dot = cell.querySelector('.member-choice-dot');
-    if (dot) dot.classList.toggle('is-active', col === colIndex);
-  });
-}
-document.getElementById('joinAsMemberBtn').addEventListener('click', () => setMemberChoiceActive(0));
-document.getElementById('continueAsMemberBtn').addEventListener('click', () => setMemberChoiceActive(1));
-document.getElementById('continueAsNonMemberBtn').addEventListener('click', () => setMemberChoiceActive(2));
-
-const memberBtn = document.getElementById("joinAsMemberBtn");
-const nonMemberBtn = document.getElementById("continueAsNonMemberBtn");
-
-memberBtn.addEventListener("click", () => {
-  memberBtn.classList.add("active");
-  nonMemberBtn.classList.remove("active");
-});
-
-nonMemberBtn.addEventListener("click", () => {
-  nonMemberBtn.classList.add("active");
-  memberBtn.classList.remove("active");
-});

@@ -5012,9 +5012,11 @@ function renderMembership() {
 
   elements.membershipPlans.innerHTML = '';
   for (const plan of plans) {
-    const additionalPeople = 0;
-    if (state.membershipAdditions && state.membershipAdditions[plan.id]) {
-      state.membershipAdditions[plan.id] = 0;
+    const canAddPerson = supportsAddPersonOnMembershipCard(plan);
+    const existingAdditionalPeople = Number(state.membershipAdditions?.[plan.id] || 0);
+    const additionalPeople = canAddPerson && existingAdditionalPeople > 0 ? 1 : 0;
+    if (canAddPerson) {
+      state.membershipAdditions[plan.id] = additionalPeople;
     }
     const estimatedAmountInr = Number(plan.priceInr || 0) + additionalPeople * addPersonPriceInr;
     const isCurrentBasePlan = active && String(current.plan || '') === String(plan.id);
@@ -5045,6 +5047,24 @@ function renderMembership() {
         <ul class="membership-feature-list">
           ${featureItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
         </ul>
+        ${
+          canAddPerson
+            ? `
+        <div class="membership-add-price-box">
+          <strong>Add Person</strong>
+          <span class="membership-add-price-line">+ Rs. ${addPersonPriceInr.toLocaleString('en-IN')}</span>
+        </div>
+        <div class="membership-add-controls">
+          <button
+            type="button"
+            class="membership-add-person-btn${additionalPeople > 0 ? ' is-active' : ''}"
+            aria-label="${additionalPeople > 0 ? 'Remove added person' : 'Add one more person'}"
+          >${additionalPeople > 0 ? '-' : '+'}</button>
+          <span class="membership-add-label">Add 1 person</span>
+        </div>
+        `
+            : ''
+        }
         <div class="membership-card-actions"></div>
       </div>
     `;
@@ -5062,8 +5082,21 @@ function renderMembership() {
     if (actionWrap) {
       actionWrap.appendChild(button);
     }
+
+    const addPersonBtn = card.querySelector('.membership-add-person-btn');
+    if (addPersonBtn) {
+      addPersonBtn.addEventListener('click', () => {
+        state.membershipAdditions[plan.id] = additionalPeople > 0 ? 0 : 1;
+        renderMembership();
+      });
+    }
     elements.membershipPlans.appendChild(card);
   }
+}
+
+function supportsAddPersonOnMembershipCard(plan) {
+  const planId = String(plan?.id || '').trim();
+  return planId === 'h2_two' || planId === 'h2_four';
 }
 
 function getMembershipPlanTheme(plan) {

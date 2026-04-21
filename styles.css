@@ -1484,13 +1484,32 @@ h3,
 .membership-add-controls {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 0.6rem;
   flex-wrap: wrap;
   padding-top: 0.1rem;
   min-height: 3.15rem;
 }
 
+.membership-add-person-btn {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.45);
+  color: var(--brand-primary);
+  background: #fff;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.membership-add-person-btn.is-active {
+  background: rgba(var(--brand-primary-rgb), 0.14);
+  border-color: rgba(var(--brand-primary-rgb), 0.7);
+}
 
 .membership-add-label {
   font-size: 0.76rem;

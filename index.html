@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -24,7 +24,7 @@
               <strong id="userName"></strong>
               <span class="profile-badges">
                 <span class="role-chip" id="userRole"></span>
-                <span class="membership-badge" id="userMembershipBadge" hidden>★ Member</span>
+                <span class="membership-badge" id="userMembershipBadge" hidden>&#9733; Member</span>
               </span>
             </span>
           </button>
@@ -80,202 +80,56 @@
       </section>
 
       <section id="memberChoiceGate" class="panel app-only user-only member-choice-gate" aria-label="Choose membership mode" hidden>
-  <p class="auth-kicker">Continue</p>
-  <h2>Choose How You Want To Continue</h2>
-  <p class="membership-copy">
-    Choose whether you want to activate membership first, enter with member benefits, or continue with non-member access.
-  </p>
-  <div class="member-choice-benefits">
-    <p><span class="member-choice-check">✓</span> Book hydrogen, IV therapy &amp; IV shots in one place.</p>
-    <p><span class="member-choice-check">✓</span> Member pricing and exclusive session access.</p>
-    <p><span class="member-choice-check">✓</span> Change or cancel your plan anytime.</p>
-  </div>
-  <div class="member-choice-table-wrap">
-    <div class="member-choice-plan-headers">
-      <div class="member-choice-spacer"></div>
-      <div class="member-choice-plan-col">
-        <button id="joinAsMemberBtn" class="member-choice-plan-btn" type="button"> Membership</button>
-      </div>
-      
-      <div class="member-choice-plan-col">
-        <button id="continueAsNonMemberBtn" class="member-choice-plan-btn" type="button">Non-member Login</button>
-      </div>
-    </div>
-    <div class="member-choice-row">
-  <div class="member-choice-label"><Strong>Hydrogen Sessions</Strong></div>
+        <div class="member-choice-hero">
+          <div class="member-choice-hero-copy">
+            <p class="auth-kicker">Continue</p>
+            <h2 class="member-choice-title">Choose How You <span>Want To Continue</span></h2>
+            <p class="membership-copy">
+              Choose whether you want to activate membership first, enter with member benefits, or continue with non-member access.
+            </p>
 
-  <div class="member-choice-cell" data-col="0">
-    16 sessions free
-  </div>
+            <div class="member-choice-benefits" aria-label="Membership highlights">
+              <p><span class="member-choice-check" aria-hidden="true">✓</span> Book hydrogen, IV therapy &amp; IV shots in one place.</p>
+              <p><span class="member-choice-check" aria-hidden="true">✓</span> Member pricing and exclusive session access.</p>
+              <p><span class="member-choice-check" aria-hidden="true">✓</span> Change or cancel your plan anytime.</p>
+            </div>
 
-  <div class="member-choice-cell" data-col="1">
-    Pay per session<br><span class="sub">Regular pricing</span>
-  </div>
-</div>
+            <div class="member-choice-primary-row">
+              <button id="joinAsMemberBtn" class="btn btn-primary" type="button">Explore All Plans</button>
+            </div>
+          </div>
 
-  <div class="member-choice-row">
-    <div class="member-choice-label"><strong>1 Session price</strong></div>
+          <div class="member-choice-hero-media">
+            <figure class="member-choice-photo-card">
+              <img
+                src="assets/membership_choice_hero.png"
+                alt="Clinician performing a treatment session"
+                loading="lazy"
+                onerror="this.onerror=null;this.src='assets/service-experience.jpg';"
+              />
+            </figure>
+          </div>
+        </div>
 
-    <div class="member-choice-cell" data-col="0">
-     <strong class="price">Rs.4,800</strong>
-     </div>
+        <div class="member-choice-experience" aria-label="Select your experience">
+          <h3 class="member-choice-experience-title">Select Your Experience</h3>
+          <div class="member-choice-experience-grid" role="group" aria-label="Continue options">
+            <button id="continueAsMemberBtn" class="member-choice-experience-card is-featured" type="button">
+              <span class="member-choice-experience-badge">Most Popular</span>
+              <strong>Member</strong>
+              <span>Continue with member pricing and member-only session access.</span>
+            </button>
+            <button id="continueAsNonMemberBtn" class="member-choice-experience-card" type="button">
+              <strong>Non-member</strong>
+              <span>Continue with standard pricing and pay per session.</span>
+            </button>
+          </div>
 
-      <div class="member-choice-cell" data-col="1">
-        <strong class="price">Rs.9,500</strong>
-      </div>
-    </div>
-
-    <div class="member-choice-row">
-    <div class="member-choice-label"><strong>1 Week(4 sessions)</strong></div>
-
-    <div class="member-choice-cell" data-col="0">
-     <strong class="price">Rs.12,000</strong>
-     </div>
-
-      <div class="member-choice-cell" data-col="1">
-        <strong class="price">Rs.28,000</strong>
-      </div>
-    </div>
-
-    <div class="member-choice-row">
-    <div class="member-choice-label"><strong>2 Weeks(8 sessions)</strong></div>
-
-    <div class="member-choice-cell" data-col="0">
-     <strong class="price">Rs.22,000</strong>
-     </div>
-
-      <div class="member-choice-cell" data-col="1">
-        <strong class="price">Rs.48,000</strong>
-      </div>
-    </div>
-
-    <div class="member-choice-row">
-    <div class="member-choice-label"><strong>1 Month(16 sessions)</strong></div>
-
-    <div class="member-choice-cell" data-col="0">
-     <strong class="price">Rs.32,000</strong>
-     </div>
-
-      <div class="member-choice-cell" data-col="1">
-        <strong class="price">Rs.64,000</strong>
-      </div>
-    </div>
-
-    <div class="member-choice-row">
-    <div class="member-choice-label"><strong>1 Month(30 sessions)</strong></div>
-
-    <div class="member-choice-cell" data-col="0">
-     <strong class="price">Rs.46,000</strong>
-     </div>
-
-      <div class="member-choice-cell" data-col="1">
-        <strong class="price">Rs.90,000</strong>
-      </div>
-    </div>
-
-    <div class="member-choice-row">
-    <div class="member-choice-label"><strong>3 Months(90 sessions)</strong></div>
-
-    <div class="member-choice-cell" data-col="0">
-     <strong class="price">Rs.1,00,000</strong>
-     </div>
-
-      <div class="member-choice-cell" data-col="1">
-        <strong class="price">Rs.1,50,000</strong>
-      </div>
-    </div>
-
-<div class="member-choice-row">
-  <div class="member-choice-label"><strong>IV Therapy</strong></div>
-
-  <div class="member-choice-cell" data-col="0">
-    <div class="member-choice-cell check">✔</div>
-
-  </div>
-
-  <div class="member-choice-cell" data-col="1">
-    <span class="check">✔</span>
-  </div>
-</div>
-
-<div class="member-choice-row">
-  <div class="member-choice-label"><strong>IV Shots</strong></div>
-
-  <div class="member-choice-cell" data-col="0">
-    <div class="member-choice-cell check">✔</div>
-
-  </div>
-  
-
-  <div class="member-choice-cell" data-col="1">
-    <div class="member-choice-cell check">✔</div>
-  </div>
-</div>
-  <div class="member-choice-row">
-  <div class="member-choice-label"><strong>Labs</strong></div>
-
-  <div class="member-choice-cell" data-col="0">
-    <div class="member-choice-cell check">✔</div>
-  </div>
-
-  <div class="member-choice-cell" data-col="1">
-    <div class="member-choice-cell cross">✖</div>
-  </div>
-</div>
-  
-
-  <div class="member-choice-row">
-  <div class="member-choice-label"><strong>Imaging</strong></div>
-
-  <div class="member-choice-cell" data-col="0">
-    <div class="member-choice-cell check">✔</div>
-  </div>
-
-  <div class="member-choice-cell" data-col="1">
-    <div class="member-choice-cell cross">✖</div>
-       </div>
-    </div>
-  
-
-  <div class="member-choice-row">
-  <div class="member-choice-label"><strong>Genome Testing</strong></div>
-
-  <div class="member-choice-cell" data-col="0">
-    <div class="member-choice-cell check">✔</div>
-  </div>
-
-  <div class="member-choice-cell" data-col="1">
-    <div class="member-choice-cell cross">✖</div>
-  </div>
-</div>
-  
-
-  <div class="member-choice-row">
-  <div class="member-choice-label"><strong>Concierge Primary Care</strong></div>
-
-  <div class="member-choice-cell" data-col="0">
-    <div class="member-choice-cell check">✔</div>
-  </div>
-
-  <div class="member-choice-cell" data-col="1">
-    <div class="member-choice-cell cross">✖</div>
-  </div>
-</div>
-  
-
-  <div class="member-choice-row">
-  <div class="member-choice-label"><strong>Radiology</strong></div>
-
-  <div class="member-choice-cell" data-col="0">
-    <div class="member-choice-cell check">✔</div>
-  </div>
-
-  <div class="member-choice-cell" data-col="1">
-    <div class="member-choice-cell cross">✖</div>
-  </div>
-</div>
-  
-</section>
+          <div class="member-choice-matrix-btn-row">
+            <button id="comparisonMatrixBtn" class="btn btn-secondary" type="button">View Comparison Matrix</button>
+          </div>
+        </div>
+      </section>
       <section class="stats-grid admin-stats-grid app-only admin-only" aria-label="Booking summary" hidden>
         <button id="adminStatTotal" class="stat-card" type="button">
           <h2>Today's Bookings</h2>
@@ -318,19 +172,19 @@
           </div>
           <div class="membership-stat-grid">
             <button class="membership-stat-card" type="button">
-              <span class="stat-icon">◎</span>
+              <span class="stat-icon" aria-hidden="true">&#9679;</span>
               <span class="stat-label">Sessions</span>
               <strong id="membershipStatSessions">0</strong>
               <small>Included</small>
             </button>
             <button class="membership-stat-card" type="button">
-              <span class="stat-icon">◉</span>
+              <span class="stat-icon" aria-hidden="true">&#9675;</span>
               <span class="stat-label">Members</span>
               <strong id="membershipStatMembers">0</strong>
               <small>Covered</small>
             </button>
             <button class="membership-stat-card" type="button">
-              <span class="stat-icon">◑</span>
+              <span class="stat-icon" aria-hidden="true">&#9203;</span>
               <span class="stat-label">Valid Till</span>
               <strong id="membershipStatValid">-</strong>
               <small>Plan end</small>
@@ -442,7 +296,8 @@
         <div id="serviceGrid" class="doctor-grid"></div>
         <p id="serviceEmpty" class="empty-state" hidden>No services configured.</p>
         <p id="servicePageNote" class="service-page-note user-only">
-          ⚠️ Note: IV Therapy/IV Shots require a 2-week gap between sessions. (Whether taken separately or as an add-on
+          <span class="note-icon" aria-hidden="true">&#9888;&#65039;</span>
+          <strong>Note:</strong> IV Therapy/IV Shots require a 2-week gap between sessions. (Whether taken separately or as an add-on
           with Hydrogen Therapy) Hydrogen Therapy sessions can be taken up to 3 times per day.
         </p>
         <div class="dialog-actions user-only">
@@ -492,19 +347,19 @@
         <div id="myBookingsSummary" class="my-bookings-summary">
           <div class="my-bookings-stats-grid">
             <div class="my-bookings-stat-card">
-              <span class="stat-icon">◎</span>
+              <span class="stat-icon" aria-hidden="true">&#9679;</span>
               <span class="stat-label">Total Sessions</span>
               <strong id="myBookingsTotalSessions">0</strong>
               <small>All bookings</small>
             </div>
             <div class="my-bookings-stat-card">
-              <span class="stat-icon">◉</span>
+              <span class="stat-icon" aria-hidden="true">&#9675;</span>
               <span class="stat-label">Upcoming</span>
               <strong id="myBookingsUpcomingCount">0</strong>
               <small>Scheduled</small>
             </div>
             <div class="my-bookings-stat-card">
-              <span class="stat-icon">◑</span>
+              <span class="stat-icon" aria-hidden="true">&#9203;</span>
               <span class="stat-label">Completed</span>
               <strong id="myBookingsCompletedCount">0</strong>
               <small>Finished</small>
@@ -767,11 +622,116 @@
       </section>
     </main>
 
+    <dialog id="comparisonMatrixDialog" class="comparison-dialog">
+      <div class="comparison-dialog-inner">
+        <div class="dialog-head">
+          <h2>Comparison Matrix</h2>
+          <button id="closeComparisonMatrixDialogBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
+        </div>
+
+        <div class="comparison-dialog-body">
+          <div class="member-choice-table-wrap" aria-label="Member vs non-member comparison">
+            <div class="member-choice-plan-headers" aria-hidden="true">
+              <div class="member-choice-spacer"></div>
+              <div class="member-choice-plan-col"><span class="member-choice-plan-label">Member</span></div>
+              <div class="member-choice-plan-col"><span class="member-choice-plan-label">Non-member</span></div>
+            </div>
+
+            <div class="member-choice-rows">
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>Hydrogen Sessions</strong></div>
+                <div class="member-choice-cell" data-col="0">16 sessions free</div>
+                <div class="member-choice-cell" data-col="1">Pay per session<br /><span class="sub">Regular pricing</span></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>1 Session price</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.4,800</strong></div>
+                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.9,500</strong></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>1 Week (4 sessions)</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.12,000</strong></div>
+                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.28,000</strong></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>2 Weeks (8 sessions)</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.22,000</strong></div>
+                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.48,000</strong></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>1 Month (16 sessions)</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.32,000</strong></div>
+                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.64,000</strong></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>1 Month (30 sessions)</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.46,000</strong></div>
+                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.90,000</strong></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>3 Months (90 sessions)</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.1,00,000</strong></div>
+                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.1,50,000</strong></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>IV Therapy</strong></div>
+                <div class="member-choice-cell" data-col="0"><span class="check" aria-label="Included">✓</span></div>
+                <div class="member-choice-cell" data-col="1"><span class="check" aria-label="Included">✓</span></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>IV Shots</strong></div>
+                <div class="member-choice-cell" data-col="0"><span class="check" aria-label="Included">✓</span></div>
+                <div class="member-choice-cell" data-col="1"><span class="check" aria-label="Included">✓</span></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>Labs</strong></div>
+                <div class="member-choice-cell" data-col="0"><span class="check" aria-label="Included">✓</span></div>
+                <div class="member-choice-cell" data-col="1"><span class="cross" aria-label="Not included">✕</span></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>Imaging</strong></div>
+                <div class="member-choice-cell" data-col="0"><span class="check" aria-label="Included">✓</span></div>
+                <div class="member-choice-cell" data-col="1"><span class="cross" aria-label="Not included">✕</span></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>Genome Testing</strong></div>
+                <div class="member-choice-cell" data-col="0"><span class="check" aria-label="Included">✓</span></div>
+                <div class="member-choice-cell" data-col="1"><span class="cross" aria-label="Not included">✕</span></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>Concierge Primary Care</strong></div>
+                <div class="member-choice-cell" data-col="0"><span class="check" aria-label="Included">✓</span></div>
+                <div class="member-choice-cell" data-col="1"><span class="cross" aria-label="Not included">✕</span></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>Radiology</strong></div>
+                <div class="member-choice-cell" data-col="0"><span class="check" aria-label="Included">✓</span></div>
+                <div class="member-choice-cell" data-col="1"><span class="cross" aria-label="Not included">✕</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="bookingDialog" class="booking-dialog">
       <form id="bookingForm" method="dialog">
         <div class="dialog-head">
           <h2 id="dialogTitle">Book Slot</h2>
-          <button id="closeDialogBtn" class="icon-btn" type="button" aria-label="Close">×</button>
+          <button id="closeDialogBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
         </div>
 
         <input id="bookingId" type="hidden" />
@@ -822,7 +782,7 @@
       <form id="profileForm" method="dialog">
         <div class="dialog-head">
           <h2>My Profile</h2>
-          <button id="closeProfileDialogBtn" class="icon-btn" type="button" aria-label="Close">×</button>
+          <button id="closeProfileDialogBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
         </div>
 
         <div class="form-grid">
@@ -872,7 +832,7 @@
             <h2 id="adminUserSessionTitle">User Sessions</h2>
             <p id="adminUserSessionMeta" class="membership-copy"></p>
           </div>
-          <button id="adminUserSessionCloseBtn" class="icon-btn" type="button" aria-label="Close">×</button>
+          <button id="adminUserSessionCloseBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
         </div>
         <div id="adminUserSessionKpis" class="admin-user-kpi-grid"></div>
         <div class="admin-user-session-list-wrap">
@@ -889,7 +849,7 @@
       <form id="membershipForm" method="dialog">
         <div class="dialog-head">
           <h2 id="membershipDialogTitle">Membership Details</h2>
-          <button id="closeMembershipDialogBtn" class="icon-btn" type="button" aria-label="Close">×</button>
+          <button id="closeMembershipDialogBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
         </div>
         <div class="membership-dialog-content">
           <p id="membershipPlanSummary" class="membership-checkout-summary"></p>
@@ -918,7 +878,7 @@
       <form method="dialog">
         <div class="dialog-head">
           <h2>Booking Notes</h2>
-          <button id="bookingNotesCloseBtn" class="icon-btn" type="button" aria-label="Close">×</button>
+          <button id="bookingNotesCloseBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
         </div>
 
         <input id="bookingNotesBookingId" type="hidden" />
@@ -938,3 +898,4 @@
     <script src="app.js?v=8"></script>
   </body>
 </html>
+

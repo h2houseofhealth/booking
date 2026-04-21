@@ -2851,7 +2851,8 @@ function render() {
     renderUserCheckoutSummary(cartPayableBookings);
 
     if (elements.bookingsCartNotice) {
-      elements.bookingsCartNotice.hidden = !(state.activeUserTab === 'bookings' && cartPayableBookings.length);
+      const cartCount = getUserCartUnitCount(state.bookings || []);
+      elements.bookingsCartNotice.hidden = !(state.activeUserTab === 'bookings' && cartCount > 0);
     }
   }
 }
@@ -5952,10 +5953,16 @@ function getBookingGroupKey(booking) {
   return booking.bookingGroupId || `single_${booking.id}`;
 }
 
+function isBookingPaid(booking) {
+  return String(booking?.paymentStatus || 'unpaid')
+    .trim()
+    .toLowerCase() === 'paid';
+}
+
 function getUserCartPayableBookings(bookings = state.bookings) {
   return (Array.isArray(bookings) ? bookings : []).filter((booking) => {
     if (String(booking.status || '').toLowerCase() === 'cancelled') return false;
-    if (String(booking.paymentStatus || '').toLowerCase() === 'paid') return false;
+    if (isBookingPaid(booking)) return false;
     if (booking.holdExpired) return false;
     const service = getServiceCatalogEntry(booking.serviceName);
     return !service?.membershipOnly;
@@ -5963,8 +5970,15 @@ function getUserCartPayableBookings(bookings = state.bookings) {
 }
 
 function getUserCartGroupKeys(bookings = state.bookings) {
-  const payable = getUserCartPayableBookings(bookings);
-  return new Set(payable.map((booking) => getBookingGroupKey(booking)).filter(Boolean));
+  return new Set(
+    (Array.isArray(bookings) ? bookings : [])
+      .filter((booking) => {
+        if (String(booking?.status || '').toLowerCase() === 'cancelled') return false;
+        return !isBookingPaid(booking);
+      })
+      .map((booking) => getBookingGroupKey(booking))
+      .filter(Boolean)
+  );
 }
 
 function getUserCartDisplayBookings(bookings = state.bookings) {
@@ -5975,7 +5989,15 @@ function getUserCartDisplayBookings(bookings = state.bookings) {
 
 function getUserHistoryBookings(bookings = state.bookings) {
   const keys = getUserCartGroupKeys(bookings);
-  return (Array.isArray(bookings) ? bookings : []).filter((booking) => !keys.has(getBookingGroupKey(booking)));
+  return (Array.isArray(bookings) ? bookings : []).filter(
+    (booking) => !keys.has(getBookingGroupKey(booking)) && isBookingPaid(booking)
+  );
+}
+
+function getUserCartUnitCount(bookings = state.bookings) {
+  const cartDisplayBookings = getUserCartDisplayBookings(bookings);
+  if (!cartDisplayBookings.length) return 0;
+  return buildUserBookingRows(cartDisplayBookings, cartDisplayBookings).length;
 }
 
 function buildUserCartSummary(bookings = state.bookings) {
@@ -6021,8 +6043,7 @@ function renderCartButtonState() {
     return;
   }
 
-  const summary = buildUserCartSummary(state.bookings || []);
-  const count = Number(summary.unitCount || 0);
+  const count = getUserCartUnitCount(state.bookings || []);
   elements.cartBtn.hidden = false;
   elements.cartBtn.classList.toggle('has-items', count > 0);
   elements.cartBtn.classList.toggle('is-active', (state.activeUserTab || 'services') === 'cart');
@@ -7269,7 +7290,10 @@ function escapeHtml(value) {
 function renderMyBookingsSessionTracking() {
   if (state.user?.role !== 'user') return;
 
-  const bookings = state.bookings || [];
+  const bookings = (state.bookings || []).filter((booking) => {
+    if (String(booking?.status || '').toLowerCase() === 'cancelled') return false;
+    return isBookingPaid(booking);
+  });
   const now = new Date();
   const todayKey = getTodayIsoDate();
 

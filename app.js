@@ -25,6 +25,7 @@ const state = {
   membershipAdditions: {},
   membershipCheckout: null,
   membershipCouponPreview: null,
+  membershipRoster: null,
   cartCouponCode: '',
   cartCouponPreview: null,
   ivSelections: {},
@@ -194,6 +195,21 @@ const elements = {
   membershipQuickHistoryBtn: document.getElementById('membershipQuickHistoryBtn'),
   membershipBackBtn: document.getElementById('membershipBackBtn'),
   membershipNextBtn: document.getElementById('membershipNextBtn'),
+  membershipPeopleCard: document.getElementById('membershipPeopleCard'),
+  membershipAddPersonBtn: document.getElementById('membershipAddPersonBtn'),
+  membershipPeopleMeta: document.getElementById('membershipPeopleMeta'),
+  membershipPeopleList: document.getElementById('membershipPeopleList'),
+  membershipAddPersonDialog: document.getElementById('membershipAddPersonDialog'),
+  membershipAddPersonForm: document.getElementById('membershipAddPersonForm'),
+  closeMembershipAddPersonDialogBtn: document.getElementById('closeMembershipAddPersonDialogBtn'),
+  cancelMembershipAddPersonBtn: document.getElementById('cancelMembershipAddPersonBtn'),
+  saveMembershipAddPersonBtn: document.getElementById('saveMembershipAddPersonBtn'),
+  membershipAddPersonValidityNote: document.getElementById('membershipAddPersonValidityNote'),
+  membershipAddPersonError: document.getElementById('membershipAddPersonError'),
+  membershipAddPersonName: document.getElementById('membershipAddPersonName'),
+  membershipAddPersonPlace: document.getElementById('membershipAddPersonPlace'),
+  membershipAddPersonEmail: document.getElementById('membershipAddPersonEmail'),
+  membershipAddPersonContact: document.getElementById('membershipAddPersonContact'),
   bookingNotesDialog: document.getElementById('bookingNotesDialog'),
   bookingNotesCloseBtn: document.getElementById('bookingNotesCloseBtn'),
   bookingNotesAddBtn: document.getElementById('bookingNotesAddBtn'),
@@ -650,6 +666,15 @@ function attachEvents() {
       elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
+  elements.membershipAddPersonBtn?.addEventListener('click', () => {
+    const rosterLoaded = Boolean(state.membershipRoster && typeof state.membershipRoster === 'object');
+    const slotsRemaining = rosterLoaded ? Number(state.membershipRoster?.slotsRemaining) : Number.NaN;
+    if (!rosterLoaded || (Number.isFinite(slotsRemaining) && slotsRemaining > 0)) {
+      openMembershipAddPersonDialog();
+      return;
+    }
+    openMembershipAddPersonUpgradeCheckoutDialog();
+  });
   elements.servicesBackBtn?.addEventListener('click', () => {
     resetServiceBrowserState();
     if (state.postLoginChoice === 'join-member') {
@@ -742,6 +767,36 @@ function attachEvents() {
   elements.membershipForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     await submitMembershipCheckout();
+  });
+  elements.closeMembershipAddPersonDialogBtn?.addEventListener('click', closeMembershipAddPersonDialog);
+  elements.cancelMembershipAddPersonBtn?.addEventListener('click', closeMembershipAddPersonDialog);
+  elements.membershipAddPersonForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const submitBtn = elements.saveMembershipAddPersonBtn || elements.membershipAddPersonForm?.querySelector('button[type="submit"]');
+    const originalLabel = submitBtn ? submitBtn.textContent : '';
+    try {
+      if (elements.membershipAddPersonError) {
+        elements.membershipAddPersonError.hidden = true;
+        elements.membershipAddPersonError.textContent = '';
+      }
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Saving...';
+      }
+      await submitMembershipAddPerson();
+    } catch (error) {
+      if (elements.membershipAddPersonError) {
+        elements.membershipAddPersonError.hidden = false;
+        elements.membershipAddPersonError.textContent = error?.message || 'Unable to add person right now.';
+      } else {
+        alert(error?.message || 'Unable to add person right now.');
+      }
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalLabel || 'Save';
+      }
+    }
   });
   elements.membershipApplyCouponBtn?.addEventListener('click', async () => {
     await previewMembershipCoupon();
@@ -1257,6 +1312,14 @@ async function loadDashboardData() {
       active: Boolean(membershipResult.active),
       current: membershipResult.current || null,
     };
+    state.membershipRoster = null;
+    if (state.membership.active && Number(state.membership.current?.peopleCount || 0) >= 2) {
+      try {
+        state.membershipRoster = await api('/api/membership/members');
+      } catch {
+        state.membershipRoster = null;
+      }
+    }
     state.adminMembershipOrders = [];
     state.adminDiscountPhones = [];
     state.adminCoupons = [];
@@ -5014,6 +5077,64 @@ function renderMembership() {
     renderMembershipCalendar((state.bookings || []).filter((booking) => String(booking.status || '').toLowerCase() !== 'cancelled'));
   }
 
+  if (elements.membershipPeopleCard && elements.membershipPeopleList && elements.membershipPeopleMeta) {
+    const planId = String(current.plan || '').trim();
+    const showPeopleCard = active && currentPeopleCount >= 2;
+    elements.membershipPeopleCard.hidden = !showPeopleCard;
+    if (showPeopleCard) {
+      const roster = state.membershipRoster;
+      const members = Array.isArray(roster?.members) ? roster.members : [];
+      const slotsRemaining = Number.isFinite(Number(roster?.slotsRemaining))
+        ? Number(roster.slotsRemaining)
+        : Math.max(0, currentPeopleCount - members.length);
+      const startedAtValue =
+        roster?.subscription?.startedAt || current.startedAt || state.user?.membershipStartedAt || null;
+      const expiresAtValue =
+        roster?.subscription?.expiresAt || current.expiresAt || state.user?.membershipExpiresAt || null;
+      const startedAt = startedAtValue ? new Date(startedAtValue) : null;
+      const expiresAt = expiresAtValue ? new Date(expiresAtValue) : null;
+
+      const validityLine =
+        startedAt && !Number.isNaN(startedAt.getTime())
+          ? `Validity starts from ${startedAt.toLocaleDateString()}` +
+            (expiresAt && !Number.isNaN(expiresAt.getTime()) ? ` • ends on ${expiresAt.toLocaleDateString()}` : '')
+          : '';
+      elements.membershipPeopleMeta.textContent = `${members.length} of ${currentPeopleCount} member${
+        currentPeopleCount === 1 ? '' : 's'
+      } added${validityLine ? ` • ${validityLine}` : ''}`;
+
+      elements.membershipPeopleList.innerHTML = '';
+      if (!members.length) {
+        elements.membershipPeopleList.innerHTML = '<p class="empty-state">No members added yet.</p>';
+      } else {
+        for (const member of members) {
+          const item = document.createElement('div');
+          item.className = 'membership-people-item';
+          const name = String(member?.name || '').trim() || 'Member';
+          const place = String(member?.place || '').trim();
+          const email = String(member?.email || '').trim();
+          item.innerHTML = `
+            <div>
+              <strong>${escapeHtml(name)}</strong>
+              ${place ? `<span>${escapeHtml(place)}</span>` : '<span>&nbsp;</span>'}
+            </div>
+            <div class="membership-people-email">${escapeHtml(email)}</div>
+          `;
+          elements.membershipPeopleList.appendChild(item);
+        }
+      }
+
+      const supportsDashboardAddPerson = planId === 'h2_two' || planId === 'h2_four';
+      if (elements.membershipAddPersonBtn) {
+        elements.membershipAddPersonBtn.hidden = !supportsDashboardAddPerson;
+        elements.membershipAddPersonBtn.disabled = !supportsDashboardAddPerson;
+      }
+    } else if (elements.membershipAddPersonBtn) {
+      elements.membershipAddPersonBtn.hidden = true;
+      elements.membershipAddPersonBtn.disabled = true;
+    }
+  }
+
   const orderedPlanIds = ['h2_single', 'h2_two', 'h2_four'];
   const plans = orderedPlanIds
     .map((id) => (state.membership.plans || []).find((plan) => String(plan.id) === id))
@@ -5229,10 +5350,200 @@ function closeMembershipDialog() {
   state.membershipCheckout = null;
 }
 
+function closeMembershipAddPersonDialog() {
+  if (elements.membershipAddPersonDialog?.open) {
+    elements.membershipAddPersonDialog.close();
+  }
+  if (elements.membershipAddPersonError) {
+    elements.membershipAddPersonError.hidden = true;
+    elements.membershipAddPersonError.textContent = '';
+  }
+}
+
+function openMembershipAddPersonDialog() {
+  if (!elements.membershipAddPersonDialog) return;
+  if (state.user?.role !== 'user' || !isCurrentUserMembershipActive()) {
+    alert('Active membership is required to add a person.');
+    return;
+  }
+  const startedAtValue =
+    state.membershipRoster?.subscription?.startedAt ||
+    state.membership.current?.startedAt ||
+    state.user?.membershipStartedAt ||
+    null;
+  const startedAt = startedAtValue ? new Date(startedAtValue) : null;
+  if (elements.membershipAddPersonValidityNote) {
+    elements.membershipAddPersonValidityNote.textContent =
+      startedAt && !Number.isNaN(startedAt.getTime())
+        ? `Validity for this person starts from your payment date: ${startedAt.toLocaleDateString()}.`
+        : 'Validity for this person starts from your membership payment date.';
+  }
+  if (elements.membershipAddPersonName) elements.membershipAddPersonName.value = '';
+  if (elements.membershipAddPersonPlace) elements.membershipAddPersonPlace.value = '';
+  if (elements.membershipAddPersonEmail) elements.membershipAddPersonEmail.value = '';
+  if (elements.membershipAddPersonContact) elements.membershipAddPersonContact.value = '';
+  if (elements.membershipAddPersonError) {
+    elements.membershipAddPersonError.hidden = true;
+    elements.membershipAddPersonError.textContent = '';
+  }
+  elements.membershipAddPersonDialog.showModal();
+}
+
+function openMembershipAddPersonUpgradeCheckoutDialog() {
+  if (!elements.membershipDialog || !elements.membershipMembersGrid) return;
+  if (state.user?.role !== 'user' || !isCurrentUserMembershipActive()) {
+    alert('Active membership is required to add a person.');
+    return;
+  }
+
+  const addPersonPlan = (state.membership.plans || []).find((plan) => String(plan.id) === 'h2_add_person') || null;
+  if (!addPersonPlan) {
+    alert('Add Person plan is not configured.');
+    return;
+  }
+
+  const currentPeopleCount = Math.max(
+    1,
+    Number(
+      state.membershipRoster?.subscription?.peopleCount ||
+        state.membership.current?.peopleCount ||
+        state.user?.membershipPeopleCount ||
+        1
+    )
+  );
+  const targetPeopleCount = currentPeopleCount + 1;
+  const estimatedAmountInr = Number(addPersonPlan.priceInr || 0);
+
+  const buyerEmail = String(state.user?.email || '').trim().toLowerCase();
+  const rosterMembers = Array.isArray(state.membershipRoster?.members) ? state.membershipRoster.members : [];
+  const normalizedRoster = rosterMembers
+    .map((member) => ({
+      name: String(member?.name || '').trim(),
+      place: String(member?.place || '').trim(),
+      email: String(member?.email || '').trim(),
+      contactNumber: String(member?.contactNumber || '').trim(),
+    }))
+    .filter((member) => Boolean(String(member.email || '').trim()));
+
+  const buyerFromRosterIndex = normalizedRoster.findIndex(
+    (member) => String(member.email || '').trim().toLowerCase() === buyerEmail
+  );
+  const buyerFromRoster = buyerFromRosterIndex >= 0 ? normalizedRoster.splice(buyerFromRosterIndex, 1)[0] : null;
+  const buyerFallback = {
+    name: String(state.user?.name || '').trim(),
+    place: '',
+    email: String(state.user?.email || '').trim(),
+    contactNumber: String(state.user?.mobile || '').trim(),
+  };
+  const buyer = buyerFromRoster || buyerFallback;
+
+  const members = [buyer];
+  for (const member of normalizedRoster) {
+    if (members.length >= currentPeopleCount) break;
+    members.push(member);
+  }
+  while (members.length < currentPeopleCount) {
+    members.push({ name: '', place: '', email: '', contactNumber: '' });
+  }
+  members.push({ name: '', place: '', email: '', contactNumber: '' });
+
+  state.membershipCheckout = {
+    planId: addPersonPlan.id,
+    planName: addPersonPlan.name,
+    additionalPeople: 0,
+    targetPeopleCount,
+    estimatedAmountInr,
+    members,
+    lockedMembers: members.slice(0, currentPeopleCount),
+  };
+  state.membershipCouponPreview = null;
+  if (elements.membershipCouponCode) {
+    elements.membershipCouponCode.value = '';
+  }
+
+  if (elements.membershipDialogTitle) {
+    elements.membershipDialogTitle.textContent = `Membership Details • ${addPersonPlan.name}`;
+  }
+  renderMembershipCheckoutSummary();
+  renderMembershipCouponPreview();
+
+  elements.membershipMembersGrid.innerHTML = '';
+  for (let i = 0; i < members.length; i += 1) {
+    const member = members[i];
+    const row = document.createElement('div');
+    row.className = 'membership-member-row';
+    row.innerHTML = `
+      <h4>Person ${i + 1}</h4>
+      <div class="form-grid">
+        <label>
+          Full Name
+          <input type="text" required data-member-index="${i}" data-member-field="name" value="${escapeHtml(member.name)}" />
+        </label>
+        <label>
+          Place
+          <input type="text" required data-member-index="${i}" data-member-field="place" value="${escapeHtml(member.place)}" />
+        </label>
+        <label>
+          Email
+          <input type="email" required data-member-index="${i}" data-member-field="email" value="${escapeHtml(member.email)}" />
+        </label>
+        <label>
+          Contact Number
+          <input type="tel" required data-member-index="${i}" data-member-field="contactNumber" value="${escapeHtml(member.contactNumber)}" />
+        </label>
+      </div>
+    `;
+    elements.membershipMembersGrid.appendChild(row);
+
+    if (i < currentPeopleCount) {
+      const inputs = Array.from(row.querySelectorAll('input'));
+      inputs.forEach((input) => {
+        input.readOnly = true;
+        input.disabled = true;
+        input.title = 'Existing member details cannot be changed here.';
+      });
+    }
+  }
+
+  elements.membershipDialog.showModal();
+}
+
+async function submitMembershipAddPerson() {
+  if (state.user?.role !== 'user') return;
+  const name = String(elements.membershipAddPersonName?.value || '').trim();
+  const place = String(elements.membershipAddPersonPlace?.value || '').trim();
+  const email = String(elements.membershipAddPersonEmail?.value || '').trim();
+  const contactNumber = String(elements.membershipAddPersonContact?.value || '').trim();
+
+  if (!name || !place || !email || !contactNumber) {
+    throw new Error('Please fill all fields.');
+  }
+
+  const response = await api('/api/membership/members', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, place, email, contactNumber }),
+  });
+
+  state.membershipRoster = response || null;
+  closeMembershipAddPersonDialog();
+  renderMembership();
+}
+
 function collectMembershipMemberDetails() {
   if (!state.membershipCheckout || !elements.membershipMembersGrid) return [];
   const members = [];
+  const lockedMembers = Array.isArray(state.membershipCheckout.lockedMembers) ? state.membershipCheckout.lockedMembers : null;
   for (let i = 0; i < state.membershipCheckout.targetPeopleCount; i += 1) {
+    if (lockedMembers && lockedMembers[i]) {
+      members.push({
+        name: String(lockedMembers[i].name || '').trim(),
+        place: String(lockedMembers[i].place || '').trim(),
+        email: String(lockedMembers[i].email || '').trim(),
+        contactNumber: String(lockedMembers[i].contactNumber || '').trim(),
+      });
+      continue;
+    }
     const getValue = (field) => {
       const input = elements.membershipMembersGrid.querySelector(
         `[data-member-index="${i}"][data-member-field="${field}"]`
@@ -5254,6 +5565,17 @@ function renderMembershipCheckoutSummary() {
   const targetPeopleCount = Number(state.membershipCheckout.targetPeopleCount || 0);
   const estimatedAmountInr = Number(state.membershipCheckout.estimatedAmountInr || 0);
   const preview = state.membershipCouponPreview;
+  const planId = String(state.membershipCheckout.planId || '').trim();
+  const startedAtValue =
+    state.membershipRoster?.subscription?.startedAt ||
+    state.membership.current?.startedAt ||
+    state.user?.membershipStartedAt ||
+    null;
+  const startedAt = startedAtValue ? new Date(startedAtValue) : null;
+  const addPersonValidityNote =
+    planId === 'h2_add_person' && startedAt && !Number.isNaN(startedAt.getTime())
+      ? ` • Validity starts from ${startedAt.toLocaleDateString()}`
+      : '';
 
   if (preview) {
     const original = Number(preview.originalAmountInr || estimatedAmountInr || 0);
@@ -5262,13 +5584,13 @@ function renderMembershipCheckoutSummary() {
     elements.membershipPlanSummary.textContent =
       `Members: ${targetPeopleCount} • Estimated: Rs. ${original.toLocaleString('en-IN')}` +
       ` • Coupon: -Rs. ${discount.toLocaleString('en-IN')}` +
-      ` • Payable: Rs. ${payable.toLocaleString('en-IN')}`;
+      ` • Payable: Rs. ${payable.toLocaleString('en-IN')}${addPersonValidityNote}`;
     return;
   }
 
   elements.membershipPlanSummary.textContent = `Members: ${targetPeopleCount} • Estimated Amount: Rs. ${estimatedAmountInr.toLocaleString(
     'en-IN'
-  )}`;
+  )}${addPersonValidityNote}`;
 }
 
 function renderCouponPreview(preview, target) {

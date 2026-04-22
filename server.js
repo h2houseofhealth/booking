@@ -1169,6 +1169,188 @@ app.get('/api/membership/plans', requireAuth, (req, res) => {
   });
 });
 
+function getMembershipSubscriptionIdForRequestUser(user) {
+  const explicit = String(user?.membershipSubscriptionId || '').trim();
+  if (explicit) return explicit;
+  return getMembershipSubscriptionId(user?.id);
+}
+
+function listMembershipSubscriptionMembers(subscriptionId) {
+  const normalized = String(subscriptionId || '').trim();
+  if (!normalized) return [];
+  refreshMembershipSubscriptionStates();
+  return db
+    .prepare(
+      `SELECT id, user_id AS userId, email, name, place, contact_number AS contactNumber,
+              is_registered AS isRegistered, created_at AS createdAt, updated_at AS updatedAt
+       FROM membership_subscription_members
+       WHERE subscription_id = ?
+       ORDER BY id ASC`
+    )
+    .all(normalized);
+}
+
+function ensureOwnerMembershipSubscription(user) {
+  const subscriptionId = getMembershipSubscriptionIdForRequestUser(user);
+  if (!subscriptionId) return { subscriptionId: '', subscription: null };
+
+  let subscription = getMembershipSubscriptionById(subscriptionId);
+  if (subscription && isMembershipSubscriptionActive(subscription)) {
+    return { subscriptionId, subscription };
+  }
+
+  const membershipActive = isMembershipActiveForUser(user);
+  if (!membershipActive) {
+    return { subscriptionId, subscription: null };
+  }
+
+  const startedAt = user?.membershipStartedAt || new Date().toISOString();
+  const planId = String(user?.membershipPlan || '').trim() || 'h2_single';
+  const plan =
+    MEMBERSHIP_PLANS.find((item) => item.id === planId) ||
+    MEMBERSHIP_PLANS.find((item) => item.id === 'h2_single') ||
+    null;
+  const expiresAt =
+    user?.membershipExpiresAt ||
+    new Date(new Date(startedAt).getTime() + Number(plan?.validityDays || MEMBERSHIP_VALIDITY_DAYS) * 24 * 60 * 60 * 1000).toISOString();
+  const peopleCount = Number(user?.membershipPeopleCount || plan?.peopleCount || 1);
+
+  db.prepare(
+    `INSERT INTO membership_subscriptions (
+      subscription_id, owner_user_id, plan_id, people_count, status, started_at, expires_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, 'active', ?, ?, datetime('now'), datetime('now'))
+    ON CONFLICT(subscription_id) DO UPDATE SET
+      owner_user_id = excluded.owner_user_id,
+      plan_id = excluded.plan_id,
+      people_count = excluded.people_count,
+      status = 'active',
+      started_at = excluded.started_at,
+      expires_at = excluded.expires_at,
+      updated_at = datetime('now')`
+  ).run(subscriptionId, Number(user.id), planId, peopleCount, startedAt, expiresAt);
+
+  const ownerEmail = String(user?.email || '').trim().toLowerCase();
+  const ownerExists = ownerEmail
+    ? db
+        .prepare(
+          `SELECT 1
+           FROM membership_subscription_members
+           WHERE subscription_id = ? AND email = ?
+           LIMIT 1`
+        )
+        .get(subscriptionId, ownerEmail)
+    : null;
+
+  if (!ownerExists && ownerEmail) {
+    db.prepare(
+      `INSERT INTO membership_subscription_members (
+        subscription_id, user_id, email, name, place, contact_number, is_registered, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))`
+    ).run(
+      subscriptionId,
+      Number(user.id),
+      ownerEmail,
+      String(user?.name || '').trim() || 'Member',
+      '',
+      String(user?.mobile || '').trim()
+    );
+  }
+
+  subscription = getMembershipSubscriptionById(subscriptionId);
+  return { subscriptionId, subscription };
+}
+
+app.get('/api/membership/members', requireAuth, (req, res) => {
+  if (req.user.role !== 'user') {
+    return res.status(403).json({ message: 'Only users can view membership members.' });
+  }
+
+  const { subscriptionId, subscription } = ensureOwnerMembershipSubscription(req.user);
+  if (!subscription || !isMembershipSubscriptionActive(subscription)) {
+    return res.status(409).json({ message: 'Active membership was not found for this account.' });
+  }
+
+  const members = listMembershipSubscriptionMembers(subscriptionId);
+  const slotsRemaining = Math.max(0, Number(subscription.peopleCount || 1) - members.length);
+  return res.json({
+    subscription: {
+      subscriptionId: subscription.subscriptionId,
+      ownerUserId: subscription.ownerUserId,
+      planId: subscription.planId,
+      peopleCount: Number(subscription.peopleCount || 1),
+      status: subscription.status,
+      startedAt: subscription.startedAt,
+      expiresAt: subscription.expiresAt,
+    },
+    members,
+    slotsRemaining,
+  });
+});
+
+app.post('/api/membership/members', requireAuth, (req, res) => {
+  if (req.user.role !== 'user') {
+    return res.status(403).json({ message: 'Only users can add membership members.' });
+  }
+
+  const { subscriptionId, subscription } = ensureOwnerMembershipSubscription(req.user);
+  if (!subscription || !isMembershipSubscriptionActive(subscription)) {
+    return res.status(409).json({ message: 'Active membership was not found for this account.' });
+  }
+
+  const name = String(req.body?.name || '').trim();
+  const place = String(req.body?.place || '').trim();
+  const rawEmail = String(req.body?.email || '').trim().toLowerCase();
+  const contactNumber = String(req.body?.contactNumber || '').trim();
+
+  if (!name || !place || !rawEmail || !contactNumber) {
+    return res.status(400).json({ message: 'name, place, email, and contactNumber are required.' });
+  }
+
+  const members = listMembershipSubscriptionMembers(subscriptionId);
+  const maxPeopleCount = Number(subscription.peopleCount || 1);
+  if (members.length >= maxPeopleCount) {
+    return res.status(409).json({ message: `Membership already has ${maxPeopleCount} member(s).` });
+  }
+
+  if (members.some((member) => String(member.email || '').trim().toLowerCase() === rawEmail)) {
+    return res.status(409).json({ message: 'This email is already added to your membership.' });
+  }
+
+  const conflict = validateSubscriptionMemberConflicts(subscriptionId, [{ email: rawEmail }]);
+  if (conflict.error) {
+    return res.status(409).json({ message: conflict.error });
+  }
+
+  const existingUser = getUserProfileByEmail(rawEmail);
+  const userId = Number(existingUser?.id || 0) || null;
+  const isRegistered = userId ? 1 : 0;
+
+  db.prepare(
+    `INSERT INTO membership_subscription_members (
+      subscription_id, user_id, email, name, place, contact_number, is_registered, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+  ).run(subscriptionId, userId, rawEmail, name, place, contactNumber, isRegistered);
+
+  syncMembershipStatusForSubscription(subscriptionId);
+  syncMembershipForUser({ email: rawEmail });
+
+  const nextMembers = listMembershipSubscriptionMembers(subscriptionId);
+  const slotsRemaining = Math.max(0, maxPeopleCount - nextMembers.length);
+  return res.json({
+    subscription: {
+      subscriptionId: subscription.subscriptionId,
+      ownerUserId: subscription.ownerUserId,
+      planId: subscription.planId,
+      peopleCount: maxPeopleCount,
+      status: subscription.status,
+      startedAt: subscription.startedAt,
+      expiresAt: subscription.expiresAt,
+    },
+    members: nextMembers,
+    slotsRemaining,
+  });
+});
+
 app.post('/api/membership/preview-coupon', requireAuth, (req, res) => {
   if (req.user.role !== 'user') {
     return res.status(403).json({ message: 'Only users can preview membership coupons.' });

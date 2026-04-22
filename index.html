@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Booking Management Portal</title>
     <link rel="icon" type="image/png" href="assets/brand/H2_icon.png" />
-    <link rel="stylesheet" href="styles.css?v=20260408-1" />
+    <link rel="stylesheet" href="styles.css?v=20260422-1" />
   </head>
   <body class="auth-mode">
     <div class="background-shape shape-a"></div>
@@ -222,6 +222,14 @@
               <span class="membership-highlight-kicker">Upcoming</span>
               <h4 id="membershipNextSessionTitle">No hydrogen sessions scheduled</h4>
               <p id="membershipNextSessionMeta" class="membership-copy"></p>
+            </div>
+            <div id="membershipPeopleCard" class="membership-progress-card membership-people-card" hidden>
+              <div class="membership-progress-head">
+                <h4>Membership Members</h4>
+                <button id="membershipAddPersonBtn" class="btn btn-secondary" type="button" hidden>Add Person</button>
+              </div>
+              <p id="membershipPeopleMeta" class="membership-copy"></p>
+              <div id="membershipPeopleList" class="membership-people-list"></div>
             </div>
           </div>
         </section>
@@ -874,6 +882,51 @@
       </form>
     </dialog>
 
+    <dialog id="membershipAddPersonDialog" class="booking-dialog">
+      <form id="membershipAddPersonForm" method="dialog">
+        <div class="dialog-head">
+          <h2>Add Person</h2>
+          <button
+            id="closeMembershipAddPersonDialogBtn"
+            class="icon-btn"
+            type="button"
+            aria-label="Close"
+          >&times;</button>
+        </div>
+        <div class="membership-dialog-content">
+          <p id="membershipAddPersonValidityNote" class="membership-checkout-summary"></p>
+          <div class="membership-members-grid">
+            <div class="membership-member-row">
+              <h4>Person</h4>
+              <div class="form-grid">
+                <label>
+                  Full Name
+                  <input id="membershipAddPersonName" type="text" required />
+                </label>
+                <label>
+                  Place
+                  <input id="membershipAddPersonPlace" type="text" required />
+                </label>
+                <label>
+                  Email
+                  <input id="membershipAddPersonEmail" type="email" required />
+                </label>
+                <label>
+                  Contact Number
+                  <input id="membershipAddPersonContact" type="tel" required />
+                </label>
+              </div>
+            </div>
+          </div>
+          <p id="membershipAddPersonError" class="form-message" hidden></p>
+        </div>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" type="button" id="cancelMembershipAddPersonBtn">Cancel</button>
+          <button class="btn btn-primary" type="submit" id="saveMembershipAddPersonBtn">Save</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="bookingNotesDialog" class="booking-dialog">
       <form method="dialog">
         <div class="dialog-head">
@@ -895,6 +948,6 @@
     </dialog>
 
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-    <script src="app.js?v=8"></script>
+    <script src="app.js?v=13"></script>
   </body>
 </html>

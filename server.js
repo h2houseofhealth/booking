@@ -6668,6 +6668,7 @@ function getHydrogenMembershipCoverage(user, { userId = null, excludeBookingIds 
       allowance: 0,
       usedSessions: 0,
       remainingSessions: 0,
+      consumptionStatus: 'completed',
       coveredBookingIds: new Set(),
     };
   }
@@ -6678,6 +6679,7 @@ function getHydrogenMembershipCoverage(user, { userId = null, excludeBookingIds 
       allowance,
       usedSessions: 0,
       remainingSessions: allowance,
+      consumptionStatus: 'completed',
       coveredBookingIds: new Set(),
     };
   }
@@ -6693,7 +6695,7 @@ function getHydrogenMembershipCoverage(user, { userId = null, excludeBookingIds 
               created_at AS createdAt
        FROM bookings
        WHERE user_id = ?
-         AND status <> 'cancelled'
+         AND status = 'completed'
          AND service_name IN (${placeholders})
          ${excluded.clause}
        ORDER BY created_at, id`
@@ -6714,6 +6716,7 @@ function getHydrogenMembershipCoverage(user, { userId = null, excludeBookingIds 
     allowance,
     usedSessions,
     remainingSessions: Math.max(0, allowance - usedSessions),
+    consumptionStatus: 'completed',
     coveredBookingIds: new Set(coveredIds),
   };
 }
@@ -6745,10 +6748,14 @@ function getHydrogenMembershipPricingAdjustments({
     .map((id) => Number(id))
     .filter((id) => Number.isInteger(id));
   const isPersistedSelection = persistedBookingIds.length > 0;
+  const coverageRemainingSessions = Math.max(0, Number(normalizedCoverage.remainingSessions || 0));
+  const completedBasedCoverage = String(normalizedCoverage?.consumptionStatus || '').toLowerCase() === 'completed';
   const coveredHydrogenSessions =
-    isPersistedSelection
+    completedBasedCoverage
+      ? Math.min(coverageRemainingSessions, safeHydrogenSessionCount)
+      : isPersistedSelection
       ? persistedBookingIds.filter((id) => coveredBookingIds.has(id)).length
-      : Math.min(Number(normalizedCoverage.remainingSessions || 0), safeHydrogenSessionCount);
+      : Math.min(coverageRemainingSessions, safeHydrogenSessionCount);
   const perSessionCreditInr =
     safeExtraSessionPriceInr > 0
       ? safeExtraSessionPriceInr
@@ -6761,9 +6768,11 @@ function getHydrogenMembershipPricingAdjustments({
   return {
     membershipIncludedSessions: coveredHydrogenSessions,
     membershipIncludedSessionsTotal: Number(normalizedCoverage.allowance || 0),
-    membershipSessionsRemaining: isPersistedSelection
-      ? Math.max(0, Number(normalizedCoverage.remainingSessions || 0))
-      : Math.max(0, Number(normalizedCoverage.remainingSessions || 0) - coveredHydrogenSessions),
+    membershipSessionsRemaining: completedBasedCoverage
+      ? Math.max(0, coverageRemainingSessions - coveredHydrogenSessions)
+      : isPersistedSelection
+        ? coverageRemainingSessions
+        : Math.max(0, coverageRemainingSessions - coveredHydrogenSessions),
     hydrogenSubtotalInr,
     hydrogenIncludedDiscountInr,
     hydrogenPayableAmountInr,
@@ -7542,11 +7551,7 @@ function countHydrogenSessionsUsedForMembership(userId, user) {
        FROM bookings
        WHERE user_id = ?
          AND service_name IN (${placeholders})
-         AND status <> 'cancelled'
-         AND (
-           status IN ('booked', 'confirmed', 'completed')
-           OR (status = 'pending' AND payment_status = 'paid')
-         )
+         AND status = 'completed'
          ${dateClause}`
     )
     .get(...params);

@@ -539,7 +539,6 @@ function attachEvents() {
       requestAnimationFrame(() => {
         document.querySelector('[aria-label="Membership"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
-      alert('No active membership was found for this account. Join as member first to get membership pricing.');
       return;
     }
     state.postLoginChoice = 'continue-member';
@@ -1207,6 +1206,10 @@ function syncPostLoginChoiceWithMembership() {
   if (state.user?.role !== 'user') return;
   if (isCurrentUserMembershipActive()) {
     state.postLoginChoice = 'continue-member';
+    return;
+  }
+  if (state.postLoginChoice === 'continue-member') {
+    state.postLoginChoice = '';
   }
 }
 
@@ -2818,6 +2821,9 @@ function render() {
   }
 
   const isAdmin = state.user.role === 'admin';
+  if (!isAdmin) {
+    syncPostLoginChoiceWithMembership();
+  }
   const needsPostLoginChoice = state.user.role === 'user' && !state.postLoginChoice;
   document.querySelectorAll('.user-only').forEach((el) => {
     el.hidden = isAdmin;
@@ -6404,7 +6410,7 @@ function buildUserCartSummary(bookings = state.bookings) {
 function renderCartButtonState() {
   if (!elements.cartBtn || !elements.cartCount) return;
   const isUser = state.user?.role === 'user';
-  const needsPostLoginChoice = isUser && !state.postLoginChoice;
+  const needsPostLoginChoice = isUser && !state.postLoginChoice && !isCurrentUserMembershipActive();
   if (!isUser || needsPostLoginChoice) {
     elements.cartBtn.hidden = true;
     elements.cartCount.hidden = true;

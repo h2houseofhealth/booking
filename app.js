@@ -2172,6 +2172,7 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
   const addOn = summary.addOn || null;
   const paymentBookingId = result.paymentBookingId || null;
   const totalAmountInr = Number(summary.totalAmountInr || 0);
+  const shouldRouteToCart = !isAdmin && totalAmountInr > 0;
   const lines = [
     `Service: ${serviceName}`,
     summary.membershipActive
@@ -2184,7 +2185,11 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
     `Total Payable: Rs. ${totalAmountInr.toLocaleString('en-IN')}`,
     '',
     isAdmin ? 'Saved to All User Bookings.' : 'Saved to My Bookings.',
-    isAdmin ? 'Share the payment link with the customer.' : totalAmountInr > 0 ? 'Added to cart. Use Pay Now in cart.' : 'No payment required.',
+    isAdmin
+      ? 'Share the payment link with the customer.'
+      : shouldRouteToCart
+        ? 'Added to cart. Use Pay Now in cart.'
+        : 'Scheduled in My Bookings. No payment required.',
   ];
 
   state.selectedHydrogenSlots = [];
@@ -2197,14 +2202,21 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
   state.selectedServiceCategory = null;
   state.selectedHydrogenServiceName = '';
   await loadDashboardData();
-  if (!isAdmin) {
+  if (!isAdmin && shouldRouteToCart) {
     state.activeUserTab = 'cart';
     window.location.hash = '#cart';
+  } else if (!isAdmin) {
+    state.activeUserTab = 'bookings';
+    window.location.hash = '#bookings';
   }
   render();
-  if (!isAdmin) {
+  if (!isAdmin && shouldRouteToCart) {
     requestAnimationFrame(() => {
       elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  } else if (!isAdmin) {
+    requestAnimationFrame(() => {
+      elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
 
@@ -2275,8 +2287,16 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
 
   resetHydrogenComposer();
   await loadDashboardData();
-  const returnTab =
+  const preferredReturnTab =
     state.user?.role !== 'admin' ? state.returnUserTabAfterEdit || 'cart' : '';
+  const returnTab =
+    state.user?.role !== 'admin'
+      ? totalAmountInr > 0
+        ? 'cart'
+        : preferredReturnTab === 'services'
+          ? 'services'
+          : 'bookings'
+      : '';
   state.returnUserTabAfterEdit = '';
   if (state.user?.role !== 'admin') {
     state.activeUserTab = returnTab;
@@ -2285,10 +2305,13 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
   render();
   if (state.user?.role !== 'admin') {
     requestAnimationFrame(() => {
-      (returnTab === 'cart' ? elements.userCartSection : elements.userBookingsSection)?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      });
+      (
+        returnTab === 'cart'
+          ? elements.userCartSection
+          : returnTab === 'services'
+            ? elements.servicesSection
+            : elements.userBookingsSection
+      )?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
   alert(`Booking Updated\n\n${lines.join('\n')}`);
@@ -3651,9 +3674,19 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   const selectedServiceIsMembershipOnly = Boolean(selectedService.membershipOnly);
   const selectedServiceHasMemberAccess = isCurrentUserMembershipActive();
   const hydrogenSessionSummary = getMembershipHydrogenSessionSummary();
+  const selectedAddOnService =
+    [...(Array.isArray(ivTherapyOptions) ? ivTherapyOptions : []), ...(Array.isArray(ivShotOptions) ? ivShotOptions : [])].find(
+      (service) => String(service?.name || '') === String(state.selectedHydrogenAddOnServiceName || '')
+    ) || null;
+  const selectedAddOnPriceInr = Number(selectedAddOnService?.effectivePriceInr ?? selectedAddOnService?.priceInr ?? 0);
   const includedSessionsRemaining = Number(
     selectedService?.membershipRemainingHydrogenSessions ?? hydrogenSessionSummary.remainingSessions ?? 0
   );
+  const canScheduleWithoutCart =
+    !isEditingHydrogenGroup &&
+    hydrogenSessionSummary.active &&
+    includedSessionsRemaining >= requiredSlots &&
+    selectedAddOnPriceInr <= 0;
   const stickyPriceText =
     hydrogenSessionSummary.active && includedSessionsRemaining > 0
       ? `${includedSessionsRemaining} hydrogen session${includedSessionsRemaining === 1 ? '' : 's'} left in membership`
@@ -3674,7 +3707,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   const stickyButton = document.createElement('button');
   stickyButton.type = 'button';
   stickyButton.className = 'btn btn-primary service-sticky-book-btn';
-  stickyButton.textContent = isEditingHydrogenGroup ? 'Update Package' : 'Add to Cart';
+  stickyButton.textContent = isEditingHydrogenGroup ? 'Update Package' : canScheduleWithoutCart ? 'Schedule' : 'Add to Cart';
   stickyButton.disabled = selectedServiceIsMembershipOnly && !selectedServiceHasMemberAccess;
   stickyButton.addEventListener('click', async () => {
     try {

@@ -1631,7 +1631,7 @@ function openDialog(booking = null) {
     }
     const experienceLabel = document.getElementById('experienceServiceLabel');
     if (experienceLabel) {
-      experienceLabel.textContent = 'Demo Session';
+      experienceLabel.textContent = 'Demo Hydrogen Session';
       experienceLabel.hidden = false;
     }
     if (elements.serviceName) {
@@ -2109,11 +2109,11 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
   const lines = [
     `Service: ${serviceName}`,
     summary.membershipActive
-      ? `Free sessions applied: ${Number(summary.freeSessionsApplied || 0)} (of ${HYDROGEN_FREE_SESSIONS_PER_USER})`
+      ? `Free hydrogen sessions applied: ${Number(summary.freeSessionsApplied || 0)} (of ${HYDROGEN_FREE_SESSIONS_PER_USER})`
       : `Hydrogen Amount: Rs. ${Number(summary.packagePriceInr || 0).toLocaleString('en-IN')}`,
     summary.membershipActive
-      ? `Chargeable sessions: ${Number(summary.chargeableHydrogenSessions || 0)} x Rs. ${Number(summary.memberSessionPriceInr || 0).toLocaleString('en-IN')}`
-      : `Extra Sessions: ${Number(summary.extraSessions || 0)} x Rs. ${Number(summary.extraSessionPriceInr || 0).toLocaleString('en-IN')}`,
+      ? `Chargeable hydrogen sessions: ${Number(summary.chargeableHydrogenSessions || 0)} x Rs. ${Number(summary.memberSessionPriceInr || 0).toLocaleString('en-IN')}`
+      : `Extra Hydrogen Sessions: ${Number(summary.extraSessions || 0)} x Rs. ${Number(summary.extraSessionPriceInr || 0).toLocaleString('en-IN')}`,
     addOn ? `IV Add-on: ${addOn.serviceName} - Rs. ${Number(addOn.amountInr || 0).toLocaleString('en-IN')}` : 'IV Add-on: None',
     `Total Payable: Rs. ${totalAmountInr.toLocaleString('en-IN')}`,
     '',
@@ -2191,20 +2191,20 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
   const totalAmountInr = Number(summary.totalAmountInr || 0);
   const lines = [`Service: ${serviceName}`];
   if (membershipIncludedSessions > 0) {
-    lines.push(`Membership Included: ${membershipIncludedSessions} session${membershipIncludedSessions === 1 ? '' : 's'}`);
-    lines.push(`Sessions Left: ${membershipSessionsRemaining}`);
+    lines.push(`Membership Included: ${membershipIncludedSessions} hydrogen session${membershipIncludedSessions === 1 ? '' : 's'}`);
+    lines.push(`Hydrogen Sessions Left: ${membershipSessionsRemaining}`);
   }
   if (membershipIncludedSessions <= 0) {
     lines.push(`Hydrogen Amount: Rs. ${Number(summary.packagePriceInr || 0).toLocaleString('en-IN')}`);
     lines.push(
-      `Extra Sessions: ${Number(summary.extraSessions || 0)} x Rs. ${Number(summary.extraSessionPriceInr || 0).toLocaleString('en-IN')}`
+      `Extra Hydrogen Sessions: ${Number(summary.extraSessions || 0)} x Rs. ${Number(summary.extraSessionPriceInr || 0).toLocaleString('en-IN')}`
     );
   }
   lines.push(addOn ? `IV Add-on: ${addOn.serviceName} - Rs. ${Number(addOn.amountInr || 0).toLocaleString('en-IN')}` : 'IV Add-on: None');
   lines.push(
     totalAmountInr > 0
-      ? `Total Session Payment: Rs. ${totalAmountInr.toLocaleString('en-IN')}`
-      : 'Total Session Payment: Included in Membership'
+      ? `Total Hydrogen Session Payment: Rs. ${totalAmountInr.toLocaleString('en-IN')}`
+      : 'Total Hydrogen Session Payment: Included in Membership'
   );
 
   resetHydrogenComposer();
@@ -2457,7 +2457,7 @@ async function saveSingleSessionServiceBooking(serviceName) {
     editingBookingId ? selection.editingTime || selection.bookingTime || '' : selection.bookingTime || ''
   ).trim();
   if (!effectiveBookingDate || !effectiveBookingTime) {
-    alert('Set session date and time first.');
+    alert('Set hydrogen session date and time first.');
     return;
   }
   const selectedService = getServiceCatalogEntry(serviceName);
@@ -2467,7 +2467,7 @@ async function saveSingleSessionServiceBooking(serviceName) {
   }
   if (getBookingCategory(serviceName) === 'IV ADD-ON' && hasHydrogenPackageAddOnOnDateClient(effectiveBookingDate)) {
     alert(
-      'A hydrogen package on this date already includes an IV add-on. Separate IV Therapy/IV Shot bookings are not allowed on the same day.'
+      'A hydrogen package on this date already includes an add-on. Separate Therapy/Shot bookings are not allowed on the same day.'
     );
     return;
   }
@@ -3071,23 +3071,28 @@ function renderServices() {
       imageAlt: 'Hydrogen session equipment',
     },
     'IV THERAPIES': {
-      title: 'IV Therapy',
+      title: 'Therapies',
       subtitle: 'Restore and hydrate',
       image: '/assets/service-iv-therapies.jpg',
       imageAlt: 'IV therapy drip setup',
     },
     'IV SHOTS': {
-      title: 'IV Shots',
+      title: 'Shots',
       subtitle: 'Boost your energy',
       image: '/assets/service-iv-shots.jpg',
       imageAlt: 'IV shot ampoules and syringe',
     },
   };
 
-  const formatCategoryLabel = (value) =>
-    String(value || '')
+  const formatCategoryLabel = (value) => {
+    const normalized = String(value || '').trim().toUpperCase();
+    if (normalized === 'HYDROGEN SESSION') return 'Hydrogen Session';
+    if (normalized === 'IV THERAPIES') return 'Therapies';
+    if (normalized === 'IV SHOTS') return 'Shots';
+    return String(value || '')
       .toLowerCase()
       .replace(/\b\w/g, (char) => char.toUpperCase());
+  };
 
   const orderedCategories = ['HYDROGEN SESSION', 'IV THERAPIES', 'IV SHOTS'];
   const grouped = new Map();
@@ -3153,7 +3158,7 @@ function renderServices() {
       </span>
       <span class="service-showcase-content">
         <h3 class="service-showcase-title">${escapeHtml(visual.title || formatCategoryLabel(category))}</h3>
-        <p class="service-showcase-subtitle">${escapeHtml(visual.subtitle || 'Choose and book your session.')}</p>
+        <p class="service-showcase-subtitle">${escapeHtml(visual.subtitle || 'Choose and book your hydrogen session.')}</p>
         <span class="service-showcase-footer">
           <span class="service-showcase-cta">${isExpanded ? 'Show less' : 'Explore'}</span>
           <span class="service-showcase-count">${services.length} service${services.length === 1 ? '' : 's'}</span>
@@ -3400,7 +3405,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     <h4 class="hydrogen-sidebar-title">Choose Your Package</h4>
     <div class="hydrogen-plan-controls">
       <label>
-        Sessions
+        Hydrogen Sessions
         <select class="hydrogen-plan-select"></select>
       </label>
     </div>
@@ -3434,17 +3439,17 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   addOnPanel.innerHTML = `
     <div class="hydrogen-addon-head">
       <strong>Add-ons</strong>
-      <span>Optional. Choose IV Therapy or IV Shots.</span>
+      <span>Optional. Choose Therapy or Shots.</span>
     </div>
     <div class="hydrogen-addon-grid hydrogen-addon-grid-unified">
       <label>
-        IV Therapy
+        Therapy
         <select class="hydrogen-addon-therapy-select">
           <option value="">None</option>
         </select>
       </label>
       <label>
-        IV Shots
+        Shots
         <select class="hydrogen-addon-shot-select">
           <option value="">None</option>
         </select>
@@ -3498,7 +3503,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   schedulePanel.innerHTML = `
     <header class="hydrogen-schedule-head">
       <h4>Schedule</h4>
-      <p>Set date and time for all selected sessions.</p>
+      <p>Set date and time for all selected hydrogen sessions.</p>
     </header>
   `;
 
@@ -3516,7 +3521,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     const row = document.createElement('article');
     row.className = 'hydrogen-schedule-row';
     row.innerHTML = `
-      <h5>Session ${idx + 1}</h5>
+      <h5>Hydrogen Session ${idx + 1}</h5>
       <div class="hydrogen-schedule-grid">
         <label>
           Date
@@ -3582,7 +3587,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   );
   const stickyPriceText =
     hydrogenSessionSummary.active && includedSessionsRemaining > 0
-      ? `${includedSessionsRemaining} session${includedSessionsRemaining === 1 ? '' : 's'} left in membership`
+      ? `${includedSessionsRemaining} hydrogen session${includedSessionsRemaining === 1 ? '' : 's'} left in membership`
       : selectedServiceIsMembershipOnly
         ? selectedServiceHasMemberAccess
           ? 'Included in Membership'
@@ -3614,7 +3619,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
         const addOnSlot = slots?.[Number(addOnSessionIndex || 0)];
         if (addOnSlot && hasStandaloneIvOnDateClient(addOnSlot.bookingDate, state.hydrogenEditingGroupId)) {
           alert(
-            'A separate IV Therapy/IV Shot is already booked on this date. Hydrogen packages with an IV add-on cannot be combined with separate IV bookings on the same day.'
+            'A separate Therapy/Shot is already booked on this date. Hydrogen packages with an add-on cannot be combined with separate Therapy/Shot bookings on the same day.'
           );
           return;
         }
@@ -3681,7 +3686,7 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
     <h4 class="hydrogen-sidebar-title">Choose Your Package</h4>
     <div class="hydrogen-plan-controls">
       <label>
-        ${escapeHtml(category === 'IV THERAPIES' ? 'IV Therapy Plan' : 'IV Shot Plan')}
+        ${escapeHtml(category === 'IV THERAPIES' ? 'Therapy Plan' : 'Shot Plan')}
         <select class="hydrogen-plan-select iv-plan-select"></select>
       </label>
     </div>
@@ -3742,7 +3747,7 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
   const row = document.createElement('article');
   row.className = 'hydrogen-schedule-row';
   row.innerHTML = `
-    <h5>Session</h5>
+    <h5>Hydrogen Session</h5>
     <div class="hydrogen-schedule-grid">
       <label>
         Date
@@ -3833,7 +3838,7 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
         bookingTime: timeSelect.value || SLOT_OPTIONS[0].value,
       });
     } catch (error) {
-      alert(error.message || 'Unable to add this session to cart.');
+      alert(error.message || 'Unable to add this hydrogen session to cart.');
     }
   });
   stickyWrap.appendChild(stickyButton);
@@ -3852,7 +3857,7 @@ async function saveIvUnifiedBookingToCart({ serviceName, bookingDate, bookingTim
   const safeDate = String(bookingDate || '').trim();
   const safeTime = String(bookingTime || '').trim();
   if (!safeDate || !safeTime) {
-    alert('Set session date and time first.');
+    alert('Set hydrogen session date and time first.');
     return;
   }
 
@@ -3863,7 +3868,7 @@ async function saveIvUnifiedBookingToCart({ serviceName, bookingDate, bookingTim
 
   if (getBookingCategory(serviceName) === 'IV ADD-ON' && hasHydrogenPackageAddOnOnDateClient(safeDate)) {
     alert(
-      'A hydrogen package on this date already includes an IV add-on. Separate IV Therapy/IV Shot bookings are not allowed on the same day.'
+      'A hydrogen package on this date already includes an add-on. Separate Therapy/Shot bookings are not allowed on the same day.'
     );
     return;
   }
@@ -4033,18 +4038,18 @@ function getHydrogenPlanOptions(services) {
     const sidebar = document.createElement('aside');
     sidebar.className = 'hydrogen-sidebar';
     const consultationBenefit = isCurrentUserMembershipActive()
-      ? '<div class="hydrogen-benefit-tag">Free Consultation Session</div>'
+      ? '<div class="hydrogen-benefit-tag">Free Consultation Hydrogen Session</div>'
       : '';
     sidebar.innerHTML = `
       <h4 class="hydrogen-sidebar-title">Hydrogen Therapy</h4>
       ${consultationBenefit}
       <div class="hydrogen-plan-controls">
         <label>
-          Session Package
+          Hydrogen Session Package
           <select class="hydrogen-plan-select"></select>
         </label>
         <label>
-          Add Extra Sessions
+          Add Extra Hydrogen Sessions
           <input class="hydrogen-extra-input" type="number" min="0" step="1" value="${extraSessions}" />
         </label>
       </div>
@@ -4053,7 +4058,7 @@ function getHydrogenPlanOptions(services) {
     for (const opt of planOptions) {
       const option = document.createElement('option');
       option.value = opt.service.name;
-      option.textContent = `${opt.sessions} Sessions`;
+      option.textContent = `${opt.sessions} Hydrogen Sessions`;
       planSelect.appendChild(option);
     }
     planSelect.value = state.selectedHydrogenServiceName;
@@ -4103,7 +4108,7 @@ function getHydrogenPlanOptions(services) {
       for (let idx = 0; idx < requiredSlots; idx += 1) {
         const option = document.createElement('option');
         option.value = String(idx);
-        option.textContent = `Session ${idx + 1}`;
+        option.textContent = `Hydrogen Session ${idx + 1}`;
         addOnSessionSelect.appendChild(option);
       }
       addOnSessionSelect.value = String(state.selectedHydrogenAddOnSessionIndex || 0);
@@ -4128,7 +4133,7 @@ function getHydrogenPlanOptions(services) {
       sessionBtn.className = `hydrogen-session-item${idx === state.activeHydrogenSessionIndex ? ' is-active' : ''}${
         assigned ? ' is-assigned' : ''
       }`;
-      sessionBtn.textContent = `Session ${idx + 1}${assigned ? ' ✓' : ''}`;
+      sessionBtn.textContent = `Hydrogen Session ${idx + 1}${assigned ? ' ✓' : ''}`;
       sessionBtn.addEventListener('click', () => {
         state.activeHydrogenSessionIndex = idx;
         state.activeHydrogenSessionDate = state.selectedHydrogenSlots[idx]?.bookingDate || getTodayIsoDate();
@@ -4163,7 +4168,7 @@ function getHydrogenPlanOptions(services) {
       const initiationBlock = document.createElement('div');
       initiationBlock.className = 'service-info-block';
       initiationBlock.innerHTML = `
-        <strong>Initiation Session (1 hr)</strong>
+        <strong>Initiation Hydrogen Session (1 hr)</strong>
         <span>Full doctor consultation + diagnostic &amp; genetic testing</span>
       `;
       card.appendChild(initiationBlock);
@@ -4175,14 +4180,14 @@ function getHydrogenPlanOptions(services) {
       addOnPanel.innerHTML = `
         <div class="hydrogen-addon-head">
           <strong>Optional IV Add-on</strong>
-          <span>Choose 1 IV Therapy or IV Shot with this hydrogen booking.</span>
+          <span>Choose 1 Therapy or Shot with this hydrogen booking.</span>
         </div>
         <div class="hydrogen-addon-grid">
           <label>
             Add-on Service
           </label>
           <label>
-            Add-on Session
+            Add-on Hydrogen Session
           </label>
         </div>
       `;
@@ -4200,7 +4205,7 @@ function getHydrogenPlanOptions(services) {
     const editor = document.createElement('div');
     editor.className = 'hydrogen-session-editor';
     editor.innerHTML = `
-      <h4>Session ${state.activeHydrogenSessionIndex + 1}</h4>
+      <h4>Hydrogen Session ${state.activeHydrogenSessionIndex + 1}</h4>
       <div class="hydrogen-editor-grid">
         <label>
           Date
@@ -4229,7 +4234,7 @@ function getHydrogenPlanOptions(services) {
     const saveSessionBtn = document.createElement('button');
     saveSessionBtn.type = 'button';
     saveSessionBtn.className = 'btn btn-secondary';
-    saveSessionBtn.textContent = 'Set Session Date & Time';
+    saveSessionBtn.textContent = 'Set Hydrogen Session Date & Time';
     saveSessionBtn.addEventListener('click', () => {
       state.selectedHydrogenSlots[state.activeHydrogenSessionIndex] = {
         bookingDate: state.activeHydrogenSessionDate || getTodayIsoDate(),
@@ -4240,7 +4245,7 @@ function getHydrogenPlanOptions(services) {
     const clearSessionBtn = document.createElement('button');
     clearSessionBtn.type = 'button';
     clearSessionBtn.className = 'btn btn-secondary';
-    clearSessionBtn.textContent = 'Clear Session';
+    clearSessionBtn.textContent = 'Clear Hydrogen Session';
     clearSessionBtn.addEventListener('click', () => {
       state.selectedHydrogenSlots[state.activeHydrogenSessionIndex] = undefined;
       renderServices();
@@ -4262,7 +4267,7 @@ function getHydrogenPlanOptions(services) {
     if (selectedAddOnService) {
       const addOnSummary = document.createElement('span');
       addOnSummary.className = 'hydrogen-selected-item';
-      addOnSummary.textContent = `IV Add-on: ${selectedAddOnService.name} (Session ${state.selectedHydrogenAddOnSessionIndex + 1})`;
+      addOnSummary.textContent = `IV Add-on: ${selectedAddOnService.name} (Hydrogen Session ${state.selectedHydrogenAddOnSessionIndex + 1})`;
       selectedSummary.appendChild(addOnSummary);
     }
     card.appendChild(selectedSummary);
@@ -4270,7 +4275,12 @@ function getHydrogenPlanOptions(services) {
     const saveBtn = document.createElement('button');
     saveBtn.type = 'button';
     saveBtn.className = 'btn btn-primary';
-    saveBtn.textContent = assignedCount === requiredSlots ? (isEditingHydrogenGroup ? 'Update Package' : 'Confirm Book') : `Set ${requiredSlots - assignedCount} more session(s)`;
+    saveBtn.textContent =
+      assignedCount === requiredSlots
+        ? isEditingHydrogenGroup
+          ? 'Update Package'
+          : 'Confirm Book'
+        : `Set ${requiredSlots - assignedCount} more hydrogen session(s)`;
     saveBtn.disabled = assignedCount !== requiredSlots || requiredSlots <= 0;
     saveBtn.addEventListener('click', async () => {
       try {
@@ -4279,7 +4289,7 @@ function getHydrogenPlanOptions(services) {
           const addOnSlot = submitSlots[state.selectedHydrogenAddOnSessionIndex];
           if (addOnSlot && hasStandaloneIvOnDateClient(addOnSlot.bookingDate, state.hydrogenEditingGroupId)) {
             alert(
-              'A separate IV Therapy/IV Shot is already booked on this date. Hydrogen packages with an IV add-on cannot be combined with separate IV bookings on the same day.'
+              'A separate Therapy/Shot is already booked on this date. Hydrogen packages with an add-on cannot be combined with separate Therapy/Shot bookings on the same day.'
             );
             return;
           }
@@ -4397,7 +4407,7 @@ function getHydrogenPlanOptions(services) {
     const sessionBtn = document.createElement('button');
     sessionBtn.type = 'button';
     sessionBtn.className = `hydrogen-session-item is-active${selection.bookingDate && selection.bookingTime ? ' is-assigned' : ''}`;
-    sessionBtn.textContent = `Session 1${selection.bookingDate && selection.bookingTime ? ' ✓' : ''}`;
+    sessionBtn.textContent = `Hydrogen Session 1${selection.bookingDate && selection.bookingTime ? ' ✓' : ''}`;
     sessionsList.appendChild(sessionBtn);
     sidebar.appendChild(sessionsList);
     layout.appendChild(sidebar);
@@ -4422,7 +4432,7 @@ function getHydrogenPlanOptions(services) {
       const initiationBlock = document.createElement('div');
       initiationBlock.className = 'service-info-block';
       initiationBlock.innerHTML = `
-        <strong>Initiation Session (1 hr)</strong>
+        <strong>Initiation Hydrogen Session (1 hr)</strong>
         <span>Full doctor consultation + diagnostic &amp; genetic testing</span>
       `;
       card.appendChild(initiationBlock);
@@ -4431,7 +4441,7 @@ function getHydrogenPlanOptions(services) {
     const editor = document.createElement('div');
     editor.className = 'hydrogen-session-editor';
     editor.innerHTML = `
-      <h4>Session 1</h4>
+      <h4>Hydrogen Session 1</h4>
       <div class="hydrogen-editor-grid">
         <label>
           Date
@@ -4478,7 +4488,7 @@ function getHydrogenPlanOptions(services) {
     const setSessionBtn = document.createElement('button');
     setSessionBtn.type = 'button';
     setSessionBtn.className = 'btn btn-secondary';
-    setSessionBtn.textContent = 'Set Session Date & Time';
+    setSessionBtn.textContent = 'Set Hydrogen Session Date & Time';
     setSessionBtn.addEventListener('click', () => {
       state.ivSelections[selectedService.name] = {
         editingDate: ivDateInput.value || getTodayIsoDate(),
@@ -4491,7 +4501,7 @@ function getHydrogenPlanOptions(services) {
     const clearSessionBtn = document.createElement('button');
     clearSessionBtn.type = 'button';
     clearSessionBtn.className = 'btn btn-secondary';
-    clearSessionBtn.textContent = 'Clear Session';
+    clearSessionBtn.textContent = 'Clear Hydrogen Session';
     clearSessionBtn.addEventListener('click', () => {
       state.ivSelections[selectedService.name] = {
         editingDate: ivDateInput.value || getTodayIsoDate(),
@@ -4512,15 +4522,20 @@ function getHydrogenPlanOptions(services) {
     summaryItem.className = 'hydrogen-selected-item';
     summaryItem.textContent =
       selection.bookingDate && selection.bookingTime
-        ? `Session: ${formatDateTime(selection.bookingDate, selection.bookingTime)}`
-        : 'Session: Pending';
+        ? `Hydrogen Session: ${formatDateTime(selection.bookingDate, selection.bookingTime)}`
+        : 'Hydrogen Session: Pending';
     selectedSummary.appendChild(summaryItem);
     card.appendChild(selectedSummary);
 
     const saveBtn = document.createElement('button');
     saveBtn.type = 'button';
     saveBtn.className = 'btn btn-primary';
-    saveBtn.textContent = selection.bookingDate && selection.bookingTime ? (isEditingSingleSession ? 'Update Booking' : 'Confirm Book') : 'Set Session Date & Time';
+    saveBtn.textContent =
+      selection.bookingDate && selection.bookingTime
+        ? isEditingSingleSession
+          ? 'Update Booking'
+          : 'Confirm Book'
+        : 'Set Hydrogen Session Date & Time';
     saveBtn.disabled = !(selection.bookingDate && selection.bookingTime);
     saveBtn.addEventListener('click', async () => {
       try {
@@ -4733,8 +4748,8 @@ function getHydrogenPlanOptions(services) {
 }
 
 function formatSessionLabel(sessions) {
-  if (sessions === 1) return '1 Session';
-  return `${sessions} Sessions`;
+  if (sessions === 1) return '1 Hydrogen Session';
+  return `${sessions} Hydrogen Sessions`;
 }
 
 function getTodayIsoDate() {
@@ -4810,14 +4825,14 @@ function buildBookingsByDate(bookings, year, monthIndex) {
 function renderMembershipCalendarDetails(dateKey, bookings) {
   if (!elements.membershipCalendarDetails) return;
   if (!dateKey) {
-    elements.membershipCalendarDetails.textContent = 'Select a date to view sessions.';
+    elements.membershipCalendarDetails.textContent = 'Select a date to view hydrogen sessions.';
     return;
   }
   const label = formatBookingDateLabel(dateKey);
   if (!bookings.length) {
     elements.membershipCalendarDetails.innerHTML = `
       <div>${escapeHtml(label)}</div>
-      <span>No sessions booked.</span>
+      <span>No hydrogen sessions booked.</span>
     `;
     return;
   }
@@ -4828,7 +4843,7 @@ function renderMembershipCalendarDetails(dateKey, bookings) {
         const derivedStatus = getDerivedBookingStatus(booking);
         return `
         <div class="membership-calendar-detail-item">
-          <strong>${escapeHtml(booking.serviceName || 'Session')}</strong>
+          <strong>${escapeHtml(booking.serviceName || 'Hydrogen Session')}</strong>
           <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))} • ${escapeHtml(derivedStatus)}</span>
         </div>
       `;
@@ -4979,8 +4994,8 @@ function renderMembership() {
   }
   if (elements.membershipUsageNote) {
     elements.membershipUsageNote.textContent = active
-      ? `${remainingSessions} sessions remaining (per member)${missedSessions > 0 ? ` • Missed sessions: ${missedSessions}` : ''}`
-      : 'Start a membership to begin tracking sessions.';
+      ? `${remainingSessions} hydrogen sessions remaining (per member)${missedSessions > 0 ? ` • Missed hydrogen sessions: ${missedSessions}` : ''}`
+      : 'Start a membership to begin tracking hydrogen sessions.';
   }
 
   const upcoming = hydrogenSessions
@@ -4988,12 +5003,12 @@ function renderMembership() {
     .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`))[0];
 
   if (elements.membershipNextSessionTitle) {
-    elements.membershipNextSessionTitle.textContent = upcoming ? 'Hydrogen Session' : 'No sessions scheduled';
+    elements.membershipNextSessionTitle.textContent = upcoming ? 'Hydrogen Session' : 'No hydrogen sessions scheduled';
   }
   if (elements.membershipNextSessionMeta) {
     elements.membershipNextSessionMeta.textContent = upcoming
       ? formatDateTime(upcoming.bookingDate, upcoming.bookingTime)
-      : 'Book your next session to keep momentum.';
+      : 'Book your next hydrogen session to keep momentum.';
   }
   if (active) {
     renderMembershipCalendar((state.bookings || []).filter((booking) => String(booking.status || '').toLowerCase() !== 'cancelled'));
@@ -5929,7 +5944,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       const linkedIndex = hydrogenEntries.findIndex(
         (slot) => slot.bookingDate === entry.bookingDate && slot.bookingTime === entry.bookingTime
       );
-      return linkedIndex >= 0 ? `${entry.serviceName} (Session ${linkedIndex + 1})` : entry.serviceName;
+      return linkedIndex >= 0 ? `${entry.serviceName} (Hydrogen Session ${linkedIndex + 1})` : entry.serviceName;
     });
     const holdNotice = buildHoldNotice(sortedEntries);
 
@@ -5962,7 +5977,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       ],
       scheduleLines: [hydrogenEntries[0] ? formatDateTime(hydrogenEntries[0].bookingDate, hydrogenEntries[0].bookingTime) : '-'],
       detailSections: [
-        { title: 'Sessions', lines: slotLines },
+        { title: 'Hydrogen Sessions', lines: slotLines },
         ...(addOnDetails.length ? [{ title: 'Add-on', lines: addOnDetails }] : []),
         ...(breakdown.totalAmountInr > 0
           ? [
@@ -6931,7 +6946,7 @@ function getBookingCategory(serviceName) {
 function getBookingCategoryLabel(serviceName) {
   const category = getBookingCategory(serviceName);
   if (category === 'HYDROGEN SESSION') return 'Hydrogen Session';
-  if (category === 'IV ADD-ON') return 'IV Therapy / IV Shot';
+  if (category === 'IV ADD-ON') return 'Therapy / Shot';
   if (category === 'MEMBERSHIP SERVICES') return 'Membership Service';
   return 'Service Booking';
 }
@@ -6969,7 +6984,7 @@ function getCurrentContextBookings() {
 }
 
 function getIvCooldownAlertMessage(conflict) {
-  return `An IV Therapy/IV Shot can be booked again only after 2 weeks. Existing IV booking found on ${conflict?.bookingDate}. Reach out to us to book if you still want this.`;
+  return `A Therapy/Shot can be booked again only after 2 weeks. Existing booking found on ${conflict?.bookingDate}. Reach out to us to book if you still want this.`;
 }
 
 function findIvCooldownConflictClient(serviceName, bookingDate, excludeBookingId = '', excludeGroupId = '') {
@@ -7080,7 +7095,7 @@ function getHydrogenGroupBreakdown(hydrogenEntries, addOnEntries) {
     }
     if (extraSessions > 0 && extraSessionPriceInr > 0) {
       breakdownParts.push(
-        `${extraSessions} extra session${extraSessions === 1 ? '' : 's'} Rs. ${(extraSessions * extraSessionPriceInr).toLocaleString('en-IN')}`
+        `${extraSessions} extra hydrogen session${extraSessions === 1 ? '' : 's'} Rs. ${(extraSessions * extraSessionPriceInr).toLocaleString('en-IN')}`
       );
     }
   }
@@ -7307,7 +7322,7 @@ function getServiceDisplayName(serviceOrName) {
         : '';
   const name = String(raw || '').trim();
   if (!name) return '';
-  if (name.toLowerCase() === 'experience session') return 'Demo Session';
+  if (name.toLowerCase() === 'experience session') return 'Demo Hydrogen Session';
   return name;
 }
 
@@ -7373,15 +7388,15 @@ function renderMyBookingsSessionTracking() {
   // Progress bar
   const progressPercent = totalSessions > 0 ? Math.round((completedCount / totalSessions) * 100) : 0;
   if (elements.myBookingsProgressLabel) {
-    elements.myBookingsProgressLabel.textContent = `${completedCount} of ${totalSessions} sessions completed`;
+    elements.myBookingsProgressLabel.textContent = `${completedCount} of ${totalSessions} hydrogen sessions completed`;
   }
   if (elements.myBookingsProgressBar) {
     elements.myBookingsProgressBar.style.width = `${progressPercent}%`;
   }
   if (elements.myBookingsProgressNote) {
     elements.myBookingsProgressNote.textContent = totalSessions === 0
-      ? 'No sessions booked yet. Book your first session to get started.'
-      : `${totalSessions - completedCount} sessions remaining`;
+      ? 'No hydrogen sessions booked yet. Book your first hydrogen session to get started.'
+      : `${totalSessions - completedCount} hydrogen sessions remaining`;
   }
 
   // Upcoming sessions list
@@ -7462,12 +7477,12 @@ function renderMyBookingsSessionTracking() {
       if (!dayBookings.length) {
         elements.myBookingsCalendarDetails.innerHTML = `
           <div>${escapeHtml(label)}</div>
-          <span>No sessions booked.</span>
+          <span>No hydrogen sessions booked.</span>
         `;
       } else {
         const lines = dayBookings.slice(0, 3).map((booking) => `
           <div class="mybookings-calendar-detail-item">
-            <strong>${escapeHtml(booking.serviceName || 'Session')}</strong>
+            <strong>${escapeHtml(booking.serviceName || 'Hydrogen Session')}</strong>
             <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))} • ${escapeHtml(getDerivedBookingStatus(booking))}</span>
           </div>
         `).join('');

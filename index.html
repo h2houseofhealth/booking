@@ -366,6 +366,40 @@
         </div>
       </section>
 
+      <section id="adminCalendarSection" class="panel app-only admin-only" aria-label="Admin calendar" hidden>
+        <div class="panel-head admin-calendar-head">
+          <div>
+            <h2>Admin Calendar</h2>
+            <p class="membership-copy">View open slots, book for users, and track customer sessions.</p>
+          </div>
+          <button id="adminCalendarRefreshBtn" class="btn btn-secondary" type="button">Refresh Slots</button>
+        </div>
+        <div class="admin-calendar-controls">
+          <label>
+            Date
+            <input id="adminCalendarDate" type="date" />
+          </label>
+          <label>
+            Category
+            <select id="adminCalendarCategory">
+              <option value="HYDROGEN SESSION">Hydrogen Session</option>
+              <option value="EXPERIENCE SESSION">Consultation</option>
+              <option value="IV THERAPIES">Therapies</option>
+              <option value="IV SHOTS">Shots</option>
+            </select>
+          </label>
+          <label>
+            Service
+            <select id="adminCalendarService"></select>
+          </label>
+          <button id="adminCalendarBookConsultationBtn" class="btn btn-primary" type="button">Book Consultation</button>
+        </div>
+        <p id="adminCalendarStatus" class="membership-copy"></p>
+        <div id="adminCalendarSlots" class="admin-calendar-slots"></div>
+        <p id="adminCalendarEmpty" class="empty-state" hidden>No services available for this date and category.</p>
+        <div id="adminCalendarTracker" class="admin-calendar-tracker"></div>
+      </section>
+
       <section id="userBookingsSection" class="panel app-only user-only" aria-label="User bookings" hidden>
         <div class="panel-head">
           <h2>My Bookings</h2>

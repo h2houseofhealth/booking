@@ -376,7 +376,7 @@
         </div>
         <div class="admin-calendar-controls">
           <label>
-            Date
+            Jump to Date
             <input id="adminCalendarDate" type="date" />
           </label>
           <label>
@@ -394,9 +394,39 @@
           </label>
           <button id="adminCalendarBookConsultationBtn" class="btn btn-primary" type="button">Book Consultation</button>
         </div>
-        <p id="adminCalendarStatus" class="membership-copy"></p>
-        <div id="adminCalendarSlots" class="admin-calendar-slots"></div>
-        <p id="adminCalendarEmpty" class="empty-state" hidden>No services available for this date and category.</p>
+        <div class="admin-calendar-shell">
+          <section class="admin-calendar-month-panel" aria-label="Availability calendar">
+            <div class="admin-calendar-month-head">
+              <button id="adminCalendarPrevMonthBtn" class="icon-btn" type="button" aria-label="Previous month">&#8249;</button>
+              <div>
+                <p class="admin-calendar-kicker">Availability View</p>
+                <h3 id="adminCalendarMonthLabel">Month</h3>
+              </div>
+              <button id="adminCalendarNextMonthBtn" class="icon-btn" type="button" aria-label="Next month">&#8250;</button>
+            </div>
+            <div class="admin-calendar-weekdays" aria-hidden="true">
+              <span>Sun</span>
+              <span>Mon</span>
+              <span>Tue</span>
+              <span>Wed</span>
+              <span>Thu</span>
+              <span>Fri</span>
+              <span>Sat</span>
+            </div>
+            <div id="adminCalendarGrid" class="admin-calendar-grid"></div>
+          </section>
+          <section class="admin-calendar-day-panel" aria-label="Selected day slots">
+            <div class="admin-calendar-day-head">
+              <div>
+                <p class="admin-calendar-kicker">Selected Date</p>
+                <h3 id="adminCalendarSelectedDateLabel">Date</h3>
+              </div>
+              <p id="adminCalendarStatus" class="membership-copy"></p>
+            </div>
+            <div id="adminCalendarSlots" class="admin-calendar-slots"></div>
+            <p id="adminCalendarEmpty" class="empty-state" hidden>No services available for this date and category.</p>
+          </section>
+        </div>
         <div id="adminCalendarTracker" class="admin-calendar-tracker"></div>
       </section>
 
@@ -699,51 +729,13 @@
           <div class="member-choice-table-wrap" aria-label="Member vs non-member comparison">
             <div class="member-choice-plan-headers" aria-hidden="true">
               <div class="member-choice-spacer"></div>
-              <div class="member-choice-plan-col"><span class="member-choice-plan-label">Member</span></div>
-              <div class="member-choice-plan-col"><span class="member-choice-plan-label">Non-member</span></div>
+              <div class="member-choice-plan-col"><span class="member-choice-plan-label">Member Pricing</span></div>
+              <div class="member-choice-plan-col"><span class="member-choice-plan-label">Non-member Pricing</span></div>
             </div>
 
             <div class="member-choice-rows">
-              <div class="member-choice-row">
-                <div class="member-choice-label"><strong>Hydrogen Sessions</strong></div>
-                <div class="member-choice-cell" data-col="0">16 hydrogen sessions free</div>
-                <div class="member-choice-cell" data-col="1">Pay per hydrogen session<br /><span class="sub">Regular pricing</span></div>
-              </div>
-
-              <div class="member-choice-row">
-                <div class="member-choice-label"><strong>1 Hydrogen Session price</strong></div>
-                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.4,800</strong></div>
-                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.9,500</strong></div>
-              </div>
-
-              <div class="member-choice-row">
-                <div class="member-choice-label"><strong>1 Week (4 hydrogen sessions)</strong></div>
-                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.12,000</strong></div>
-                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.28,000</strong></div>
-              </div>
-
-              <div class="member-choice-row">
-                <div class="member-choice-label"><strong>2 Weeks (8 hydrogen sessions)</strong></div>
-                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.22,000</strong></div>
-                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.48,000</strong></div>
-              </div>
-
-              <div class="member-choice-row">
-                <div class="member-choice-label"><strong>1 Month (16 hydrogen sessions)</strong></div>
-                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.32,000</strong></div>
-                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.64,000</strong></div>
-              </div>
-
-              <div class="member-choice-row">
-                <div class="member-choice-label"><strong>1 Month (30 hydrogen sessions)</strong></div>
-                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.46,000</strong></div>
-                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.90,000</strong></div>
-              </div>
-
-              <div class="member-choice-row">
-                <div class="member-choice-label"><strong>3 Months (90 hydrogen sessions)</strong></div>
-                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.1,00,000</strong></div>
-                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.1,50,000</strong></div>
+              <div class="member-choice-group-row">
+                <div class="member-choice-group-title">Included Services</div>
               </div>
 
               <div class="member-choice-row">
@@ -786,6 +778,80 @@
                 <div class="member-choice-label"><strong>Radiology</strong></div>
                 <div class="member-choice-cell" data-col="0"><span class="check" aria-label="Included">✓</span></div>
                 <div class="member-choice-cell" data-col="1"><span class="cross" aria-label="Not included">✕</span></div>
+              </div>
+
+              <div class="member-choice-group-row">
+                <div class="member-choice-group-title">Session Pricing</div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>Hydrogen Sessions</strong></div>
+                <div class="member-choice-cell" data-col="0">16 hydrogen sessions free</div>
+                <div class="member-choice-cell" data-col="1">Pay per hydrogen session<br /><span class="sub">Regular pricing</span></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>1 Hydrogen Session price</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.4,800</strong></div>
+                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.9,500</strong></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>1 Week (4 hydrogen sessions)</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.12,000</strong></div>
+                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.28,000</strong></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>2 Weeks (8 hydrogen sessions)</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.22,000</strong></div>
+                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.48,000</strong></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>1 Month (16 hydrogen sessions)</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.32,000</strong></div>
+                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.64,000</strong></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>1 Month (30 hydrogen sessions)</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.46,000</strong></div>
+                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.90,000</strong></div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>3 Months (90 hydrogen sessions)</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.1,00,000</strong></div>
+                <div class="member-choice-cell" data-col="1"><strong class="price">Rs.1,50,000</strong></div>
+              </div>
+
+              <div class="member-choice-group-row">
+                <div class="member-choice-group-title">Exclusive Membership Pricing</div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>1 Person</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.84,000</strong></div>
+                <div class="member-choice-cell na" data-col="1">N/A</div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>2 Person</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.1,60,000</strong></div>
+                <div class="member-choice-cell na" data-col="1">N/A</div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>4 Person</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.2,88,000</strong></div>
+                <div class="member-choice-cell na" data-col="1">N/A</div>
+              </div>
+
+              <div class="member-choice-row">
+                <div class="member-choice-label"><strong>Add Person</strong></div>
+                <div class="member-choice-cell" data-col="0"><strong class="price">Rs.78,000</strong></div>
+                <div class="member-choice-cell na" data-col="1">N/A</div>
               </div>
             </div>
           </div>

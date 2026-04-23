@@ -67,6 +67,9 @@ const state = {
   adminCalendarCapacityByService: {},
   adminCalendarLoading: false,
   adminCalendarError: '',
+  adminCalendarMonth: '',
+  adminCalendarMonthLoading: false,
+  adminCalendarDayCache: {},
   filters: {
     search: '',
     status: 'all',
@@ -314,6 +317,11 @@ const elements = {
   adminCalendarDate: document.getElementById('adminCalendarDate'),
   adminCalendarCategory: document.getElementById('adminCalendarCategory'),
   adminCalendarService: document.getElementById('adminCalendarService'),
+  adminCalendarPrevMonthBtn: document.getElementById('adminCalendarPrevMonthBtn'),
+  adminCalendarNextMonthBtn: document.getElementById('adminCalendarNextMonthBtn'),
+  adminCalendarMonthLabel: document.getElementById('adminCalendarMonthLabel'),
+  adminCalendarGrid: document.getElementById('adminCalendarGrid'),
+  adminCalendarSelectedDateLabel: document.getElementById('adminCalendarSelectedDateLabel'),
   adminCalendarRefreshBtn: document.getElementById('adminCalendarRefreshBtn'),
   adminCalendarBookConsultationBtn: document.getElementById('adminCalendarBookConsultationBtn'),
   adminCalendarStatus: document.getElementById('adminCalendarStatus'),
@@ -491,6 +499,9 @@ function attachEvents() {
     state.adminCalendarCapacityByService = {};
     state.adminCalendarLoading = false;
     state.adminCalendarError = '';
+    state.adminCalendarMonth = '';
+    state.adminCalendarMonthLoading = false;
+    state.adminCalendarDayCache = {};
     state.selectedServiceCategory = null;
     state.selectedSingleSessionServiceName = '';
     state.singleSessionEditingBookingId = '';
@@ -972,18 +983,43 @@ function attachEvents() {
   });
   elements.adminCalendarDate?.addEventListener('change', async (event) => {
     state.adminCalendarDate = String(event.target.value || '').trim() || getTodayIsoDate();
+    state.adminCalendarMonth = state.adminCalendarDate.slice(0, 7);
     await loadAdminCalendarAvailability();
   });
   elements.adminCalendarCategory?.addEventListener('change', async (event) => {
     state.adminCalendarCategory = String(event.target.value || '').trim().toUpperCase() || 'HYDROGEN SESSION';
     state.adminCalendarServiceName = '';
+    state.adminCalendarDayCache = {};
     await loadAdminCalendarAvailability();
   });
   elements.adminCalendarService?.addEventListener('change', (event) => {
     state.adminCalendarServiceName = String(event.target.value || '').trim();
     renderAdminCalendar();
   });
+  elements.adminCalendarPrevMonthBtn?.addEventListener('click', async () => {
+    initializeAdminCalendarState();
+    const minMonth = getTodayIsoDate().slice(0, 7);
+    if (String(state.adminCalendarMonth || '').localeCompare(minMonth) <= 0) return;
+    const [year, month] = String(state.adminCalendarMonth || getTodayIsoDate().slice(0, 7)).split('-').map(Number);
+    const nextDate = new Date(year, (month || 1) - 2, 1);
+    state.adminCalendarMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
+    syncAdminCalendarDateToVisibleMonth();
+    await loadAdminCalendarAvailability({ silent: true });
+    render();
+  });
+  elements.adminCalendarNextMonthBtn?.addEventListener('click', async () => {
+    initializeAdminCalendarState();
+    const maxMonth = getMaxBookingIsoDate().slice(0, 7);
+    if (String(state.adminCalendarMonth || '').localeCompare(maxMonth) >= 0) return;
+    const [year, month] = String(state.adminCalendarMonth || getTodayIsoDate().slice(0, 7)).split('-').map(Number);
+    const nextDate = new Date(year, month || 1, 1);
+    state.adminCalendarMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
+    syncAdminCalendarDateToVisibleMonth();
+    await loadAdminCalendarAvailability({ silent: true });
+    render();
+  });
   elements.adminCalendarRefreshBtn?.addEventListener('click', async () => {
+    state.adminCalendarDayCache = {};
     await loadAdminCalendarAvailability();
   });
   elements.adminCalendarBookConsultationBtn?.addEventListener('click', () => {
@@ -1383,6 +1419,9 @@ async function loadDashboardData() {
     state.adminCalendarCapacityByService = {};
     state.adminCalendarLoading = false;
     state.adminCalendarError = '';
+    state.adminCalendarMonth = '';
+    state.adminCalendarMonthLoading = false;
+    state.adminCalendarDayCache = {};
     state.membershipCouponPreview = null;
     state.cartCouponPreview = null;
   }
@@ -1490,6 +1529,103 @@ function initializeAdminCalendarState() {
   if (!state.adminCalendarCategory) {
     state.adminCalendarCategory = 'HYDROGEN SESSION';
   }
+  if (!state.adminCalendarMonth) {
+    state.adminCalendarMonth = String(state.adminCalendarDate || getTodayIsoDate()).slice(0, 7);
+  }
+}
+
+function getAdminCalendarCacheKey(dateKey) {
+  const category = String(state.adminCalendarCategory || 'HYDROGEN SESSION').trim().toUpperCase();
+  const email = isAdminCustomerFormReady() ? String(state.adminCustomerForm?.email || '').trim().toLowerCase() : '';
+  return `${category}|${email}|${dateKey}`;
+}
+
+function getAdminCalendarMonthBounds() {
+  initializeAdminCalendarState();
+  const [year, month] = String(state.adminCalendarMonth || getTodayIsoDate().slice(0, 7)).split('-').map(Number);
+  const safeYear = Number.isFinite(year) ? year : new Date().getFullYear();
+  const safeMonthIndex = Number.isFinite(month) ? month - 1 : new Date().getMonth();
+  return {
+    year: safeYear,
+    monthIndex: safeMonthIndex,
+    firstOfMonth: new Date(safeYear, safeMonthIndex, 1),
+    daysInMonth: new Date(safeYear, safeMonthIndex + 1, 0).getDate(),
+  };
+}
+
+function syncAdminCalendarDateToVisibleMonth() {
+  const { year, monthIndex, daysInMonth } = getAdminCalendarMonthBounds();
+  const todayKey = getTodayIsoDate();
+  const monthKey = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+  const currentDate = String(state.adminCalendarDate || '').trim();
+  if (currentDate.startsWith(`${monthKey}-`)) return;
+
+  const maxAllowed = String(getMaxBookingIsoDate() || '').trim();
+  let nextDate = `${monthKey}-01`;
+  if (monthKey === todayKey.slice(0, 7)) {
+    nextDate = todayKey;
+  }
+  if (maxAllowed && nextDate > maxAllowed) {
+    nextDate = `${monthKey}-${String(daysInMonth).padStart(2, '0')}`;
+  }
+  if (nextDate < todayKey) {
+    nextDate = todayKey;
+  }
+  state.adminCalendarDate = nextDate;
+}
+
+async function fetchAdminCalendarAvailabilityForDate(dateKey, { force = false } = {}) {
+  const normalizedDate = String(dateKey || '').trim();
+  if (!normalizedDate) {
+    return { availability: {}, holds: {}, slotCapacityByService: {} };
+  }
+  const cacheKey = getAdminCalendarCacheKey(normalizedDate);
+  if (!force && state.adminCalendarDayCache?.[cacheKey]) {
+    return state.adminCalendarDayCache[cacheKey];
+  }
+
+  const params = new URLSearchParams({
+    bookingDate: normalizedDate,
+    category: state.adminCalendarCategory || 'HYDROGEN SESSION',
+  });
+  if (isAdminCustomerFormReady() && String(state.adminCustomerForm.email || '').trim()) {
+    params.set('customerEmail', String(state.adminCustomerForm.email || '').trim());
+  }
+
+  const availabilityResult = await api(`/api/services/availability?${params.toString()}`);
+  const dayPayload = {
+    availability: availabilityResult.availability || {},
+    holds: availabilityResult.holds || {},
+    slotCapacityByService: availabilityResult.slotCapacityByService || {},
+  };
+  state.adminCalendarDayCache = {
+    ...(state.adminCalendarDayCache || {}),
+    [cacheKey]: dayPayload,
+  };
+  return dayPayload;
+}
+
+async function preloadAdminCalendarMonth({ force = false } = {}) {
+  initializeAdminCalendarState();
+  const { year, monthIndex, daysInMonth } = getAdminCalendarMonthBounds();
+  const todayKey = getTodayIsoDate();
+  const maxAllowed = String(getMaxBookingIsoDate() || '').trim();
+  const datesToLoad = [];
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dateKey = getCalendarDateKey(year, monthIndex, day);
+    if (dateKey < todayKey) continue;
+    if (maxAllowed && dateKey > maxAllowed) continue;
+    datesToLoad.push(dateKey);
+  }
+
+  state.adminCalendarMonthLoading = true;
+  render();
+  try {
+    await Promise.all(datesToLoad.map((dateKey) => fetchAdminCalendarAvailabilityForDate(dateKey, { force })));
+  } finally {
+    state.adminCalendarMonthLoading = false;
+  }
 }
 
 function getAdminCalendarTrackedUser() {
@@ -1566,21 +1702,19 @@ function openAdminConsultationBookingFromCalendar() {
 async function loadAdminCalendarAvailability({ silent = false } = {}) {
   if (state.user?.role !== 'admin') return;
   initializeAdminCalendarState();
+  syncAdminCalendarDateToVisibleMonth();
   state.adminCalendarLoading = true;
   state.adminCalendarError = '';
   if (!silent) render();
   try {
-    const params = new URLSearchParams({
-      bookingDate: state.adminCalendarDate || getTodayIsoDate(),
-      category: state.adminCalendarCategory || 'HYDROGEN SESSION',
-    });
-    if (isAdminCustomerFormReady() && String(state.adminCustomerForm.email || '').trim()) {
-      params.set('customerEmail', String(state.adminCustomerForm.email || '').trim());
-    }
-    const availabilityResult = await api(`/api/services/availability?${params.toString()}`);
-    state.adminCalendarAvailability = availabilityResult.availability || {};
-    state.adminCalendarHoldCounts = availabilityResult.holds || {};
-    state.adminCalendarCapacityByService = availabilityResult.slotCapacityByService || {};
+    const selectedDate = state.adminCalendarDate || getTodayIsoDate();
+    const [dayAvailability] = await Promise.all([
+      fetchAdminCalendarAvailabilityForDate(selectedDate),
+      preloadAdminCalendarMonth(),
+    ]);
+    state.adminCalendarAvailability = dayAvailability.availability || {};
+    state.adminCalendarHoldCounts = dayAvailability.holds || {};
+    state.adminCalendarCapacityByService = dayAvailability.slotCapacityByService || {};
     state.adminCalendarServiceName = getAdminCalendarSelectedServiceName();
   } catch (error) {
     state.adminCalendarAvailability = {};
@@ -1594,12 +1728,40 @@ async function loadAdminCalendarAvailability({ silent = false } = {}) {
   }
 }
 
+function getAdminCalendarDayData(dateKey) {
+  return state.adminCalendarDayCache?.[getAdminCalendarCacheKey(dateKey)] || null;
+}
+
+function getAdminCalendarDaySummary(dateKey) {
+  const dayData = getAdminCalendarDayData(dateKey);
+  if (!dayData) return { hasData: false, openSlotCount: 0, hasAnyOpen: false };
+
+  let openSlotCount = 0;
+  for (const [serviceName, serviceAvailability] of Object.entries(dayData.availability || {})) {
+    const capacity = Math.max(1, Number(dayData.slotCapacityByService?.[serviceName] || 8));
+    for (const slot of SLOT_OPTIONS) {
+      if (isBookingSlotInPast(dateKey, slot.value)) continue;
+      const booked = Number(serviceAvailability?.[slot.value] || 0);
+      if (booked < capacity) openSlotCount += 1;
+    }
+  }
+
+  return {
+    hasData: true,
+    openSlotCount,
+    hasAnyOpen: openSlotCount > 0,
+  };
+}
+
 function renderAdminCalendar() {
   if (
     !elements.adminCalendarSection ||
     !elements.adminCalendarDate ||
     !elements.adminCalendarCategory ||
     !elements.adminCalendarService ||
+    !elements.adminCalendarMonthLabel ||
+    !elements.adminCalendarGrid ||
+    !elements.adminCalendarSelectedDateLabel ||
     !elements.adminCalendarStatus ||
     !elements.adminCalendarSlots ||
     !elements.adminCalendarEmpty ||
@@ -1609,7 +1771,9 @@ function renderAdminCalendar() {
   }
 
   initializeAdminCalendarState();
+  syncAdminCalendarDateToVisibleMonth();
   const selectedDate = state.adminCalendarDate || getTodayIsoDate();
+  const { year, monthIndex, firstOfMonth, daysInMonth } = getAdminCalendarMonthBounds();
   const serviceNames = getAdminCalendarServiceNames();
   const selectedServiceName = getAdminCalendarSelectedServiceName();
   state.adminCalendarServiceName = selectedServiceName;
@@ -1618,6 +1782,15 @@ function renderAdminCalendar() {
   elements.adminCalendarDate.max = getMaxBookingIsoDate();
   elements.adminCalendarDate.value = selectedDate;
   elements.adminCalendarCategory.value = state.adminCalendarCategory || 'HYDROGEN SESSION';
+  elements.adminCalendarMonthLabel.textContent = getCalendarMonthLabel(firstOfMonth);
+  elements.adminCalendarSelectedDateLabel.textContent = formatBookingDateLabel(selectedDate);
+  if (elements.adminCalendarPrevMonthBtn) {
+    elements.adminCalendarPrevMonthBtn.disabled = String(state.adminCalendarMonth || '').localeCompare(getTodayIsoDate().slice(0, 7)) <= 0;
+  }
+  if (elements.adminCalendarNextMonthBtn) {
+    elements.adminCalendarNextMonthBtn.disabled =
+      String(state.adminCalendarMonth || '').localeCompare(getMaxBookingIsoDate().slice(0, 7)) >= 0;
+  }
 
   elements.adminCalendarService.innerHTML = '';
   serviceNames.forEach((serviceName) => {
@@ -1633,12 +1806,52 @@ function renderAdminCalendar() {
   const customerLabel = isAdminCustomerFormReady()
     ? `for ${state.adminCustomerForm.name || state.adminCustomerForm.email}`
     : 'for all users';
-  if (state.adminCalendarLoading) {
-    elements.adminCalendarStatus.textContent = 'Loading slot availability...';
+  if (state.adminCalendarLoading || state.adminCalendarMonthLoading) {
+    elements.adminCalendarStatus.textContent = 'Loading availability...';
   } else if (state.adminCalendarError) {
     elements.adminCalendarStatus.textContent = state.adminCalendarError;
   } else {
-    elements.adminCalendarStatus.textContent = `Showing open slots on ${formatBookingDateLabel(selectedDate)} ${customerLabel}.`;
+    elements.adminCalendarStatus.textContent = `Open slots on ${formatBookingDateLabel(selectedDate)} ${customerLabel}.`;
+  }
+
+  elements.adminCalendarGrid.innerHTML = '';
+  const startDay = firstOfMonth.getDay();
+  const todayKey = getTodayIsoDate();
+  const maxAllowed = String(getMaxBookingIsoDate() || '').trim();
+  for (let index = 0; index < 42; index += 1) {
+    const dayNumber = index - startDay + 1;
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'admin-calendar-day';
+    if (dayNumber < 1 || dayNumber > daysInMonth) {
+      cell.classList.add('is-outside');
+      cell.disabled = true;
+      cell.innerHTML = '<span></span>';
+    } else {
+      const dateKey = getCalendarDateKey(year, monthIndex, dayNumber);
+      const summary = getAdminCalendarDaySummary(dateKey);
+      const isDisabled = dateKey < todayKey || (maxAllowed && dateKey > maxAllowed);
+      cell.innerHTML = `
+        <strong>${escapeHtml(String(dayNumber))}</strong>
+        <small>${isDisabled ? '' : summary.hasAnyOpen ? `${summary.openSlotCount} open` : summary.hasData ? 'Full' : '...'}</small>
+      `;
+      if (dateKey === todayKey) cell.classList.add('is-today');
+      if (dateKey === selectedDate) cell.classList.add('is-selected');
+      if (summary.hasAnyOpen) cell.classList.add('has-open');
+      if (summary.hasData && !summary.hasAnyOpen) cell.classList.add('is-full');
+      if (isDisabled) {
+        cell.classList.add('is-disabled');
+        cell.disabled = true;
+      } else {
+        cell.addEventListener('click', async () => {
+          state.adminCalendarDate = dateKey;
+          state.adminCalendarMonth = dateKey.slice(0, 7);
+          await loadAdminCalendarAvailability({ silent: true });
+          render();
+        });
+      }
+    }
+    elements.adminCalendarGrid.appendChild(cell);
   }
 
   elements.adminCalendarSlots.innerHTML = '';
@@ -1660,16 +1873,16 @@ function renderAdminCalendar() {
       row.innerHTML = `
         <div class="admin-calendar-slot-time">
           <strong>${escapeHtml(slot.label)}</strong>
-          <span>${isPast ? 'Unavailable' : openSeats > 0 ? `${openSeats} open` : 'Full'}</span>
+          <span>${isPast ? 'Unavailable' : openSeats > 0 ? `${openSeats} seats open` : 'Fully booked'}</span>
         </div>
         <div class="admin-calendar-slot-meta">
-          <span>Booked: ${booked}/${slotCapacity}</span>
-          <span>On hold: ${holdCount}</span>
+          <span>${booked}/${slotCapacity} booked</span>
+          <span>${holdCount} on hold</span>
         </div>
       `;
       const actionBtn = document.createElement('button');
       actionBtn.type = 'button';
-      actionBtn.className = 'btn btn-secondary';
+      actionBtn.className = 'btn btn-secondary admin-calendar-slot-btn';
       actionBtn.textContent = isPast ? 'Unavailable' : 'Book Slot';
       actionBtn.disabled = isPast || openSeats <= 0;
       actionBtn.addEventListener('click', () => {

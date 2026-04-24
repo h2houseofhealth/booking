@@ -15,6 +15,8 @@ const state = {
     phone: '',
   },
   postLoginChoice: '',
+  pendingPreAuthChoice: '',
+  showAuthCard: false,
   activeUserTab: 'services',
   returnUserTabAfterEdit: '',
   membership: {
@@ -22,6 +24,7 @@ const state = {
     active: false,
     current: null,
   },
+  membershipBrowseVisible: false,
   membershipAdditions: {},
   membershipCheckout: null,
   membershipCouponPreview: null,
@@ -114,6 +117,7 @@ const elements = {
   authOtp: document.getElementById('authOtp'),
   authSubmitBtn: document.getElementById('authSubmitBtn'),
   authError: document.getElementById('authError'),
+  authBackToChoicesBtn: document.getElementById('authBackToChoicesBtn'),
   forgotPasswordBtn: document.getElementById('forgotPasswordBtn'),
 
   profileBtn: document.getElementById('profileBtn'),
@@ -143,9 +147,6 @@ const elements = {
   adminHistoryCard: document.getElementById('adminHistoryCard'),
   historyCount: document.getElementById('historyCount'),
   memberChoiceGate: document.getElementById('memberChoiceGate'),
-  comparisonMatrixBtn: document.getElementById('comparisonMatrixBtn'),
-  comparisonMatrixDialog: document.getElementById('comparisonMatrixDialog'),
-  closeComparisonMatrixDialogBtn: document.getElementById('closeComparisonMatrixDialogBtn'),
   userTabNav: document.getElementById('userTabNav'),
   userTabServices: document.getElementById('userTabServices'),
   userTabMembership: document.getElementById('userTabMembership'),
@@ -191,9 +192,17 @@ const elements = {
   membershipDashboard: document.getElementById('membershipDashboard'),
   membershipWelcomeName: document.getElementById('membershipWelcomeName'),
   membershipDashboardStatus: document.getElementById('membershipDashboardStatus'),
+  membershipTakeMembershipBtn: document.getElementById('membershipTakeMembershipBtn'),
+  membershipStatSessionsLabel: document.getElementById('membershipStatSessionsLabel'),
   membershipStatSessions: document.getElementById('membershipStatSessions'),
+  membershipStatSessionsMeta: document.getElementById('membershipStatSessionsMeta'),
+  membershipStatMembersLabel: document.getElementById('membershipStatMembersLabel'),
   membershipStatMembers: document.getElementById('membershipStatMembers'),
+  membershipStatMembersMeta: document.getElementById('membershipStatMembersMeta'),
+  membershipStatValidLabel: document.getElementById('membershipStatValidLabel'),
   membershipStatValid: document.getElementById('membershipStatValid'),
+  membershipStatValidMeta: document.getElementById('membershipStatValidMeta'),
+  membershipUsageTitle: document.getElementById('membershipUsageTitle'),
   membershipUsageLabel: document.getElementById('membershipUsageLabel'),
   membershipUsageBar: document.getElementById('membershipUsageBar'),
   membershipUsageNote: document.getElementById('membershipUsageNote'),
@@ -373,6 +382,24 @@ function getUserTabFromHash(hash) {
   return '';
 }
 
+function openAuthFromLanding(choice = '') {
+  state.pendingPreAuthChoice = String(choice || '').trim();
+  state.showAuthCard = true;
+  isRegisterMode = false;
+  isForgotPasswordMode = false;
+  signupStage = 'details';
+  forgotPasswordStage = 'email';
+  pendingSignupEmail = '';
+  pendingForgotEmail = '';
+  elements.authOtp.value = '';
+  elements.authPassword.value = '';
+  renderAuthMode();
+  render();
+  requestAnimationFrame(() => {
+    elements.authCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
 async function bootstrap() {
   const initialTab = getUserTabFromHash(window.location.hash);
   if (initialTab) state.activeUserTab = initialTab;
@@ -469,9 +496,12 @@ function attachEvents() {
     state.adminResolvedCustomer = null;
     state.adminCustomerForm = { name: '', email: '', phone: '' };
     state.postLoginChoice = '';
+    state.pendingPreAuthChoice = '';
+    state.showAuthCard = false;
     state.activeUserTab = 'services';
     clearTimeout(adminCustomerRefreshTimer);
     state.membership = { plans: [], active: false, current: null };
+    state.membershipBrowseVisible = false;
     state.membershipAdditions = {};
     state.membershipCheckout = null;
     state.membershipCouponPreview = null;
@@ -529,7 +559,6 @@ function attachEvents() {
     if (elements.profileDialog.open) elements.profileDialog.close();
     if (elements.membershipDialog?.open) elements.membershipDialog.close();
     if (elements.adminUserSessionDialog?.open) elements.adminUserSessionDialog.close();
-    if (elements.comparisonMatrixDialog?.open) elements.comparisonMatrixDialog.close();
     renderAuthMode();
     render();
   });
@@ -559,6 +588,10 @@ function attachEvents() {
 
   elements.profileBtn.addEventListener('click', openProfileDialog);
   elements.joinAsMemberBtn?.addEventListener('click', () => {
+    if (!state.user) {
+      openAuthFromLanding('join-member');
+      return;
+    }
     state.postLoginChoice = 'join-member';
     state.activeUserTab = 'membership';
     window.location.hash = '#membership';
@@ -568,6 +601,10 @@ function attachEvents() {
     });
   });
   elements.continueAsMemberBtn?.addEventListener('click', () => {
+    if (!state.user) {
+      openAuthFromLanding('continue-member');
+      return;
+    }
     if (!isCurrentUserMembershipActive()) {
       state.postLoginChoice = 'join-member';
       state.activeUserTab = 'membership';
@@ -587,6 +624,10 @@ function attachEvents() {
     });
   });
   elements.continueAsNonMemberBtn?.addEventListener('click', () => {
+    if (!state.user) {
+      openAuthFromLanding('continue-non-member');
+      return;
+    }
     state.postLoginChoice = 'continue-non-member';
     state.activeUserTab = 'services';
     window.location.hash = '#services';
@@ -596,24 +637,6 @@ function attachEvents() {
     });
   });
 
-  elements.comparisonMatrixBtn?.addEventListener('click', () => {
-    if (!elements.comparisonMatrixDialog) return;
-    if (elements.comparisonMatrixDialog.open) {
-      elements.comparisonMatrixDialog.close();
-      return;
-    }
-    elements.comparisonMatrixDialog.showModal();
-  });
-
-  elements.closeComparisonMatrixDialogBtn?.addEventListener('click', () => {
-    elements.comparisonMatrixDialog?.close();
-  });
-
-  elements.comparisonMatrixDialog?.addEventListener('click', (event) => {
-    if (event.target === elements.comparisonMatrixDialog) {
-      elements.comparisonMatrixDialog.close();
-    }
-  });
   elements.userTabServices?.addEventListener('click', () => {
     if (state.activeUserTab !== 'services') {
       resetServiceBrowserState();
@@ -667,6 +690,14 @@ function attachEvents() {
     });
   });
   elements.membershipBackBtn?.addEventListener('click', () => {
+    if (state.user?.role === 'user' && !state.membership?.active && state.membershipBrowseVisible) {
+      state.membershipBrowseVisible = false;
+      render();
+      requestAnimationFrame(() => {
+        elements.membershipDashboard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return;
+    }
     state.postLoginChoice = '';
     state.activeUserTab = 'services';
     window.location.hash = '#services';
@@ -700,6 +731,13 @@ function attachEvents() {
     render();
     requestAnimationFrame(() => {
       elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  elements.membershipTakeMembershipBtn?.addEventListener('click', () => {
+    state.membershipBrowseVisible = true;
+    render();
+    requestAnimationFrame(() => {
+      elements.membershipBrowsePanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
   elements.membershipAddPersonBtn?.addEventListener('click', () => {
@@ -1139,11 +1177,20 @@ async function submitAuth() {
       });
 
       state.user = result.user;
-      state.postLoginChoice = '';
+      state.postLoginChoice = state.pendingPreAuthChoice || '';
+      state.pendingPreAuthChoice = '';
+      state.showAuthCard = false;
       state.activeUserTab = 'services';
       elements.authForm.reset();
       await loadProfile();
       await loadDashboardData();
+      if (state.postLoginChoice === 'join-member') {
+        state.activeUserTab = 'membership';
+        window.location.hash = '#membership';
+      } else if (state.postLoginChoice === 'continue-member' || state.postLoginChoice === 'continue-non-member') {
+        state.activeUserTab = 'services';
+        window.location.hash = '#services';
+      }
       render();
       return;
     }
@@ -1254,13 +1301,22 @@ async function submitAuth() {
     });
 
     state.user = result.user;
-    state.postLoginChoice = '';
+    state.postLoginChoice = state.pendingPreAuthChoice || '';
+    state.pendingPreAuthChoice = '';
+    state.showAuthCard = false;
     state.activeUserTab = 'services';
     signupStage = 'details';
     pendingSignupEmail = '';
     elements.authForm.reset();
     await loadProfile();
     await loadDashboardData();
+    if (state.postLoginChoice === 'join-member') {
+      state.activeUserTab = 'membership';
+      window.location.hash = '#membership';
+    } else if (state.postLoginChoice === 'continue-member' || state.postLoginChoice === 'continue-non-member') {
+      state.activeUserTab = 'services';
+      window.location.hash = '#services';
+    }
     render();
   } catch (error) {
     elements.authError.textContent = error.message;
@@ -1363,6 +1419,7 @@ async function loadDashboardData() {
     state.adminCoupons = couponsResult.coupons || [];
     state.adminUsers = adminUsersResult.users || [];
     state.membership = { plans: [], active: false, current: null };
+    state.membershipBrowseVisible = false;
     state.services = genericServicesResult.services || [];
     state.adminResolvedCustomer = null;
 
@@ -1398,6 +1455,7 @@ async function loadDashboardData() {
       active: Boolean(membershipResult.active),
       current: membershipResult.current || null,
     };
+    state.membershipBrowseVisible = Boolean(state.membership.active);
     state.membershipRoster = null;
     if (state.membership.active && Number(state.membership.current?.peopleCount || 0) >= 2) {
       try {
@@ -3312,8 +3370,10 @@ function getAdminDashboardVisibleBookings(bookings = state.bookings) {
 
 function render() {
   const isAuthenticated = Boolean(state.user);
-  document.body.classList.toggle('auth-mode', !isAuthenticated);
-  elements.authCard.hidden = isAuthenticated;
+  const showPublicChoiceGate = !isAuthenticated;
+  const showAuthCard = !isAuthenticated && state.showAuthCard;
+  document.body.classList.toggle('auth-mode', showAuthCard);
+  elements.authCard.hidden = !showAuthCard;
   elements.appArea.hidden = !isAuthenticated;
 
   document.querySelectorAll('.app-only').forEach((el) => {
@@ -3324,6 +3384,9 @@ function render() {
     document.querySelectorAll('.app-only, .user-only, .admin-only').forEach((el) => {
       el.hidden = true;
     });
+    if (elements.memberChoiceGate) {
+      elements.memberChoiceGate.hidden = !showPublicChoiceGate;
+    }
     elements.bookingTableBody.innerHTML = '';
     if (elements.cartTableBody) elements.cartTableBody.innerHTML = '';
     elements.adminBookingTableBody.innerHTML = '';
@@ -4184,13 +4247,14 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
           ? 'Included in Membership'
           : 'Members only'
         : `₹${selectedServicePrice.toLocaleString('en-IN')}`;
+  const stickyPriceClass = /₹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
 
   const stickyWrap = document.createElement('div');
   stickyWrap.className = 'service-sticky-book';
   stickyWrap.innerHTML = `
     <div class="service-sticky-meta">
       <strong>${escapeHtml(selectedService.name)}</strong>
-      <span>${escapeHtml(stickyPriceText)}</span>
+      <span class="${stickyPriceClass}">${escapeHtml(stickyPriceText)}</span>
     </div>
   `;
   const stickyButton = document.createElement('button');
@@ -4407,13 +4471,14 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
       ? 'Included in Membership'
       : 'Members only'
     : `₹${selectedServicePrice.toLocaleString('en-IN')}`;
+  const stickyPriceClass = /₹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
 
   const stickyWrap = document.createElement('div');
   stickyWrap.className = 'service-sticky-book';
   stickyWrap.innerHTML = `
     <div class="service-sticky-meta">
       <strong>${escapeHtml(selectedService.name)}</strong>
-      <span>${escapeHtml(stickyPriceText)}</span>
+      <span class="${stickyPriceClass}">${escapeHtml(stickyPriceText)}</span>
     </div>
   `;
   const stickyButton = document.createElement('button');
@@ -5530,80 +5595,111 @@ function renderMembership() {
   }
 
   if (elements.membershipBrowsePanel) {
-    elements.membershipBrowsePanel.hidden = active;
+    elements.membershipBrowsePanel.hidden = active ? true : !state.membershipBrowseVisible;
   }
 
   if (elements.membershipDashboard) {
-    elements.membershipDashboard.hidden = !active;
+    elements.membershipDashboard.hidden = false;
   }
 
-  if (active) {
-    const firstName = String(state.user?.name || 'Member').trim().split(/\s+/)[0] || 'Member';
-    if (elements.membershipWelcomeName) {
-      elements.membershipWelcomeName.textContent = `Welcome, ${firstName}`;
-    }
-    if (elements.membershipDashboardStatus) {
-      elements.membershipDashboardStatus.textContent = `${activePlanName}${
-        effectiveExpiry ? ` • valid till ${effectiveExpiry.toLocaleDateString()}` : ''
-      }`;
-    }
-  } else if (elements.membershipDashboardStatus) {
-    elements.membershipDashboardStatus.textContent = '';
+  if (elements.membershipTakeMembershipBtn) {
+    elements.membershipTakeMembershipBtn.hidden = active || state.membershipBrowseVisible;
   }
 
+  const firstName = String(state.user?.name || 'Member').trim().split(/\s+/)[0] || 'Member';
+  if (elements.membershipWelcomeName) {
+    elements.membershipWelcomeName.textContent = `Welcome, ${firstName}`;
+  }
+  if (elements.membershipDashboardStatus) {
+    elements.membershipDashboardStatus.textContent = active
+      ? `${activePlanName}${effectiveExpiry ? ` • valid till ${effectiveExpiry.toLocaleDateString()}` : ''}`
+      : 'Non-member account • standard pricing and pay-per-visit access';
+  }
+
+  const allBookings = (state.bookings || []).filter(
+    (booking) => String(booking.status || '').toLowerCase() !== 'cancelled' && !booking.holdExpired
+  );
   if (elements.membershipStatSessions) {
-    const sessions = active ? HYDROGEN_FREE_SESSIONS_PER_USER : Number(activePlan?.h2SessionsIncluded || current.h2SessionsIncluded || 0);
+    const sessions = active ? HYDROGEN_FREE_SESSIONS_PER_USER : allBookings.filter(
+      (booking) => getBookingCategory(booking.serviceName) === 'HYDROGEN SESSION'
+    ).length;
     elements.membershipStatSessions.textContent = Number.isFinite(sessions) ? String(sessions) : '0';
   }
+  if (elements.membershipStatSessionsLabel) {
+    elements.membershipStatSessionsLabel.textContent = 'Hydrogen Sessions';
+  }
+  if (elements.membershipStatSessionsMeta) {
+    elements.membershipStatSessionsMeta.textContent = active ? 'Included' : 'Booked';
+  }
   if (elements.membershipStatMembers) {
-    elements.membershipStatMembers.textContent = currentPeopleCount ? String(currentPeopleCount) : '0';
+    elements.membershipStatMembers.textContent = active ? (currentPeopleCount ? String(currentPeopleCount) : '0') : String(allBookings.length);
+  }
+  if (elements.membershipStatMembersLabel) {
+    elements.membershipStatMembersLabel.textContent = active ? 'Members' : 'Bookings';
+  }
+  if (elements.membershipStatMembersMeta) {
+    elements.membershipStatMembersMeta.textContent = active ? 'Covered' : 'Total';
   }
   if (elements.membershipStatValid) {
-    elements.membershipStatValid.textContent = effectiveExpiry ? effectiveExpiry.toLocaleDateString() : '-';
+    elements.membershipStatValid.textContent = active ? (effectiveExpiry ? effectiveExpiry.toLocaleDateString() : '-') : '₹9,500';
+  }
+  if (elements.membershipStatValidLabel) {
+    elements.membershipStatValidLabel.textContent = active ? 'Valid Till' : 'Non-member Price';
+  }
+  if (elements.membershipStatValidMeta) {
+    elements.membershipStatValidMeta.textContent = active ? 'Plan end' : '/ session';
   }
 
   const hydrogenSessionSummary = getMembershipHydrogenSessionSummary();
-  const hydrogenSessions = (state.bookings || []).filter(
+  const hydrogenSessions = allBookings.filter(
     (booking) =>
-      getBookingCategory(booking.serviceName) === 'HYDROGEN SESSION' &&
-      String(booking.status || '').toLowerCase() !== 'cancelled' &&
-      !booking.holdExpired
+      getBookingCategory(booking.serviceName) === 'HYDROGEN SESSION'
   );
-  const totalSessions = active ? HYDROGEN_FREE_SESSIONS_PER_USER : 0;
-  const usedSessions = active ? getHydrogenSessionsUsedThisMembership() : 0;
+  const upcomingBookings = allBookings
+    .filter((booking) => !isBookingSlotInPast(booking.bookingDate, booking.bookingTime))
+    .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
+  const totalSessions = active ? HYDROGEN_FREE_SESSIONS_PER_USER : Math.max(1, allBookings.length || 1);
+  const usedSessions = active
+    ? getHydrogenSessionsUsedThisMembership()
+    : allBookings.filter((booking) => String(getDerivedBookingStatus(booking)).toLowerCase() === 'completed').length;
   const missedSessions = active ? Number(hydrogenSessionSummary.missedSessions || 0) : 0;
-  const remainingSessions = totalSessions > 0 ? Math.max(0, totalSessions - usedSessions) : 0;
+  const remainingSessions = active ? Math.max(0, totalSessions - usedSessions) : upcomingBookings.length;
   const usagePercent = totalSessions > 0 ? Math.min(100, Math.round((usedSessions / totalSessions) * 100)) : 0;
 
+  if (elements.membershipUsageTitle) {
+    elements.membershipUsageTitle.textContent = active ? 'Hydrogen Session Usage' : 'Booking Activity';
+  }
   if (elements.membershipUsageLabel) {
-    elements.membershipUsageLabel.textContent = totalSessions
-      ? `${usedSessions} of ${totalSessions} used`
-      : '0 of 0 used';
+    elements.membershipUsageLabel.textContent = active
+      ? (totalSessions ? `${usedSessions} of ${totalSessions} used` : '0 of 0 used')
+      : `${upcomingBookings.length} upcoming`;
   }
   if (elements.membershipUsageBar) {
-    elements.membershipUsageBar.style.width = `${usagePercent}%`;
+    elements.membershipUsageBar.style.width = `${active ? usagePercent : Math.min(100, Math.max(12, upcomingBookings.length * 12))}%`;
   }
   if (elements.membershipUsageNote) {
     elements.membershipUsageNote.textContent = active
       ? `${remainingSessions} hydrogen sessions remaining (per member)${missedSessions > 0 ? ` • Missed hydrogen sessions: ${missedSessions}` : ''}`
-      : 'Start a membership to begin tracking hydrogen sessions.';
+      : `You have ${allBookings.length} total booking${allBookings.length === 1 ? '' : 's'}${upcomingBookings.length ? ` • ${upcomingBookings.length} upcoming` : ''}. Upgrade to membership to unlock 16 included hydrogen sessions.`;
   }
 
-  const upcoming = hydrogenSessions
-    .filter((booking) => !isBookingSlotInPast(booking.bookingDate, booking.bookingTime))
-    .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`))[0];
+  const upcoming = active
+    ? hydrogenSessions
+        .filter((booking) => !isBookingSlotInPast(booking.bookingDate, booking.bookingTime))
+        .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`))[0]
+    : upcomingBookings[0];
 
   if (elements.membershipNextSessionTitle) {
-    elements.membershipNextSessionTitle.textContent = upcoming ? 'Hydrogen Session' : 'No hydrogen sessions scheduled';
+    elements.membershipNextSessionTitle.textContent = upcoming
+      ? active ? 'Hydrogen Session' : (upcoming.serviceName || 'Upcoming Booking')
+      : active ? 'No hydrogen sessions scheduled' : 'No upcoming bookings';
   }
   if (elements.membershipNextSessionMeta) {
     elements.membershipNextSessionMeta.textContent = upcoming
       ? formatDateTime(upcoming.bookingDate, upcoming.bookingTime)
-      : 'Book your next hydrogen session to keep momentum.';
+      : active ? 'Book your next hydrogen session to keep momentum.' : 'Book your next session to start building your dashboard.';
   }
-  if (active) {
-    renderMembershipCalendar((state.bookings || []).filter((booking) => String(booking.status || '').toLowerCase() !== 'cancelled'));
-  }
+  renderMembershipCalendar(allBookings);
 
   if (elements.membershipPeopleCard && elements.membershipPeopleList && elements.membershipPeopleMeta) {
     const planId = String(current.plan || '').trim();

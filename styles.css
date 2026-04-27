@@ -1049,10 +1049,12 @@ body {
   max-width: 1120px;
   margin-inline: auto;
   padding: clamp(1.5rem, 3vw, 2.4rem);
-  background:
+  font-family: Inter, "Helvetica Neue", Arial, sans-serif;
+  background: 
+    url('assets/member-choice-bg.png') center / cover no-repeat,
     radial-gradient(circle at 10% 10%, rgba(var(--brand-primary-rgb), 0.14), transparent 42%),
     radial-gradient(circle at 90% 15%, rgba(var(--brand-primary-rgb), 0.12), transparent 44%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 233, 225, 0.92));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 233, 225, 0.92)) !important;
   border-color: rgba(var(--brand-primary-rgb), 0.16);
   overflow: hidden;
   position: relative;
@@ -1080,14 +1082,31 @@ body {
 
 .member-choice-title {
   margin: 0.4rem 0 0.65rem;
-  font-size: clamp(1.85rem, 3.4vw, 3rem);
+  font-size: clamp(2.2rem, 4.2vw, 3.55rem);
   line-height: 1.05;
   letter-spacing: -0.02em;
   color: var(--brand-deep);
+  font-weight: 500;
 }
 
-.member-choice-title span {
-  color: var(--brand-primary);
+.member-choice-title-em {
+  color: #c56b3d;
+  font-style: italic;
+  font-weight: 500;
+}
+
+.member-choice-gate .auth-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.7rem;
+  opacity: 0.78;
+}
+
+.member-choice-hero-copy .membership-copy {
+  max-width: 42ch;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  color: rgba(var(--ink-rgb), 0.78);
 }
 
 .member-choice-primary-row {
@@ -1096,12 +1115,15 @@ body {
 
 .member-choice-photo-card {
   margin: 0;
-  border-radius: 22px;
+  border-radius: 999px;
   border: 1px solid rgba(var(--brand-primary-rgb), 0.18);
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 22px 40px rgba(86, 55, 34, 0.14);
   overflow: hidden;
   position: relative;
+  aspect-ratio: 1 / 1;
+  max-width: 420px;
+  margin-left: auto;
 }
 
 .member-choice-photo-card::after {
@@ -1116,11 +1138,11 @@ body {
 .member-choice-photo-card img {
   width: 100%;
   height: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 1 / 1;
   object-fit: cover;
   display: block;
   filter: saturate(1.02) contrast(1.02);
-  border-radius: 28px;
+  border-radius: inherit;
   box-shadow: 0 30px 80px rgba(0,0,0,0.15);
 }
 
@@ -1336,6 +1358,7 @@ body {
   box-shadow: 0 18px 38px rgba(54, 30, 15, 0.08);
   overflow: hidden;
   padding:32px;
+  position: relative;
 }
 
 .member-choice-comparison-head {
@@ -1365,17 +1388,6 @@ body {
     radial-gradient(circle at 14% 14%, rgba(var(--brand-primary-rgb), 0.08), transparent 35%),
     radial-gradient(circle at 88% 8%, rgba(var(--brand-primary-rgb), 0.06), transparent 30%),
     transparent;
-}
-.member-choice-comparison::before {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 200px;
-  height: 200px;
-  background: url('assets/leaf.png') no-repeat;
-  background-size: contain;
-  opacity: 0.12;
 }
 @media (max-width: 880px) {
   .member-choice-hero {
@@ -1699,7 +1711,7 @@ body {
   margin-top: 0.35rem;
   margin-bottom: 1.1rem;
   font-family: "Times New Roman", Georgia, serif;
-  font-size: clamp(2.2rem, 3.6vw, 3.4rem);
+  font-size: clamp(1.85rem, 3vw, 2.7rem);
 }
 
 .member-choice-experience-title span {
@@ -8435,10 +8447,12 @@ table tbody td {
   overflow: hidden;
   isolation: isolate;
   background:
+    url('assets/member-choice-bg.png') center / cover no-repeat,
     radial-gradient(900px 520px at 10% 8%, rgba(255, 255, 255, 0.62), transparent 60%),
     radial-gradient(840px 520px at 95% 10%, rgba(216, 183, 163, 0.32), transparent 64%),
     radial-gradient(980px 560px at 50% 100%, rgba(196, 106, 60, 0.16), transparent 72%),
     linear-gradient(135deg, var(--lux-bg-1) 0%, var(--lux-bg-2) 32%, var(--lux-bg-3) 58%, var(--lux-bg-4) 84%, var(--lux-bg-5) 120%);
+  background-blend-mode: multiply, normal, normal, normal, normal;
   border: 1px solid var(--lux-border);
   border-radius: 30px;
   box-shadow: var(--lux-soft-shadow);
@@ -8451,11 +8465,12 @@ table tbody td {
   inset: 0;
   pointer-events: none;
   background:
+    url('assets/member-choice-bg.png') center / cover no-repeat,
     radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.22) 0 2px, transparent 2px),
     radial-gradient(circle at 88% 72%, rgba(255, 255, 255, 0.16) 0 2px, transparent 2px);
   background-size: 14px 14px, 16px 16px;
-  opacity: 0.12;
-  mix-blend-mode: soft-light;
+  opacity: 0.18;
+  mix-blend-mode: multiply;
 }
 
 #memberChoiceGate.member-choice-gate::after {
@@ -8466,7 +8481,7 @@ table tbody td {
   background:
     radial-gradient(500px 180px at 25% 0%, rgba(255, 255, 255, 0.4), transparent 65%),
     radial-gradient(380px 140px at 80% 0%, rgba(255, 255, 255, 0.34), transparent 70%);
-  opacity: 0.45;
+  opacity: 0.38;
 }
 
 #memberChoiceGate .member-choice-topbar,
@@ -8613,12 +8628,12 @@ table tbody td {
 
 #memberChoiceGate .member-choice-card-plan {
   font-family: "Times New Roman", Georgia, serif;
-  font-size: 2.55rem;
+  font-size: 2.15rem;
 }
 
 #memberChoiceGate .member-choice-card-price {
   font-family: "Times New Roman", Georgia, serif;
-  font-size: clamp(3rem, 5vw, 4rem);
+  font-size: clamp(2.35rem, 4.2vw, 3.2rem);
 }
 
 #memberChoiceGate .member-choice-card-price-unit {
@@ -8786,7 +8801,7 @@ table tbody td {
   }
 
   #memberChoiceGate .member-choice-card-price {
-    font-size: clamp(2.45rem, 12vw, 3.2rem);
+    font-size: clamp(2.2rem, 10vw, 2.9rem);
   }
 
   #memberChoiceGate .member-choice-matrix-side {
@@ -8840,15 +8855,7 @@ body::before {
 }
 
 .leaf {
-  position: absolute;
-  pointer-events: none;
-  opacity: 0.06;
-  filter: blur(1px);
-  mix-blend-mode: multiply;
-  z-index: 0;
-  background-repeat: no-repeat;
-  background-size: contain;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 260'%3E%3Cg fill='none' stroke='%23B05A2B' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M108 250V34'/%3E%3Cpath d='M108 78c-26-14-42-35-48-62 28 9 47 27 58 56'/%3E%3Cpath d='M108 100c31-15 52-38 60-69-33 9-55 28-66 60'/%3E%3Cpath d='M108 138c-26-13-43-33-50-58 30 8 50 24 60 50'/%3E%3Cpath d='M108 160c31-14 54-35 62-61-33 9-56 26-68 53'/%3E%3Cpath d='M108 196c-24-13-40-30-46-52 27 8 45 22 54 43'/%3E%3Cpath d='M108 212c29-13 49-30 56-53-30 8-50 21-61 42'/%3E%3C/g%3E%3C/svg%3E");
+  display: none;
 }
 
 .leaf-top-right {
@@ -9428,7 +9435,7 @@ h2, h3 {
   margin: 0;
   color: #221E1A;
   font-family: "Playfair Display", "Cormorant Garamond", "Times New Roman", Georgia, serif;
-  font-size: 58px;
+  font-size: clamp(2.1rem, 3.6vw, 3.1rem);
   font-weight: 400;
   line-height: 0.98;
   letter-spacing: -0.8px;
@@ -9503,7 +9510,7 @@ h2, h3 {
   text-align: center;
   color: #2B241F;
   font-family: Inter, "Helvetica Neue", Arial, sans-serif;
-  font-size: 48px;
+  font-size: 1rem;
   font-weight: 500;
 }
 
@@ -9518,7 +9525,9 @@ h2, h3 {
 
 #cmp-perfect-01 .cmp-pricing-table-row > div:nth-child(2),
 #cmp-perfect-01 .cmp-pricing-table-row > div:nth-child(3) {
-  font-size: 48px;
+  font-size: clamp(1.2rem, 2vw, 2.35rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
   font-weight: 500;
 }
 
@@ -9539,7 +9548,7 @@ h2, h3 {
   }
 
   #cmp-perfect-01 .cmp-pricing-headline h3 {
-    font-size: 46px;
+    font-size: 2.55rem;
   }
 
   #cmp-perfect-01 .cmp-pricing-headline p {
@@ -9584,7 +9593,7 @@ h2, h3 {
   }
 
   #cmp-perfect-01 .cmp-pricing-headline h3 {
-    font-size: 40px;
+    font-size: 2.25rem;
   }
 
   #cmp-perfect-01 .cmp-pricing-table-wrap {
@@ -9603,6 +9612,16 @@ h2, h3 {
 
   #cmp-perfect-01 .cmp-pricing-table-row > div:nth-child(2),
   #cmp-perfect-01 .cmp-pricing-table-row > div:nth-child(3) {
-    font-size: 34px;
+    font-size: clamp(1.75rem, 4.2vw, 2.35rem);
   }
+}
+
+/* Landing page serif typography (match reference design) */
+.member-choice-brand strong,
+.member-choice-title,
+.member-choice-card-plan,
+.member-choice-card-price,
+#cmp-perfect-01 .cmp-pricing-table-row > div:nth-child(2),
+#cmp-perfect-01 .cmp-pricing-table-row > div:nth-child(3) {
+  font-family: "Playfair Display", "Cormorant Garamond", "Times New Roman", Georgia, serif;
 }

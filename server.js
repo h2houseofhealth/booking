@@ -11,7 +11,6 @@ const nodemailer = require('nodemailer');
 const sgMail = require('@sendgrid/mail');
 const Razorpay = require('razorpay');
 const multer = require('multer');
-const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
 loadEnvFromFile(path.join(__dirname, '.env'));
 
@@ -36,15 +35,6 @@ const SENDGRID_API_KEY = normalizeEnvValue(process.env.SENDGRID_API_KEY);
 const SENDGRID_FROM_EMAIL = normalizeEnvValue(
   process.env.SENDGRID_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER || ''
 );
-const DEFAULT_INVOICE_SETTINGS = {
-  invoice_prefix: normalizeEnvValue(process.env.INVOICE_PREFIX || 'H2'),
-  business_name: normalizeEnvValue(process.env.INVOICE_BUSINESS_NAME || 'H2 House Of Health'),
-  business_address: normalizeEnvValue(process.env.INVOICE_BUSINESS_ADDRESS || ''),
-  business_phone: normalizeEnvValue(process.env.INVOICE_BUSINESS_PHONE || ''),
-  business_email: normalizeEnvValue(process.env.INVOICE_BUSINESS_EMAIL || SENDGRID_FROM_EMAIL || ''),
-  business_gstin: normalizeEnvValue(process.env.INVOICE_BUSINESS_GSTIN || ''),
-  footer_note: normalizeEnvValue(process.env.INVOICE_FOOTER_NOTE || 'This is a system-generated invoice.'),
-};
 const AVATAR_MAX_SIZE_BYTES = 10 * 1024 * 1024;
 const SEED_DEMO_DOCTORS = normalizeEnvValue(process.env.SEED_DEMO_DOCTORS || 'false').toLowerCase() === 'true';
 const SES_API_REGION = (
@@ -60,10 +50,6 @@ const SES_API_SECRET_ACCESS_KEY = (
   ''
 ).trim();
 const SES_API_SESSION_TOKEN = normalizeEnvValue(process.env.SES_API_SESSION_TOKEN || process.env.AWS_SESSION_TOKEN || '');
-const MISSED_NOTIFICATION_SWEEP_INTERVAL_MS = Math.max(
-  60 * 1000,
-  Number(process.env.MISSED_NOTIFICATION_SWEEP_INTERVAL_MS || 5 * 60 * 1000)
-);
 
 if (SENDGRID_API_KEY) {
   sgMail.setApiKey(SENDGRID_API_KEY);
@@ -111,16 +97,6 @@ const SERVICE_CATALOG = [
   },
   {
     category: 'HYDROGEN SESSION',
-    name: 'H2 2 Month Program (32 Sessions)',
-    priceInr: 48000,
-    nonMemberPriceInr: 96000,
-    memberPriceInr: 48000,
-    includes: '32 Hydrogen Sessions in 2 months',
-    description:
-      'Extended two-month hydrogen program for consistent support and deeper wellness outcomes. Non-member pricing: Rs. 96,000.',
-  },
-  {
-    category: 'HYDROGEN SESSION',
     name: 'H2 Intensive 1 Month (30 Sessions)',
     priceInr: 46000,
     nonMemberPriceInr: 90000,
@@ -138,13 +114,6 @@ const SERVICE_CATALOG = [
     includes: '90 Hydrogen Sessions in 3 months',
     description:
       'Long-cycle intensive plan built for deep and sustained wellness transformation. Non-member pricing: Rs. 1,50,000.',
-  },
-  {
-    category: 'EXPERIENCE SESSION',
-    name: 'Demo Session',
-    priceInr: 4000,
-    includes: '30 min hydrogen therapy + consultation.',
-    description: 'Demo Session for non-members.',
   },
   {
     category: 'MEMBERSHIP SERVICES',
@@ -291,7 +260,7 @@ const MEMBERSHIP_PLANS = [
     name: '1 Person Membership',
     peopleCount: 1,
     priceInr: 84000,
-    validityDays: 365,
+    validityDays: 90,
     h2SessionsIncluded: 16,
     perks:
       'Includes lab tests, oxidative stress marker test, radiology services, concierge primary care, and 16 H2 sessions.',
@@ -301,7 +270,7 @@ const MEMBERSHIP_PLANS = [
     name: '2 Person Membership',
     peopleCount: 2,
     priceInr: 160000,
-    validityDays: 365,
+    validityDays: 90,
     h2SessionsIncluded: 32,
     perks: '',
   },
@@ -310,7 +279,7 @@ const MEMBERSHIP_PLANS = [
     name: '4 Person Membership',
     peopleCount: 4,
     priceInr: 288000,
-    validityDays: 365,
+    validityDays: 90,
     h2SessionsIncluded: 64,
     perks: '',
   },
@@ -319,29 +288,23 @@ const MEMBERSHIP_PLANS = [
     name: 'Add Person',
     peopleCount: 1,
     priceInr: 78000,
-    validityDays: 365,
+    validityDays: 90,
     h2SessionsIncluded: 16,
     perks:
       'Add one more member to an existing plan with lab tests, oxidative stress marker test, radiology services, and hydrogen pricing benefits.',
   },
 ];
-const HYDROGEN_FREE_SESSIONS_PER_USER = 16;
-const MEMBERSHIP_VALIDITY_DAYS = Number(MEMBERSHIP_PLANS.find((plan) => plan.id === 'h2_single')?.validityDays || 365);
-const DEFAULT_MEMBERSHIP_INCLUDED_HYDROGEN_SESSIONS = 16;
+const MEMBERSHIP_VALIDITY_DAYS = Number(MEMBERSHIP_PLANS.find((plan) => plan.id === 'h2_single')?.validityDays || 90);
+
 const app = express();
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "*");
-  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  next();
-});
-app.use(express.json());
 const cors = require("cors");
-app.use(cors());
+app.use(cors({
+  origin: "*",
+  credentials: false,
+}));
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const uploadsDir = path.resolve(process.env.UPLOADS_DIR || path.join(__dirname, 'uploads'));
 const dbPath = path.join(dataDir, 'booking.db');
-const invoiceLetterheadPath = path.resolve(process.env.INVOICE_LETTERHEAD_PATH || path.join(__dirname, 'assets', 'brand', 'h2-letterhead.pdf'));
 
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
@@ -366,7 +329,6 @@ migrate();
 seedAdmin();
 
 const requestCounters = new Map();
-let missedNotificationSweepRunning = false;
 
 function loadEnvFromFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -1054,10 +1016,7 @@ app.get('/api/admin/ses/identity-status', requireAuth, requireAdmin, async (req,
 });
 
 app.get('/api/services', requireAuth, (req, res) => {
-  const membershipHydrogenCoverage = getHydrogenMembershipCoverage(req.user, { userId: req.user.id });
-  const services = getVisibleServicesForUser(req.user).map((service) =>
-    toServiceResponse(service, req.user, { membershipHydrogenCoverage })
-  );
+  const services = getVisibleServicesForUser(req.user).map((service) => toServiceResponse(service, req.user));
   res.json({ services, membershipActive: isMembershipActiveForUser(req.user) });
 });
 
@@ -1153,7 +1112,6 @@ app.get('/api/services/availability', requireAuth, (req, res) => {
 
 app.get('/api/membership/plans', requireAuth, (req, res) => {
   const active = isMembershipActiveForUser(req.user);
-  const individualH2SessionsIncluded = getMembershipHydrogenSessionAllowance(req.user);
   return res.json({
     active,
     current: {
@@ -1163,191 +1121,8 @@ app.get('/api/membership/plans', requireAuth, (req, res) => {
       expiresAt: req.user.membershipExpiresAt || null,
       peopleCount: req.user.membershipPeopleCount ?? null,
       subscriptionId: req.user.membershipSubscriptionId || null,
-      individualH2SessionsIncluded,
     },
     plans: MEMBERSHIP_PLANS,
-  });
-});
-
-function getMembershipSubscriptionIdForRequestUser(user) {
-  const explicit = String(user?.membershipSubscriptionId || '').trim();
-  if (explicit) return explicit;
-  return getMembershipSubscriptionId(user?.id);
-}
-
-function listMembershipSubscriptionMembers(subscriptionId) {
-  const normalized = String(subscriptionId || '').trim();
-  if (!normalized) return [];
-  refreshMembershipSubscriptionStates();
-  return db
-    .prepare(
-      `SELECT id, user_id AS userId, email, name, place, contact_number AS contactNumber,
-              is_registered AS isRegistered, created_at AS createdAt, updated_at AS updatedAt
-       FROM membership_subscription_members
-       WHERE subscription_id = ?
-       ORDER BY id ASC`
-    )
-    .all(normalized);
-}
-
-function ensureOwnerMembershipSubscription(user) {
-  const subscriptionId = getMembershipSubscriptionIdForRequestUser(user);
-  if (!subscriptionId) return { subscriptionId: '', subscription: null };
-
-  let subscription = getMembershipSubscriptionById(subscriptionId);
-  if (subscription && isMembershipSubscriptionActive(subscription)) {
-    return { subscriptionId, subscription };
-  }
-
-  const membershipActive = isMembershipActiveForUser(user);
-  if (!membershipActive) {
-    return { subscriptionId, subscription: null };
-  }
-
-  const startedAt = user?.membershipStartedAt || new Date().toISOString();
-  const planId = String(user?.membershipPlan || '').trim() || 'h2_single';
-  const plan =
-    MEMBERSHIP_PLANS.find((item) => item.id === planId) ||
-    MEMBERSHIP_PLANS.find((item) => item.id === 'h2_single') ||
-    null;
-  const expiresAt =
-    user?.membershipExpiresAt ||
-    new Date(new Date(startedAt).getTime() + Number(plan?.validityDays || MEMBERSHIP_VALIDITY_DAYS) * 24 * 60 * 60 * 1000).toISOString();
-  const peopleCount = Number(user?.membershipPeopleCount || plan?.peopleCount || 1);
-
-  db.prepare(
-    `INSERT INTO membership_subscriptions (
-      subscription_id, owner_user_id, plan_id, people_count, status, started_at, expires_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, 'active', ?, ?, datetime('now'), datetime('now'))
-    ON CONFLICT(subscription_id) DO UPDATE SET
-      owner_user_id = excluded.owner_user_id,
-      plan_id = excluded.plan_id,
-      people_count = excluded.people_count,
-      status = 'active',
-      started_at = excluded.started_at,
-      expires_at = excluded.expires_at,
-      updated_at = datetime('now')`
-  ).run(subscriptionId, Number(user.id), planId, peopleCount, startedAt, expiresAt);
-
-  const ownerEmail = String(user?.email || '').trim().toLowerCase();
-  const ownerExists = ownerEmail
-    ? db
-        .prepare(
-          `SELECT 1
-           FROM membership_subscription_members
-           WHERE subscription_id = ? AND email = ?
-           LIMIT 1`
-        )
-        .get(subscriptionId, ownerEmail)
-    : null;
-
-  if (!ownerExists && ownerEmail) {
-    db.prepare(
-      `INSERT INTO membership_subscription_members (
-        subscription_id, user_id, email, name, place, contact_number, is_registered, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))`
-    ).run(
-      subscriptionId,
-      Number(user.id),
-      ownerEmail,
-      String(user?.name || '').trim() || 'Member',
-      '',
-      String(user?.mobile || '').trim()
-    );
-  }
-
-  subscription = getMembershipSubscriptionById(subscriptionId);
-  return { subscriptionId, subscription };
-}
-
-app.get('/api/membership/members', requireAuth, (req, res) => {
-  if (req.user.role !== 'user') {
-    return res.status(403).json({ message: 'Only users can view membership members.' });
-  }
-
-  const { subscriptionId, subscription } = ensureOwnerMembershipSubscription(req.user);
-  if (!subscription || !isMembershipSubscriptionActive(subscription)) {
-    return res.status(409).json({ message: 'Active membership was not found for this account.' });
-  }
-
-  const members = listMembershipSubscriptionMembers(subscriptionId);
-  const slotsRemaining = Math.max(0, Number(subscription.peopleCount || 1) - members.length);
-  return res.json({
-    subscription: {
-      subscriptionId: subscription.subscriptionId,
-      ownerUserId: subscription.ownerUserId,
-      planId: subscription.planId,
-      peopleCount: Number(subscription.peopleCount || 1),
-      status: subscription.status,
-      startedAt: subscription.startedAt,
-      expiresAt: subscription.expiresAt,
-    },
-    members,
-    slotsRemaining,
-  });
-});
-
-app.post('/api/membership/members', requireAuth, (req, res) => {
-  if (req.user.role !== 'user') {
-    return res.status(403).json({ message: 'Only users can add membership members.' });
-  }
-
-  const { subscriptionId, subscription } = ensureOwnerMembershipSubscription(req.user);
-  if (!subscription || !isMembershipSubscriptionActive(subscription)) {
-    return res.status(409).json({ message: 'Active membership was not found for this account.' });
-  }
-
-  const name = String(req.body?.name || '').trim();
-  const place = String(req.body?.place || '').trim();
-  const rawEmail = String(req.body?.email || '').trim().toLowerCase();
-  const contactNumber = String(req.body?.contactNumber || '').trim();
-
-  if (!name || !place || !rawEmail || !contactNumber) {
-    return res.status(400).json({ message: 'name, place, email, and contactNumber are required.' });
-  }
-
-  const members = listMembershipSubscriptionMembers(subscriptionId);
-  const maxPeopleCount = Number(subscription.peopleCount || 1);
-  if (members.length >= maxPeopleCount) {
-    return res.status(409).json({ message: `Membership already has ${maxPeopleCount} member(s).` });
-  }
-
-  if (members.some((member) => String(member.email || '').trim().toLowerCase() === rawEmail)) {
-    return res.status(409).json({ message: 'This email is already added to your membership.' });
-  }
-
-  const conflict = validateSubscriptionMemberConflicts(subscriptionId, [{ email: rawEmail }]);
-  if (conflict.error) {
-    return res.status(409).json({ message: conflict.error });
-  }
-
-  const existingUser = getUserProfileByEmail(rawEmail);
-  const userId = Number(existingUser?.id || 0) || null;
-  const isRegistered = userId ? 1 : 0;
-
-  db.prepare(
-    `INSERT INTO membership_subscription_members (
-      subscription_id, user_id, email, name, place, contact_number, is_registered, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
-  ).run(subscriptionId, userId, rawEmail, name, place, contactNumber, isRegistered);
-
-  syncMembershipStatusForSubscription(subscriptionId);
-  syncMembershipForUser({ email: rawEmail });
-
-  const nextMembers = listMembershipSubscriptionMembers(subscriptionId);
-  const slotsRemaining = Math.max(0, maxPeopleCount - nextMembers.length);
-  return res.json({
-    subscription: {
-      subscriptionId: subscription.subscriptionId,
-      ownerUserId: subscription.ownerUserId,
-      planId: subscription.planId,
-      peopleCount: maxPeopleCount,
-      status: subscription.status,
-      startedAt: subscription.startedAt,
-      expiresAt: subscription.expiresAt,
-    },
-    members: nextMembers,
-    slotsRemaining,
   });
 });
 
@@ -1730,68 +1505,6 @@ app.get('/api/admin/users', requireAuth, requireAdmin, (_req, res) => {
   res.json({ users });
 });
 
-app.get('/api/admin/invoice-settings', requireAuth, requireAdmin, (_req, res) => {
-  const settings = getInvoiceSettings();
-  res.json({
-    settings: {
-      invoicePrefix: settings.invoicePrefix,
-      businessName: settings.businessName,
-      businessAddress: settings.businessAddress,
-      businessPhone: settings.businessPhone,
-      businessEmail: settings.businessEmail,
-      businessGstin: settings.businessGstin,
-      footerNote: settings.footerNote,
-    },
-  });
-});
-
-app.put('/api/admin/invoice-settings', requireAuth, requireAdmin, (req, res) => {
-  const nextSettings = {
-    invoice_prefix: String(req.body?.invoicePrefix || '').trim(),
-    business_name: String(req.body?.businessName || '').trim(),
-    business_address: String(req.body?.businessAddress || '').trim(),
-    business_phone: String(req.body?.businessPhone || '').trim(),
-    business_email: String(req.body?.businessEmail || '').trim(),
-    business_gstin: String(req.body?.businessGstin || '').trim(),
-    footer_note: String(req.body?.footerNote || '').trim(),
-  };
-
-  if (!nextSettings.business_name) {
-    return res.status(400).json({ message: 'Business name is required.' });
-  }
-  if (nextSettings.business_email && !isValidEmail(nextSettings.business_email)) {
-    return res.status(400).json({ message: 'Business email must be a valid email address.' });
-  }
-
-  const upsert = db.prepare(
-    `INSERT INTO app_settings (setting_key, setting_value, updated_at)
-     VALUES (?, ?, datetime('now'))
-     ON CONFLICT(setting_key) DO UPDATE SET
-       setting_value = excluded.setting_value,
-       updated_at = datetime('now')`
-  );
-  const txn = db.transaction((entries) => {
-    for (const [key, value] of Object.entries(entries)) {
-      upsert.run(key, value);
-    }
-  });
-  txn(nextSettings);
-
-  const settings = getInvoiceSettings();
-  res.json({
-    message: 'Invoice settings updated.',
-    settings: {
-      invoicePrefix: settings.invoicePrefix,
-      businessName: settings.businessName,
-      businessAddress: settings.businessAddress,
-      businessPhone: settings.businessPhone,
-      businessEmail: settings.businessEmail,
-      businessGstin: settings.businessGstin,
-      footerNote: settings.footerNote,
-    },
-  });
-});
-
 app.post('/api/admin/users', requireAuth, requireAdmin, (req, res) => {
   const name = String(req.body?.name || '').trim();
   const email = String(req.body?.email || '').trim().toLowerCase();
@@ -1889,11 +1602,8 @@ app.post('/api/admin/services', requireAuth, requireAdmin, (req, res) => {
     return res.json({ services: [], membershipActive: false, resolvedCustomer: null });
   }
 
-  const membershipHydrogenCoverage = getHydrogenMembershipCoverage(resolvedCustomer.user, {
-    userId: resolvedCustomer.user?.id,
-  });
   const services = getVisibleServicesForUser(resolvedCustomer.user).map((service) =>
-    toServiceResponse(service, resolvedCustomer.user, { membershipHydrogenCoverage })
+    toServiceResponse(service, resolvedCustomer.user)
   );
   res.json({
     services,
@@ -1909,100 +1619,6 @@ app.post('/api/admin/services', requireAuth, requireAdmin, (req, res) => {
       membershipPeopleCount: resolvedCustomer.user.membershipPeopleCount ?? null,
     },
   });
-});
-
-app.get('/api/bookings/:bookingId/notes', requireAuth, requireAdmin, (req, res) => {
-  const bookingId = Number(req.params.bookingId);
-  if (!Number.isInteger(bookingId)) {
-    return res.status(400).json({ message: 'invalid booking id' });
-  }
-  const booking = db.prepare('SELECT id FROM bookings WHERE id = ?').get(bookingId);
-  if (!booking) {
-    return res.status(404).json({ message: 'booking not found' });
-  }
-  const notes = db
-    .prepare(
-      `SELECT id, booking_id AS bookingId, note_text AS noteText,
-              created_at AS createdAt, updated_at AS updatedAt
-       FROM notes
-       WHERE booking_id = ?
-       ORDER BY created_at DESC`
-    )
-    .all(bookingId);
-  return res.json({ notes });
-});
-
-app.post('/api/notes', requireAuth, requireAdmin, (req, res) => {
-  const bookingId = Number(req.body?.bookingId || req.body?.booking_id || 0);
-  const noteText = String(req.body?.noteText || req.body?.note_text || '').trim();
-
-  if (!Number.isInteger(bookingId) || bookingId <= 0) {
-    return res.status(400).json({ message: 'bookingId is required' });
-  }
-  if (!noteText) {
-    return res.status(400).json({ message: 'noteText is required' });
-  }
-  const booking = db.prepare('SELECT id FROM bookings WHERE id = ?').get(bookingId);
-  if (!booking) {
-    return res.status(404).json({ message: 'booking not found' });
-  }
-
-  const now = new Date().toISOString();
-  const result = db
-    .prepare(
-      `INSERT INTO notes (booking_id, note_text, created_at, updated_at)
-       VALUES (?, ?, ?, ?)`
-    )
-    .run(bookingId, noteText, now, now);
-  const note = db
-    .prepare(
-      `SELECT id, booking_id AS bookingId, note_text AS noteText,
-              created_at AS createdAt, updated_at AS updatedAt
-       FROM notes
-       WHERE id = ?`
-    )
-    .get(result.lastInsertRowid);
-  return res.json({ note });
-});
-
-app.put('/api/notes/:id', requireAuth, requireAdmin, (req, res) => {
-  const noteId = Number(req.params.id);
-  const noteText = String(req.body?.noteText || req.body?.note_text || '').trim();
-  if (!Number.isInteger(noteId)) {
-    return res.status(400).json({ message: 'invalid note id' });
-  }
-  if (!noteText) {
-    return res.status(400).json({ message: 'noteText is required' });
-  }
-  const existing = db.prepare('SELECT id FROM notes WHERE id = ?').get(noteId);
-  if (!existing) {
-    return res.status(404).json({ message: 'note not found' });
-  }
-
-  const now = new Date().toISOString();
-  db.prepare('UPDATE notes SET note_text = ?, updated_at = ? WHERE id = ?').run(noteText, now, noteId);
-  const note = db
-    .prepare(
-      `SELECT id, booking_id AS bookingId, note_text AS noteText,
-              created_at AS createdAt, updated_at AS updatedAt
-       FROM notes
-       WHERE id = ?`
-    )
-    .get(noteId);
-  return res.json({ note });
-});
-
-app.delete('/api/notes/:id', requireAuth, requireAdmin, (req, res) => {
-  const noteId = Number(req.params.id);
-  if (!Number.isInteger(noteId)) {
-    return res.status(400).json({ message: 'invalid note id' });
-  }
-  const existing = db.prepare('SELECT id FROM notes WHERE id = ?').get(noteId);
-  if (!existing) {
-    return res.status(404).json({ message: 'note not found' });
-  }
-  db.prepare('DELETE FROM notes WHERE id = ?').run(noteId);
-  return res.status(204).send();
 });
 
 app.get('/api/admin/membership-orders', requireAuth, requireAdmin, (_req, res) => {
@@ -2052,37 +1668,6 @@ app.get('/api/admin/membership-orders', requireAuth, requireAdmin, (_req, res) =
     });
 
   res.json({ orders });
-});
-
-app.get('/api/membership-orders/:orderId/invoice', requireAuth, async (req, res) => {
-  try {
-    const source = getMembershipInvoiceSource(req.params.orderId, req.user);
-    const pdfBytes = await renderInvoicePdf(source, source.invoiceRecord);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${source.fileName}"`);
-    return res.send(Buffer.from(pdfBytes));
-  } catch (error) {
-    const statusCode = Number(error?.statusCode || 500);
-    if (statusCode >= 500) {
-      console.error('Membership invoice generation failed:', error);
-    }
-    return res.status(statusCode).json({ message: error?.message || 'Unable to generate membership invoice.' });
-  }
-});
-
-app.get('/api/membership-orders/:orderId/invoice-link', requireAuth, (req, res) => {
-  try {
-    const source = getMembershipInvoiceSource(req.params.orderId, req.user);
-    return res.json({
-      invoiceUrl: buildMembershipInvoiceLink(req, req.params.orderId, source.invoiceRecord.userId),
-    });
-  } catch (error) {
-    const statusCode = Number(error?.statusCode || 500);
-    if (statusCode >= 500) {
-      console.error('Membership invoice link generation failed:', error);
-    }
-    return res.status(statusCode).json({ message: error?.message || 'Unable to generate membership invoice link.' });
-  }
 });
 
 app.get('/api/admin/discount-phones', requireAuth, requireAdmin, (_req, res) => {
@@ -2516,47 +2101,6 @@ app.get('/api/bookings', requireAuth, (req, res) => {
   res.json({ bookings: rows.map(applyHoldMeta) });
 });
 
-app.get('/api/bookings/:bookingId/invoice', requireAuth, async (req, res) => {
-  const bookingId = Number(req.params.bookingId);
-  if (!Number.isInteger(bookingId)) {
-    return res.status(400).json({ message: 'invalid booking id' });
-  }
-
-  try {
-    const source = getServiceInvoiceSource(bookingId, req.user);
-    const pdfBytes = await renderInvoicePdf(source, source.invoiceRecord);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${source.fileName}"`);
-    return res.send(Buffer.from(pdfBytes));
-  } catch (error) {
-    const statusCode = Number(error?.statusCode || 500);
-    if (statusCode >= 500) {
-      console.error('Service invoice generation failed:', error);
-    }
-    return res.status(statusCode).json({ message: error?.message || 'Unable to generate invoice.' });
-  }
-});
-
-app.get('/api/bookings/:bookingId/invoice-link', requireAuth, (req, res) => {
-  const bookingId = Number(req.params.bookingId);
-  if (!Number.isInteger(bookingId)) {
-    return res.status(400).json({ message: 'invalid booking id' });
-  }
-
-  try {
-    const source = getServiceInvoiceSource(bookingId, req.user);
-    return res.json({
-      invoiceUrl: buildBookingInvoiceLink(req, bookingId, source.invoiceRecord.userId),
-    });
-  } catch (error) {
-    const statusCode = Number(error?.statusCode || 500);
-    if (statusCode >= 500) {
-      console.error('Booking invoice link generation failed:', error);
-    }
-    return res.status(statusCode).json({ message: error?.message || 'Unable to generate invoice link.' });
-  }
-});
-
 app.get('/api/doctor/bookings', requireAuth, requireDoctor, (req, res) => {
   return res.status(410).json({ message: 'Doctor bookings are currently disabled.' });
 });
@@ -2677,17 +2221,8 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
     }
   }
   const addOnPriceInr = addOnService ? getEffectiveServicePriceInr(addOnService, req.user) : 0;
-
-  const membershipActive = isMembershipActiveForUser(req.user);
-  const usedHydrogenSessions = membershipActive ? countHydrogenSessionsUsedForMembership(req.user.id, req.user) : 0;
-  const freeRemaining = membershipActive ? Math.max(0, HYDROGEN_FREE_SESSIONS_PER_USER - usedHydrogenSessions) : 0;
-  const freeSessionsApplied = membershipActive ? Math.min(totalSessions, freeRemaining) : 0;
-  const chargeableHydrogenSessions = membershipActive ? Math.max(0, totalSessions - freeSessionsApplied) : 0;
-  const memberSessionPriceInr = membershipActive ? Number(extraSessionPriceInr || 0) : 0;
-  const hydrogenAmountInr = membershipActive
-    ? chargeableHydrogenSessions * memberSessionPriceInr
-    : Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions;
-  const totalAmountInr = Number(hydrogenAmountInr || 0) + Number(addOnPriceInr || 0);
+  const totalAmountInr =
+    Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions + Number(addOnPriceInr || 0);
   const hydrogenDailyLimitConflict = validateHydrogenDailySessionLimit(req.user.id, normalizedSlots);
   if (hydrogenDailyLimitConflict) {
     return res.status(409).json({
@@ -2702,9 +2237,6 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
         message: getIvCooldownResponseMessage(cooldownConflict),
       });
     }
-  }
-  if (totalAmountInr <= 0) {
-    return res.status(409).json({ message: 'This package is covered by membership. Use /api/hydrogen/book-pack to save it directly.' });
   }
   const amountInPaise = Math.max(100, Math.round(totalAmountInr * 100));
 
@@ -2821,21 +2353,6 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
 
     txn(normalizedSlots);
 
-    const firstGroupBooking = db
-      .prepare(
-        `SELECT id
-         FROM bookings
-         WHERE user_id = ? AND booking_group_id = ?
-         ORDER BY id ASC
-         LIMIT 1`
-      )
-      .get(req.user.id, bookingGroupId);
-    db.prepare(
-      `INSERT OR REPLACE INTO service_payment_orders (
-        order_id, user_id, booking_id, booking_group_id, original_amount_paise, amount_paise, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', datetime('now'))`
-    ).run(order.id, req.user.id, firstGroupBooking?.id || null, bookingGroupId, amountInPaise, amountInPaise);
-
     return res.json({
       keyId: RAZORPAY_KEY_ID,
       orderId: order.id,
@@ -2928,26 +2445,8 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
     }
   }
   const addOnPriceInr = addOnService ? getEffectiveServicePriceInr(addOnService, req.user) : 0;
-  const membershipCoverage = getHydrogenMembershipCoverage(req.user, { userId: req.user.id });
-  const pricingAdjustments = getHydrogenMembershipPricingAdjustments({
-    user: req.user,
-    userId: req.user.id,
-    hydrogenSessionCount: totalSessions,
-    packagePriceInr,
-    extraSessionPriceInr,
-    extraSessions,
-    addOnAmountInr: addOnPriceInr,
-    coverage: membershipCoverage,
-  });
-  const membershipActive = isMembershipActiveForUser(req.user);
-  const usedHydrogenSessions = Number(membershipCoverage.usedSessions || 0);
-  const freeSessionsApplied = Number(pricingAdjustments.membershipIncludedSessions || 0);
-  const chargeableHydrogenSessions = Math.max(0, totalSessions - freeSessionsApplied);
-  const memberSessionPriceInr = membershipActive ? Number(extraSessionPriceInr || 0) : 0;
-  const hydrogenAmountInr = Number(pricingAdjustments.hydrogenPayableAmountInr || 0);
-  const totalAmountInr = Number(pricingAdjustments.totalAmountInr || 0);
-  const bookingStatus = totalAmountInr <= 0 ? 'booked' : 'pending';
-  const bookingPaymentStatus = totalAmountInr <= 0 ? 'paid' : 'unpaid';
+  const totalAmountInr =
+    Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions + Number(addOnPriceInr || 0);
   const hydrogenDailyLimitConflict = validateHydrogenDailySessionLimit(req.user.id, normalizedSlots);
   if (hydrogenDailyLimitConflict) {
     return res.status(409).json({
@@ -2970,7 +2469,7 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
       `INSERT INTO bookings (
         user_id, doctor_id, client_name, client_email, client_phone,
         service_name, booking_date, booking_time, assigned_staff, status, payment_status, booking_group_id, notes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', ?, ?, ?)`
     );
     const countActiveForSlot = db.prepare(
       `SELECT
@@ -3009,8 +2508,6 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
           entry.bookingDate,
           entry.bookingTime,
           'H2 House Of Health',
-          bookingStatus,
-          bookingPaymentStatus,
           bookingGroupId,
           `Hydrogen package ${packageSessions} + extra ${extraSessions}`,
           getCurrentSqliteTimestamp()
@@ -3051,8 +2548,6 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
           addOnSlot.bookingDate,
           addOnSlot.bookingTime,
           'H2 House Of Health',
-          bookingStatus,
-          bookingPaymentStatus,
           bookingGroupId,
           `IV add-on for ${service.name} (Session ${addOnSessionIndex + 1})`,
           getCurrentSqliteTimestamp()
@@ -3079,8 +2574,6 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
       )
       .all(...createdIds);
 
-    const paymentBookingId = bookings.find((entry) => entry.paymentStatus !== 'paid')?.id || null;
-
     return res.status(201).json({
       message: 'Hydrogen bookings saved successfully.',
       summary: {
@@ -3088,21 +2581,10 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
         packageSessions,
         extraSessions,
         totalSessions,
-        packagePriceInr,
-        extraSessionPriceInr,
-        membershipActive,
-        freeLimitPerUser: HYDROGEN_FREE_SESSIONS_PER_USER,
-        usedHydrogenSessions,
-        freeSessionsApplied,
-        chargeableHydrogenSessions,
-        memberSessionPriceInr,
-        hydrogenAmountInr,
-        addOnAmountInr: Number(addOnPriceInr || 0),
         totalAmountInr,
         addOn: addOnSummary,
       },
       bookings,
-      paymentBookingId,
     });
   } catch (error) {
     return res.status(409).json({ message: error?.message || 'Unable to save hydrogen bookings' });
@@ -3185,17 +2667,8 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
     }
   }
   const addOnPriceInr = addOnService ? getEffectiveServicePriceInr(addOnService, targetUser) : 0;
-
-  const membershipActive = isMembershipActiveForUser(targetUser);
-  const usedHydrogenSessions = membershipActive ? countHydrogenSessionsUsedForMembership(targetUser.id, targetUser) : 0;
-  const freeRemaining = membershipActive ? Math.max(0, HYDROGEN_FREE_SESSIONS_PER_USER - usedHydrogenSessions) : 0;
-  const freeSessionsApplied = membershipActive ? Math.min(totalSessions, freeRemaining) : 0;
-  const chargeableHydrogenSessions = membershipActive ? Math.max(0, totalSessions - freeSessionsApplied) : 0;
-  const memberSessionPriceInr = membershipActive ? Number(extraSessionPriceInr || 0) : 0;
-  const hydrogenAmountInr = membershipActive
-    ? chargeableHydrogenSessions * memberSessionPriceInr
-    : Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions;
-  const totalAmountInr = Number(hydrogenAmountInr || 0) + Number(addOnPriceInr || 0);
+  const totalAmountInr =
+    Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions + Number(addOnPriceInr || 0);
   const hydrogenDailyLimitConflict = validateHydrogenDailySessionLimit(targetUser.id, normalizedSlots);
   if (hydrogenDailyLimitConflict) {
     return res.status(409).json({
@@ -3209,7 +2682,7 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
       `INSERT INTO bookings (
         user_id, doctor_id, client_name, client_email, client_phone,
         service_name, booking_date, booking_time, assigned_staff, status, payment_status, booking_group_id, notes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', ?, ?, ?)`
     );
     const countActiveForSlot = db.prepare(
       `SELECT
@@ -3225,15 +2698,9 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
     const inRequestCounter = new Map();
     const createdIds = [];
     let addOnSummary = null;
-    const freeSlotIndexes = new Set();
-    if (membershipActive && freeSessionsApplied > 0) {
-      const indexed = normalizedSlots.map((slot, idx) => ({ ...slot, idx }));
-      indexed.sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
-      indexed.slice(0, freeSessionsApplied).forEach((slot) => freeSlotIndexes.add(slot.idx));
-    }
 
     const txn = db.transaction((entries) => {
-      for (const [idx, entry] of entries.entries()) {
+      for (const entry of entries) {
         const key = `${entry.bookingDate}|${entry.bookingTime}`;
         const alreadyInRequest = Number(inRequestCounter.get(key) || 0);
         const slotStats = countActiveForSlot.get(service.name, entry.bookingDate, entry.bookingTime) || {};
@@ -3244,7 +2711,6 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
         }
         inRequestCounter.set(key, alreadyInRequest + 1);
 
-        const paymentStatus = freeSlotIndexes.has(idx) ? 'paid' : 'unpaid';
         const result = insertBooking.run(
           targetUser.id,
           null,
@@ -3255,7 +2721,6 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
           entry.bookingDate,
           entry.bookingTime,
           'H2 House Of Health',
-          paymentStatus,
           bookingGroupId,
           `Hydrogen package ${packageSessions} + extra ${extraSessions} (booked by admin)`,
           getCurrentSqliteTimestamp()
@@ -3296,7 +2761,6 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
           addOnSlot.bookingDate,
           addOnSlot.bookingTime,
           'H2 House Of Health',
-          'unpaid',
           bookingGroupId,
           `IV add-on for ${service.name} (Session ${addOnSessionIndex + 1}) (booked by admin)`,
           getCurrentSqliteTimestamp()
@@ -3323,8 +2787,6 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
       )
       .all(...createdIds);
 
-    const paymentBookingId = bookings.find((entry) => entry.paymentStatus !== 'paid')?.id || null;
-
     return res.status(201).json({
       message: 'Hydrogen bookings saved successfully.',
       summary: {
@@ -3334,14 +2796,6 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
         totalSessions,
         packagePriceInr,
         extraSessionPriceInr,
-        membershipActive,
-        freeLimitPerUser: HYDROGEN_FREE_SESSIONS_PER_USER,
-        usedHydrogenSessions,
-        freeSessionsApplied,
-        chargeableHydrogenSessions,
-        memberSessionPriceInr,
-        hydrogenAmountInr,
-        addOnAmountInr: Number(addOnPriceInr || 0),
         totalAmountInr,
         addOn: addOnSummary,
       },
@@ -3355,8 +2809,7 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
         membershipExpiresAt: targetUser.membershipExpiresAt || null,
         membershipPeopleCount: targetUser.membershipPeopleCount ?? null,
       },
-      paymentLinkUrl: totalAmountInr > 0 && paymentBookingId ? buildBookingPaymentLink(req, paymentBookingId, targetUser.id) : '',
-      paymentBookingId,
+      paymentLinkUrl: totalAmountInr > 0 && bookings[0] ? buildBookingPaymentLink(req, bookings[0].id, targetUser.id) : '',
     });
   } catch (error) {
     return res.status(409).json({ message: error?.message || 'Unable to save hydrogen bookings' });
@@ -3578,20 +3031,8 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
     ) || service;
   const extraSessionPriceInr = getEffectiveServicePriceInr(singleSessionService, req.user);
   const addOnPriceInr = addOnService ? getEffectiveServicePriceInr(addOnService, req.user) : 0;
-  const membershipCoverage = getHydrogenMembershipCoverage(req.user, { userId: req.user.id });
-  const pricingAdjustments = getHydrogenMembershipPricingAdjustments({
-    user: req.user,
-    userId: req.user.id,
-    hydrogenSessionCount: totalSessions,
-    packagePriceInr,
-    extraSessionPriceInr,
-    extraSessions,
-    addOnAmountInr: addOnPriceInr,
-    hydrogenBookingIds: sortedHydrogenBookings.map((entry) => Number(entry.id)).filter((id) => Number.isInteger(id)),
-    coverage: membershipCoverage,
-  });
-  const totalAmountInr = Number(pricingAdjustments.totalAmountInr || 0);
-  const autoCoveredStatus = totalAmountInr <= 0 ? 1 : 0;
+  const totalAmountInr =
+    Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions + Number(addOnPriceInr || 0);
 
   try {
     const txn = db.transaction(() => {
@@ -3602,23 +3043,11 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
              booking_time = ?,
              assigned_staff = 'H2 House Of Health',
              notes = ?,
-             payment_status = CASE
-               WHEN payment_status = 'paid' THEN 'paid'
-               WHEN ? = 1 THEN 'paid'
-               ELSE 'unpaid'
-             END,
+             payment_status = CASE WHEN payment_status = 'paid' THEN 'paid' ELSE 'unpaid' END,
              payment_order_id = CASE WHEN payment_status = 'paid' THEN payment_order_id ELSE NULL END,
              payment_reference = CASE WHEN payment_status = 'paid' THEN payment_reference ELSE NULL END,
-             paid_at = CASE
-               WHEN payment_status = 'paid' THEN paid_at
-               WHEN ? = 1 THEN COALESCE(paid_at, datetime('now'))
-               ELSE NULL
-             END,
-             status = CASE
-               WHEN status = 'booked' THEN 'booked'
-               WHEN ? = 1 THEN 'booked'
-               ELSE 'pending'
-             END
+             paid_at = CASE WHEN payment_status = 'paid' THEN paid_at ELSE NULL END,
+             status = CASE WHEN status = 'booked' THEN 'booked' ELSE 'pending' END
          WHERE id = ?`
       );
       const updateAddOnBooking = db.prepare(
@@ -3628,30 +3057,18 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
              booking_time = ?,
              assigned_staff = 'H2 House Of Health',
              notes = ?,
-             payment_status = CASE
-               WHEN payment_status = 'paid' THEN 'paid'
-               WHEN ? = 1 THEN 'paid'
-               ELSE 'unpaid'
-             END,
+             payment_status = CASE WHEN payment_status = 'paid' THEN 'paid' ELSE 'unpaid' END,
              payment_order_id = CASE WHEN payment_status = 'paid' THEN payment_order_id ELSE NULL END,
              payment_reference = CASE WHEN payment_status = 'paid' THEN payment_reference ELSE NULL END,
-             paid_at = CASE
-               WHEN payment_status = 'paid' THEN paid_at
-               WHEN ? = 1 THEN COALESCE(paid_at, datetime('now'))
-               ELSE NULL
-             END,
-             status = CASE
-               WHEN status = 'booked' THEN 'booked'
-               WHEN ? = 1 THEN 'booked'
-               ELSE 'pending'
-             END
+             paid_at = CASE WHEN payment_status = 'paid' THEN paid_at ELSE NULL END,
+             status = CASE WHEN status = 'booked' THEN 'booked' ELSE 'pending' END
          WHERE id = ?`
       );
       const insertAddOnBooking = db.prepare(
         `INSERT INTO bookings (
           user_id, doctor_id, client_name, client_email, client_phone,
           service_name, booking_date, booking_time, assigned_staff, status, payment_status, booking_group_id, notes, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', ?, ?, ?)`
       );
 
       sortedHydrogenBookings.forEach((entry, index) => {
@@ -3661,9 +3078,6 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
           slot.bookingDate,
           slot.bookingTime,
           `Hydrogen package ${packageSessions} + extra ${extraSessions}`,
-          autoCoveredStatus,
-          autoCoveredStatus,
-          autoCoveredStatus,
           entry.id
         );
       });
@@ -3677,9 +3091,6 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
             addOnSlot.bookingDate,
             addOnSlot.bookingTime,
             addOnNote,
-            autoCoveredStatus,
-            autoCoveredStatus,
-            autoCoveredStatus,
             existingAddOnBooking.id
           );
         } else {
@@ -3693,8 +3104,6 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
             addOnSlot.bookingDate,
             addOnSlot.bookingTime,
             'H2 House Of Health',
-            autoCoveredStatus ? 'booked' : 'pending',
-            autoCoveredStatus ? 'paid' : 'unpaid',
             bookingGroupId,
             addOnNote,
             getCurrentSqliteTimestamp()
@@ -3734,13 +3143,7 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
         totalSessions,
         packagePriceInr,
         extraSessionPriceInr,
-        hydrogenSubtotalInr: Number(pricingAdjustments.hydrogenSubtotalInr || 0),
-        hydrogenIncludedDiscountInr: Number(pricingAdjustments.hydrogenIncludedDiscountInr || 0),
-        hydrogenPayableAmountInr: Number(pricingAdjustments.hydrogenPayableAmountInr || 0),
-        membershipIncludedSessions: Number(pricingAdjustments.membershipIncludedSessions || 0),
-        membershipIncludedSessionsTotal: Number(pricingAdjustments.membershipIncludedSessionsTotal || 0),
-        membershipSessionsRemaining: Number(pricingAdjustments.membershipSessionsRemaining || 0),
-        totalAmountInr: Number(pricingAdjustments.totalAmountInr || 0),
+        totalAmountInr,
         addOn: addOnSummary,
       },
       bookings,
@@ -3795,14 +3198,6 @@ app.post('/api/hydrogen/verify', requireAuth, (req, res) => {
        AND payment_order_id = ?`
   ).run(razorpayPaymentId, req.user.id, razorpayOrderId);
 
-  db.prepare(
-    `UPDATE service_payment_orders
-     SET status = 'paid',
-         payment_reference = ?,
-         paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END
-     WHERE order_id = ?`
-  ).run(razorpayPaymentId, razorpayOrderId);
-
   return res.json({ paid: true, bookingCount: bookings.length });
 });
 
@@ -3836,11 +3231,7 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
     req.user.role === 'admin'
       ? db
           .prepare(
-            `SELECT membership_status AS membershipStatus,
-                    membership_plan AS membershipPlan,
-                    membership_started_at AS membershipStartedAt,
-                    membership_expires_at AS membershipExpiresAt,
-                    membership_people_count AS membershipPeopleCount
+            `SELECT membership_status AS membershipStatus, membership_expires_at AS membershipExpiresAt
              FROM users
              WHERE id = ?`
           )
@@ -3918,14 +3309,6 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
     return res.status(400).json({ message: 'invalid status' });
   }
 
-  const isHydrogenService = String(selectedService?.category || '').toUpperCase() === 'HYDROGEN SESSION';
-  const hydrogenCoverage = isHydrogenService
-    ? getHydrogenMembershipCoverage(bookingOwner || req.user, { userId: existing.userId, excludeBookingIds: [bookingId] })
-    : null;
-  const autoCoveredHydrogen = Boolean(isHydrogenService && Number(hydrogenCoverage?.remainingSessions || 0) > 0);
-  const shouldMarkPaid = Boolean(selectedService?.membershipOnly || autoCoveredHydrogen);
-  const nextStatusResolved = shouldMarkPaid && nextStatus === 'pending' ? 'booked' : nextStatus;
-
   db.prepare(
     `UPDATE bookings SET
       doctor_id = NULL,
@@ -3935,7 +3318,6 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
       assigned_staff = 'H2 House Of Health',
       notes = ?,
       payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
-      paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, datetime('now')) ELSE paid_at END,
       status = ?
     WHERE id = ?`
   ).run(
@@ -3943,9 +3325,8 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
     payload.data.bookingDate,
     payload.data.bookingTime,
     payload.data.notes,
-    shouldMarkPaid ? 1 : 0,
-    shouldMarkPaid ? 1 : 0,
-    nextStatusResolved,
+    selectedService?.membershipOnly ? 1 : 0,
+    nextStatus,
     bookingId
   );
 
@@ -4013,108 +3394,6 @@ app.get('/api/bookings/:id/payment-link', requireAuth, (req, res) => {
   });
 });
 
-app.post('/api/bookings/:id/send-payment-link-sms', requireAuth, async (req, res) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ message: 'Only admins can send payment links via SMS' });
-  }
-
-  const bookingId = Number(req.params.id);
-  if (!Number.isInteger(bookingId)) {
-    return res.status(400).json({ message: 'invalid booking id' });
-  }
-
-  const phoneNumber = String(req.body?.phoneNumber || '').trim();
-  if (!phoneNumber || phoneNumber.length < 7) {
-    return res.status(400).json({ message: 'valid phoneNumber is required' });
-  }
-
-  const booking = db
-    .prepare(
-      'SELECT id, user_id AS userId, status, payment_status AS paymentStatus, service_name AS serviceName, created_at AS createdAt FROM bookings WHERE id = ?'
-    )
-    .get(bookingId);
-  if (!booking) {
-    return res.status(404).json({ message: 'booking not found' });
-  }
-  if (!canAccessBooking(req.user, booking.userId)) {
-    return res.status(403).json({ message: 'forbidden' });
-  }
-
-  const service = getServiceByName(booking.serviceName);
-  if (!service || service.membershipOnly || booking.paymentStatus === 'paid') {
-    return res.status(409).json({ message: 'payment link is not required for this booking' });
-  }
-  if (isHoldExpiredBooking(booking)) {
-    return res.status(409).json({ message: 'This booking hold has expired. Please book another slot.' });
-  }
-
-  const paymentLink = buildBookingPaymentLink(req, booking.id, booking.userId);
-  
-  // For demo/test: Log the SMS instead of actually sending
-  // In production, integrate with a real SMS provider (Twilio, AWS SNS, etc.)
-  console.log(`SMS to ${phoneNumber}: Payment link: ${paymentLink}`);
-  
-  return res.json({
-    message: `Payment link sent successfully to ${phoneNumber}`,
-    phoneNumber,
-    paymentLinkUrl: paymentLink,
-  });
-});
-
-async function notifyMissedBookingHandler(req, res) {
-  const bookingId = Number(req.params.id);
-  if (!Number.isInteger(bookingId)) {
-    return res.status(400).json({ message: 'invalid booking id' });
-  }
-
-  const booking = db
-    .prepare(
-      `SELECT b.id,
-              b.user_id AS userId,
-              b.service_name AS serviceName,
-              b.booking_date AS bookingDate,
-              b.booking_time AS bookingTime,
-              b.created_at AS createdAt,
-              b.status,
-              u.name AS clientName,
-              u.email AS clientEmail,
-              u.mobile AS clientMobile
-       FROM bookings b
-       JOIN users u ON u.id = b.user_id
-       WHERE b.id = ?`
-    )
-    .get(bookingId);
-  if (!booking) {
-    return res.status(404).json({ message: 'booking not found' });
-  }
-  if (!canAccessBooking(req.user, booking.userId)) {
-    return res.status(403).json({ message: 'forbidden' });
-  }
-  if (!isBookingMissedServer(booking)) {
-    return res.status(409).json({ message: 'This booking is not missed yet.' });
-  }
-
-  const emailResult = await sendMissedSessionEmail({
-    toEmail: booking.clientEmail,
-    recipientName: booking.clientName,
-    serviceName: booking.serviceName,
-    bookingDate: booking.bookingDate,
-    bookingTime: booking.bookingTime,
-  });
-
-  if (!emailResult.ok) {
-    return res.status(409).json({ message: emailResult.message || 'Unable to send missed session email.' });
-  }
-
-  return res.json({
-    message: 'Missed session notification email sent successfully.',
-    delivery: emailResult.delivery || 'email',
-  });
-}
-
-app.post('/api/admin/bookings/:id/notify-missed', requireAuth, requireAdmin, notifyMissedBookingHandler);
-app.post('/api/bookings/:id/notify-missed', requireAuth, requireAdmin, notifyMissedBookingHandler);
-
 app.get('/api/public/payments/booking', (req, res) => {
   const access = verifyPaymentAccessToken(req.query?.token);
   if (!access || !Number.isInteger(access.bookingId) || !Number.isInteger(access.userId)) {
@@ -4168,22 +3447,16 @@ app.get('/api/public/payments/booking', (req, res) => {
   const activeBookings = groupBookings.filter((entry) => entry.status !== 'cancelled');
   const pricingUser = {
     membershipStatus: bookingOwner?.membershipStatus || 'inactive',
-    membershipPlan: bookingOwner?.membershipPlan || '',
-    membershipStartedAt: bookingOwner?.membershipStartedAt || null,
     membershipExpiresAt: bookingOwner?.membershipExpiresAt || null,
-    membershipPeopleCount: bookingOwner?.membershipPeopleCount ?? null,
-    id: bookingOwner?.id ?? booking.userId,
   };
   const summary = booking.bookingGroupId
     ? buildHydrogenGroupPaymentSummary(activeBookings, pricingUser)
-    : String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION'
-      ? buildHydrogenGroupPaymentSummary([booking], pricingUser)
-      : {
-          serviceName: booking.serviceName,
-          amountInr: getEffectiveServicePriceInr(service, pricingUser),
-          totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
-          bookingCount: 1,
-        };
+    : {
+        serviceName: booking.serviceName,
+        amountInr: getEffectiveServicePriceInr(service, pricingUser),
+        totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
+        bookingCount: 1,
+      };
 
   return res.json({
     bookingId: booking.id,
@@ -4210,54 +3483,6 @@ app.get('/api/public/payments/booking', (req, res) => {
     },
     keyId: RAZORPAY_KEY_ID,
   });
-});
-
-app.get('/api/public/invoices/booking', async (req, res) => {
-  const access = verifyInvoiceAccessToken(req.query?.token);
-  if (!access || access.scope !== 'booking_invoice' || !Number.isInteger(access.bookingId) || !Number.isInteger(access.userId)) {
-    return res.status(400).json({ message: 'Invalid or expired invoice link' });
-  }
-
-  try {
-    const source = getServiceInvoiceSource(access.bookingId, { role: 'user', id: access.userId });
-    if (Number(source.invoiceRecord.userId) !== access.userId) {
-      return res.status(403).json({ message: 'forbidden' });
-    }
-    const pdfBytes = await renderInvoicePdf(source, source.invoiceRecord);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${source.fileName}"`);
-    return res.send(Buffer.from(pdfBytes));
-  } catch (error) {
-    const statusCode = Number(error?.statusCode || 500);
-    if (statusCode >= 500) {
-      console.error('Public booking invoice generation failed:', error);
-    }
-    return res.status(statusCode).json({ message: error?.message || 'Unable to generate invoice.' });
-  }
-});
-
-app.get('/api/public/invoices/membership', async (req, res) => {
-  const access = verifyInvoiceAccessToken(req.query?.token);
-  if (!access || access.scope !== 'membership_invoice' || !access.orderId || !Number.isInteger(access.userId)) {
-    return res.status(400).json({ message: 'Invalid or expired invoice link' });
-  }
-
-  try {
-    const source = getMembershipInvoiceSource(access.orderId, { role: 'user', id: access.userId });
-    if (Number(source.invoiceRecord.userId) !== access.userId) {
-      return res.status(403).json({ message: 'forbidden' });
-    }
-    const pdfBytes = await renderInvoicePdf(source, source.invoiceRecord);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${source.fileName}"`);
-    return res.send(Buffer.from(pdfBytes));
-  } catch (error) {
-    const statusCode = Number(error?.statusCode || 500);
-    if (statusCode >= 500) {
-      console.error('Public membership invoice generation failed:', error);
-    }
-    return res.status(statusCode).json({ message: error?.message || 'Unable to generate membership invoice.' });
-  }
 });
 
 app.post('/api/public/payments/create-order', async (req, res) => {
@@ -4302,11 +3527,7 @@ app.post('/api/public/payments/create-order', async (req, res) => {
   const bookingOwner = getUserById(booking.userId);
   const pricingUser = {
     membershipStatus: bookingOwner?.membershipStatus || 'inactive',
-    membershipPlan: bookingOwner?.membershipPlan || '',
-    membershipStartedAt: bookingOwner?.membershipStartedAt || null,
     membershipExpiresAt: bookingOwner?.membershipExpiresAt || null,
-    membershipPeopleCount: bookingOwner?.membershipPeopleCount ?? null,
-    id: bookingOwner?.id ?? booking.userId,
   };
   const groupBookings = booking.bookingGroupId
     ? db
@@ -4332,29 +3553,12 @@ app.post('/api/public/payments/create-order', async (req, res) => {
 
   const paymentSummary = booking.bookingGroupId
     ? buildHydrogenGroupPaymentSummary(payableBookings, pricingUser)
-    : String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION'
-      ? buildHydrogenGroupPaymentSummary(payableBookings, pricingUser)
-      : {
-          serviceName: booking.serviceName,
-          amountInr: getEffectiveServicePriceInr(service, pricingUser),
-          totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
-          bookingCount: 1,
-        };
-  if (Number(paymentSummary.totalAmountInr || 0) <= 0) {
-    if (booking.bookingGroupId) {
-      db.prepare(
-        `UPDATE bookings
-         SET payment_status = 'paid',
-             paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
-             status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
-         WHERE booking_group_id = ?
-           AND status <> 'cancelled'`
-      ).run(booking.bookingGroupId);
-    } else {
-      markBookingPaid(booking.id, '', '');
-    }
-    return res.status(409).json({ message: 'This booking is covered by membership. Payment is not required.' });
-  }
+    : {
+        serviceName: booking.serviceName,
+        amountInr: getEffectiveServicePriceInr(service, pricingUser),
+        totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
+        bookingCount: 1,
+      };
   const amountInPaise = Math.max(100, Math.round(Number(paymentSummary.totalAmountInr || 0) * 100));
 
   try {
@@ -4386,12 +3590,6 @@ app.post('/api/public/payments/create-order', async (req, res) => {
          WHERE id = ?`
       ).run(order.id, booking.id);
     }
-
-    db.prepare(
-      `INSERT OR REPLACE INTO service_payment_orders (
-        order_id, user_id, booking_id, booking_group_id, original_amount_paise, amount_paise, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', datetime('now'))`
-    ).run(order.id, booking.userId, booking.id, booking.bookingGroupId || null, amountInPaise, amountInPaise);
 
     return res.json({
       keyId: RAZORPAY_KEY_ID,
@@ -4478,25 +3676,10 @@ app.post('/api/public/payments/verify', (req, res) => {
          AND payment_status <> 'paid'`
     ).run(razorpayOrderId, razorpayOrderId, razorpayPaymentId, razorpayPaymentId, booking.bookingGroupId);
 
-    db.prepare(
-      `UPDATE service_payment_orders
-       SET status = 'paid',
-           payment_reference = ?,
-           paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END
-       WHERE order_id = ?`
-    ).run(razorpayPaymentId, razorpayOrderId);
-
     return res.json({ bookingId: access.bookingId, paid: true, bookingCount: groupBookings.length });
   }
 
   markBookingPaid(access.bookingId, razorpayOrderId, razorpayPaymentId);
-  db.prepare(
-    `UPDATE service_payment_orders
-     SET status = 'paid',
-         payment_reference = ?,
-         paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END
-     WHERE order_id = ?`
-  ).run(razorpayPaymentId, razorpayOrderId);
   return res.json({ bookingId: access.bookingId, paid: true });
 });
 
@@ -4507,11 +3690,7 @@ app.post('/api/payments/preview-cart-coupon', requireAuth, (req, res) => {
 
   const pricingUser = {
     membershipStatus: req.user.membershipStatus || 'inactive',
-    membershipPlan: req.user.membershipPlan || '',
-    membershipStartedAt: req.user.membershipStartedAt || null,
     membershipExpiresAt: req.user.membershipExpiresAt || null,
-    membershipPeopleCount: req.user.membershipPeopleCount ?? null,
-    id: req.user.id,
   };
   const payableBookings = getPayableUserBookings(req.user.id);
   if (!payableBookings.length) {
@@ -4523,9 +3702,6 @@ app.post('/api/payments/preview-cart-coupon', requireAuth, (req, res) => {
     paymentSummary = buildAggregatePaymentSummary(payableBookings, pricingUser);
   } catch (error) {
     return res.status(409).json({ message: error?.message || 'Unable to calculate payment total for current bookings.' });
-  }
-  if (Number(paymentSummary.totalAmountInr || 0) <= 0) {
-    return res.status(409).json({ message: 'All current bookings are membership-covered. No payment is required.' });
   }
 
   const couponResult = validateCouponForUser({
@@ -4551,11 +3727,7 @@ app.post('/api/payments/create-cart-order', requireAuth, async (req, res) => {
 
   const pricingUser = {
     membershipStatus: req.user.membershipStatus || 'inactive',
-    membershipPlan: req.user.membershipPlan || '',
-    membershipStartedAt: req.user.membershipStartedAt || null,
     membershipExpiresAt: req.user.membershipExpiresAt || null,
-    membershipPeopleCount: req.user.membershipPeopleCount ?? null,
-    id: req.user.id,
   };
   const payableBookings = getPayableUserBookings(req.user.id);
   if (!payableBookings.length) {
@@ -4567,9 +3739,6 @@ app.post('/api/payments/create-cart-order', requireAuth, async (req, res) => {
     paymentSummary = buildAggregatePaymentSummary(payableBookings, pricingUser);
   } catch (error) {
     return res.status(409).json({ message: error?.message || 'Unable to calculate payment total for current bookings.' });
-  }
-  if (Number(paymentSummary.totalAmountInr || 0) <= 0) {
-    return res.status(409).json({ message: 'All current bookings are membership-covered. No payment is required.' });
   }
 
   const subtotalAmountPaise = Math.round(Number(paymentSummary.totalAmountInr || 0) * 100);
@@ -4680,22 +3849,14 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
 
   const bookingOwner = db
     .prepare(
-      `SELECT membership_status AS membershipStatus,
-              membership_plan AS membershipPlan,
-              membership_started_at AS membershipStartedAt,
-              membership_expires_at AS membershipExpiresAt,
-              membership_people_count AS membershipPeopleCount
+      `SELECT membership_status AS membershipStatus, membership_expires_at AS membershipExpiresAt
        FROM users
        WHERE id = ?`
     )
     .get(booking.userId);
   const pricingUser = {
     membershipStatus: bookingOwner?.membershipStatus || req.user.membershipStatus || 'inactive',
-    membershipPlan: bookingOwner?.membershipPlan || req.user.membershipPlan || '',
-    membershipStartedAt: bookingOwner?.membershipStartedAt || req.user.membershipStartedAt || null,
     membershipExpiresAt: bookingOwner?.membershipExpiresAt || req.user.membershipExpiresAt || null,
-    membershipPeopleCount: bookingOwner?.membershipPeopleCount ?? req.user.membershipPeopleCount ?? null,
-    id: booking.userId,
   };
   const groupBookings = booking.bookingGroupId
     ? db
@@ -4735,31 +3896,14 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
   try {
     paymentSummary = booking.bookingGroupId
       ? buildHydrogenGroupPaymentSummary(payableBookings, pricingUser)
-      : String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION'
-        ? buildHydrogenGroupPaymentSummary(payableBookings, pricingUser)
-        : {
-            serviceName: booking.serviceName,
-            amountInr: getEffectiveServicePriceInr(service, pricingUser),
-            totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
-            bookingCount: 1,
-          };
+      : {
+          serviceName: booking.serviceName,
+          amountInr: getEffectiveServicePriceInr(service, pricingUser),
+          totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
+          bookingCount: 1,
+        };
   } catch (error) {
     return res.status(409).json({ message: error?.message || 'Unable to calculate payment total for this booking.' });
-  }
-  if (Number(paymentSummary.totalAmountInr || 0) <= 0) {
-    if (booking.bookingGroupId) {
-      db.prepare(
-        `UPDATE bookings
-         SET payment_status = 'paid',
-             paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
-             status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
-         WHERE booking_group_id = ?
-           AND status <> 'cancelled'`
-      ).run(booking.bookingGroupId);
-    } else {
-      markBookingPaid(booking.id, '', '');
-    }
-    return res.status(409).json({ message: 'This booking is covered by membership. Payment is not required.' });
   }
   const amountInPaise = Math.max(100, Math.round(Number(paymentSummary.totalAmountInr || 0) * 100));
 
@@ -4792,12 +3936,6 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
          WHERE id = ?`
       ).run(order.id, booking.id);
     }
-
-    db.prepare(
-      `INSERT OR REPLACE INTO service_payment_orders (
-        order_id, user_id, booking_id, booking_group_id, original_amount_paise, amount_paise, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', datetime('now'))`
-    ).run(order.id, booking.userId, booking.id, booking.bookingGroupId || null, amountInPaise, amountInPaise);
 
     return res.json({
       keyId: RAZORPAY_KEY_ID,
@@ -4888,25 +4026,10 @@ app.post('/api/payments/verify', requireAuth, (req, res) => {
          AND payment_status <> 'paid'`
     ).run(razorpayOrderId, razorpayOrderId, razorpayPaymentId, razorpayPaymentId, booking.bookingGroupId);
 
-    db.prepare(
-      `UPDATE service_payment_orders
-       SET status = 'paid',
-           payment_reference = ?,
-           paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END
-       WHERE order_id = ?`
-    ).run(razorpayPaymentId, razorpayOrderId);
-
     return res.json({ bookingId, paid: true, bookingCount: groupBookings.length });
   }
 
   markBookingPaid(bookingId, razorpayOrderId, razorpayPaymentId);
-  db.prepare(
-    `UPDATE service_payment_orders
-     SET status = 'paid',
-         payment_reference = ?,
-         paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END
-     WHERE order_id = ?`
-  ).run(razorpayPaymentId, razorpayOrderId);
   return res.json({ bookingId, paid: true });
 });
 
@@ -4970,11 +4093,7 @@ app.post('/api/payments/verify-cart', requireAuth, (req, res) => {
 
   const pricingUser = {
     membershipStatus: req.user.membershipStatus || 'inactive',
-    membershipPlan: req.user.membershipPlan || '',
-    membershipStartedAt: req.user.membershipStartedAt || null,
     membershipExpiresAt: req.user.membershipExpiresAt || null,
-    membershipPeopleCount: req.user.membershipPeopleCount ?? null,
-    id: req.user.id,
   };
   const summary = buildAggregatePaymentSummary(matchedBookings, pricingUser);
 
@@ -5093,18 +4212,15 @@ app.get(/.*/, (_req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server listening on port ${PORT}`);
-  console.log(`Open: http://localhost:${PORT}`);
+app.listen(PORT, () => {
+  console.log(`Server listening on http://localhost:${PORT}`);
   if (SENDGRID_API_KEY && SENDGRID_FROM_EMAIL) {
     console.log(`SendGrid OTP mailer configured with sender ${SENDGRID_FROM_EMAIL}`);
   } else {
     console.warn('SendGrid OTP mailer is not fully configured. Check SENDGRID_API_KEY and SENDGRID_FROM_EMAIL.');
   }
-  processMissedSessionNotifications();
-  setInterval(processMissedSessionNotifications, MISSED_NOTIFICATION_SWEEP_INTERVAL_MS);
-  console.log(`Missed-session notifier started (interval: ${Math.round(MISSED_NOTIFICATION_SWEEP_INTERVAL_MS / 1000)}s).`);
 });
+
 function canAccessBooking(user, ownerId) {
   return user.role === 'admin' || user.id === Number(ownerId);
 }
@@ -5115,8 +4231,6 @@ function getUserById(userId) {
     .prepare(
       `SELECT id, role, name, email, mobile,
               membership_status AS membershipStatus,
-              membership_plan AS membershipPlan,
-              membership_started_at AS membershipStartedAt,
               membership_expires_at AS membershipExpiresAt,
               membership_people_count AS membershipPeopleCount
        FROM users
@@ -5132,8 +4246,6 @@ function getUserByEmail(email) {
     .prepare(
       `SELECT id, role, name, email, mobile,
               membership_status AS membershipStatus,
-              membership_plan AS membershipPlan,
-              membership_started_at AS membershipStartedAt,
               membership_expires_at AS membershipExpiresAt,
               membership_people_count AS membershipPeopleCount
        FROM users
@@ -5489,22 +4601,6 @@ function createPaymentAccessToken(bookingId, userId) {
   );
 }
 
-function createInvoiceAccessToken(payload) {
-  const scope = String(payload?.scope || '').trim();
-  const userId = Number(payload?.userId);
-  if (!scope || !Number.isInteger(userId)) return '';
-
-  const tokenPayload = { scope, userId };
-  if (scope === 'booking_invoice') {
-    tokenPayload.bookingId = Number(payload.bookingId);
-  }
-  if (scope === 'membership_invoice') {
-    tokenPayload.orderId = String(payload.orderId || '').trim();
-  }
-
-  return jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '180d' });
-}
-
 function verifyPaymentAccessToken(token) {
   try {
     const payload = jwt.verify(String(token || ''), JWT_SECRET);
@@ -5512,22 +4608,6 @@ function verifyPaymentAccessToken(token) {
     return {
       bookingId: Number(payload.bookingId),
       userId: Number(payload.userId),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function verifyInvoiceAccessToken(token) {
-  try {
-    const payload = jwt.verify(String(token || ''), JWT_SECRET);
-    const scope = String(payload?.scope || '').trim();
-    if (!['booking_invoice', 'membership_invoice'].includes(scope)) return null;
-    return {
-      scope,
-      userId: Number(payload.userId),
-      bookingId: Number(payload.bookingId),
-      orderId: String(payload.orderId || '').trim(),
     };
   } catch {
     return null;
@@ -5543,16 +4623,6 @@ function buildBookingPaymentLink(req, bookingId, userId) {
   return `${getRequestOrigin(req)}/payment.html?token=${encodeURIComponent(token)}`;
 }
 
-function buildBookingInvoiceLink(req, bookingId, userId) {
-  const token = createInvoiceAccessToken({ scope: 'booking_invoice', bookingId, userId });
-  return `${getRequestOrigin(req)}/api/public/invoices/booking?token=${encodeURIComponent(token)}`;
-}
-
-function buildMembershipInvoiceLink(req, orderId, userId) {
-  const token = createInvoiceAccessToken({ scope: 'membership_invoice', orderId, userId });
-  return `${getRequestOrigin(req)}/api/public/invoices/membership?token=${encodeURIComponent(token)}`;
-}
-
 function buildRazorpayReceipt(prefix, identifier = '') {
   const safePrefix = String(prefix || 'ord')
     .toLowerCase()
@@ -5564,544 +4634,6 @@ function buildRazorpayReceipt(prefix, identifier = '') {
     .slice(-12);
   const stamp = Date.now().toString(36);
   return [safePrefix, safeIdentifier, stamp].filter(Boolean).join('_').slice(0, 40);
-}
-
-function formatInvoiceDate(value) {
-  const parsed = parseSqliteDateToUtcMs(value);
-  if (Number.isNaN(parsed)) return '-';
-  return new Intl.DateTimeFormat('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(parsed));
-}
-
-function formatInvoiceDateTime(value) {
-  const parsed = parseSqliteDateToUtcMs(value);
-  if (Number.isNaN(parsed)) return '-';
-  return new Intl.DateTimeFormat('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(parsed));
-}
-
-function formatInvoiceBookingSlot(dateISO, time24) {
-  const date = String(dateISO || '').trim();
-  const time = String(time24 || '').trim();
-  if (!date && !time) return '-';
-  return [date, time].filter(Boolean).join(' ');
-}
-
-function formatInrFromPaise(amountPaise) {
-  const amount = Number(amountPaise || 0) / 100;
-  return `Rs. ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function getAppSettingsMap() {
-  const rows = hasTable('app_settings')
-    ? db.prepare('SELECT setting_key AS settingKey, setting_value AS settingValue FROM app_settings').all()
-    : [];
-  const settings = { ...DEFAULT_INVOICE_SETTINGS };
-  for (const row of rows) {
-    const key = String(row.settingKey || '').trim();
-    if (!key) continue;
-    settings[key] = String(row.settingValue || '').trim();
-  }
-  return settings;
-}
-
-function getInvoiceSettings() {
-  const settings = getAppSettingsMap();
-  return {
-    invoicePrefix: settings.invoice_prefix || DEFAULT_INVOICE_SETTINGS.invoice_prefix,
-    businessName: settings.business_name || DEFAULT_INVOICE_SETTINGS.business_name,
-    businessAddress: settings.business_address || DEFAULT_INVOICE_SETTINGS.business_address,
-    businessPhone: settings.business_phone || DEFAULT_INVOICE_SETTINGS.business_phone,
-    businessEmail: settings.business_email || DEFAULT_INVOICE_SETTINGS.business_email,
-    businessGstin: settings.business_gstin || DEFAULT_INVOICE_SETTINGS.business_gstin,
-    footerNote: settings.footer_note || DEFAULT_INVOICE_SETTINGS.footer_note,
-  };
-}
-
-function sanitizeInvoiceFileName(value) {
-  return String(value || 'invoice')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'invoice';
-}
-
-function getOrCreateInvoiceRecord({
-  contextType,
-  contextRef,
-  userId,
-  paymentOrderId = '',
-  paymentReference = '',
-  totalAmountPaise = 0,
-  currency = 'INR',
-  metadata = {},
-}) {
-  const normalizedType = String(contextType || '').trim();
-  const normalizedRef = String(contextRef || '').trim();
-  if (!normalizedType || !normalizedRef) {
-    throw new Error('Invoice context is required.');
-  }
-
-  const metadataJson = JSON.stringify(metadata || {});
-  const existing = db
-    .prepare(
-      `SELECT id, invoice_number AS invoiceNumber, context_type AS contextType, context_ref AS contextRef,
-              user_id AS userId, payment_order_id AS paymentOrderId, payment_reference AS paymentReference,
-              total_amount_paise AS totalAmountPaise, currency, issued_at AS issuedAt, metadata_json AS metadataJson
-       FROM invoices
-       WHERE context_type = ? AND context_ref = ?`
-    )
-    .get(normalizedType, normalizedRef);
-
-  if (existing) {
-    db.prepare(
-      `UPDATE invoices
-       SET user_id = ?,
-           payment_order_id = ?,
-           payment_reference = ?,
-           total_amount_paise = ?,
-           currency = ?,
-           metadata_json = ?,
-           updated_at = datetime('now')
-       WHERE id = ?`
-    ).run(
-      Number(userId || 0) || null,
-      String(paymentOrderId || ''),
-      String(paymentReference || ''),
-      Number(totalAmountPaise || 0),
-      String(currency || 'INR') || 'INR',
-      metadataJson,
-      existing.id
-    );
-
-    return db
-      .prepare(
-        `SELECT id, invoice_number AS invoiceNumber, context_type AS contextType, context_ref AS contextRef,
-                user_id AS userId, payment_order_id AS paymentOrderId, payment_reference AS paymentReference,
-                total_amount_paise AS totalAmountPaise, currency, issued_at AS issuedAt, metadata_json AS metadataJson
-         FROM invoices
-         WHERE id = ?`
-      )
-      .get(existing.id);
-  }
-
-  const result = db.prepare(
-    `INSERT INTO invoices (
-      invoice_number, context_type, context_ref, user_id, payment_order_id, payment_reference,
-      total_amount_paise, currency, metadata_json, issued_at, created_at, updated_at
-    ) VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'))`
-  ).run(
-    normalizedType,
-    normalizedRef,
-    Number(userId || 0) || null,
-    String(paymentOrderId || ''),
-    String(paymentReference || ''),
-    Number(totalAmountPaise || 0),
-    String(currency || 'INR') || 'INR',
-    metadataJson
-  );
-
-  const invoiceId = Number(result.lastInsertRowid);
-  const invoiceSettings = getInvoiceSettings();
-  const invoicePrefix = String(invoiceSettings.invoicePrefix || 'H2').replace(/[^A-Za-z0-9]/g, '').slice(0, 12) || 'H2';
-  const invoiceNumber = `${invoicePrefix}-${new Date().getFullYear()}-${String(invoiceId).padStart(6, '0')}`;
-  db.prepare('UPDATE invoices SET invoice_number = ? WHERE id = ?').run(invoiceNumber, invoiceId);
-
-  return db
-    .prepare(
-      `SELECT id, invoice_number AS invoiceNumber, context_type AS contextType, context_ref AS contextRef,
-              user_id AS userId, payment_order_id AS paymentOrderId, payment_reference AS paymentReference,
-              total_amount_paise AS totalAmountPaise, currency, issued_at AS issuedAt, metadata_json AS metadataJson
-       FROM invoices
-       WHERE id = ?`
-    )
-    .get(invoiceId);
-}
-
-function buildInvoiceBusinessLines() {
-  const invoiceSettings = getInvoiceSettings();
-  return [
-    `GSTIN: ${invoiceSettings.businessGstin || ''}`,
-  ].filter(Boolean);
-}
-
-function normalizeInvoiceItemLabel(label) {
-  const raw = String(label || '').trim();
-  if (!raw) return 'Service';
-  return raw.toLowerCase() === 'experience session' ? 'Demo Session' : raw;
-}
-
-function buildInvoicePdfModel(source, invoiceRecord) {
-  const invoiceSettings = getInvoiceSettings();
-  const customer = source.customer || {};
-  const payment = source.payment || {};
-  const items = Array.isArray(source.items) ? source.items : [];
-  const subtotalAmountPaise = Number(source.subtotalAmountPaise ?? source.totalAmountPaise ?? 0);
-  const discountAmountPaise = Number(source.discountAmountPaise || 0);
-  const totalAmountPaise = Number(source.totalAmountPaise || 0);
-
-  return {
-    invoiceNumber: invoiceRecord.invoiceNumber,
-    invoiceDate: formatInvoiceDate(invoiceRecord.issuedAt || source.issuedAt),
-    invoiceDateTime: formatInvoiceDateTime(invoiceRecord.issuedAt || source.issuedAt),
-    invoiceTitle: String(source.title || 'Tax Invoice'),
-    businessLines: buildInvoiceBusinessLines(),
-    customerLines: [
-      customer.name ? `Name: ${customer.name}` : '',
-      customer.email ? `Email: ${customer.email}` : '',
-      customer.phone ? `Phone: ${customer.phone}` : '',
-    ].filter(Boolean),
-    paymentLines: [
-      payment.orderId ? `Order ID: ${payment.orderId}` : '',
-      payment.reference ? `Payment Ref: ${payment.reference}` : '',
-      payment.paidAt ? `Booked on: ${formatInvoiceDateTime(payment.paidAt)}` : '',
-    ].filter(Boolean),
-    items: items.map((item) => ({
-      label: normalizeInvoiceItemLabel(item.label),
-      description: String(item.description || '').trim(),
-      amountText: formatInrFromPaise(item.amountPaise || 0),
-    })),
-    subtotalText: formatInrFromPaise(subtotalAmountPaise),
-    discountText: formatInrFromPaise(discountAmountPaise),
-    totalText: formatInrFromPaise(totalAmountPaise),
-    showDiscount: discountAmountPaise > 0,
-    footerLines: [
-      String(source.footerNote || invoiceSettings.footerNote || DEFAULT_INVOICE_SETTINGS.footer_note).trim(),
-      'Generated by H2 House Of Health portal.',
-    ],
-  };
-}
-
-async function renderInvoicePdf(source, invoiceRecord) {
-  const templateBytes = fs.readFileSync(invoiceLetterheadPath);
-  const pdfDoc = await PDFDocument.load(templateBytes);
-  pdfDoc.setTitle('Invoice');
-  pdfDoc.setSubject('Invoice');
-  pdfDoc.setProducer('H2 House Of Health');
-  pdfDoc.setCreator('H2 House Of Health');
-  const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const page = pdfDoc.getPages()[0];
-  const { width, height } = page.getSize();
-  const left = 48;
-  const right = width - 48;
-  const black = rgb(0.1, 0.12, 0.15);
-  const muted = rgb(0.36, 0.39, 0.43);
-  const lineColor = rgb(0.84, 0.86, 0.89);
-  const model = buildInvoicePdfModel(source, invoiceRecord);
-
-  page.drawText(model.invoiceTitle, { x: left, y: height - 220, size: 20, font: helveticaBold, color: black });
-  page.drawText(`Invoice No: ${model.invoiceNumber}`, { x: left, y: height - 244, size: 10, font: helveticaBold, color: black });
-  page.drawText(`Invoice Date: ${model.invoiceDate}`, { x: left, y: height - 260, size: 10, font: helvetica, color: muted });
-
-  let y = height - 298;
-  for (const line of model.businessLines) {
-    page.drawText(line, { x: left, y, size: 10, font: helvetica, color: black });
-    y -= 14;
-  }
-
-  let customerY = height - 298;
-  page.drawText('Bill To', { x: 310, y: customerY, size: 11, font: helveticaBold, color: black });
-  customerY -= 16;
-  for (const line of model.customerLines) {
-    page.drawText(line, { x: 310, y: customerY, size: 10, font: helvetica, color: black });
-    customerY -= 14;
-  }
-
-  if (model.paymentLines.length) {
-    customerY -= 10;
-    page.drawText('Payment Details', { x: 310, y: customerY, size: 11, font: helveticaBold, color: black });
-    customerY -= 16;
-    for (const line of model.paymentLines) {
-      page.drawText(line, { x: 310, y: customerY, size: 10, font: helvetica, color: black });
-      customerY -= 14;
-    }
-  }
-
-  const tableTop = Math.min(y, customerY) - 16;
-  page.drawLine({ start: { x: left, y: tableTop }, end: { x: right, y: tableTop }, thickness: 1, color: lineColor });
-  page.drawText('Item', { x: left, y: tableTop - 14, size: 10, font: helveticaBold, color: black });
-  page.drawText('Amount', { x: right - 90, y: tableTop - 14, size: 10, font: helveticaBold, color: black });
-
-  let rowY = tableTop - 34;
-  for (const item of model.items) {
-    page.drawText(item.label.slice(0, 58), { x: left, y: rowY, size: 10, font: helveticaBold, color: black });
-    page.drawText(item.amountText, { x: right - 90, y: rowY, size: 10, font: helvetica, color: black });
-    rowY -= 13;
-    if (item.description) {
-      page.drawText(item.description.slice(0, 82), { x: left, y: rowY, size: 9, font: helvetica, color: muted });
-      rowY -= 18;
-    } else {
-      rowY -= 6;
-    }
-  }
-
-  const summaryTop = Math.max(rowY - 8, 150);
-  page.drawLine({ start: { x: left, y: summaryTop }, end: { x: right, y: summaryTop }, thickness: 1, color: lineColor });
-  page.drawText('Subtotal', { x: 360, y: summaryTop - 18, size: 10, font: helvetica, color: black });
-  page.drawText(model.subtotalText, { x: right - 90, y: summaryTop - 18, size: 10, font: helvetica, color: black });
-
-  let totalY = summaryTop - 36;
-  if (model.showDiscount) {
-    page.drawText('Discount', { x: 360, y: totalY, size: 10, font: helvetica, color: black });
-    page.drawText(`- ${model.discountText}`, { x: right - 90, y: totalY, size: 10, font: helvetica, color: black });
-    totalY -= 18;
-  }
-
-  page.drawText('Grand Total', { x: 360, y: totalY, size: 11, font: helveticaBold, color: black });
-  page.drawText(model.totalText, { x: right - 90, y: totalY, size: 11, font: helveticaBold, color: black });
-
-  let footerY = Math.max(totalY - 40, 90);
-  for (const line of model.footerLines) {
-    page.drawText(line.slice(0, 96), { x: left, y: footerY, size: 9, font: helvetica, color: muted });
-    footerY -= 14;
-  }
-
-  return pdfDoc.save();
-}
-
-function buildServiceInvoiceItems(bookings) {
-  return (Array.isArray(bookings) ? bookings : []).map((booking) => ({
-    label: normalizeInvoiceItemLabel(booking.serviceName),
-    description: `Schedule: ${formatInvoiceBookingSlot(booking.bookingDate, booking.bookingTime)}`,
-    amountPaise: Number(booking.amountPaise || 0),
-  }));
-}
-
-function resolveServiceInvoiceOrder(orderId) {
-  const normalizedOrderId = String(orderId || '').trim();
-  if (!normalizedOrderId) return null;
-
-  const cartOrder = db
-    .prepare(
-      `SELECT order_id AS orderId, user_id AS userId, original_amount_paise AS originalAmountPaise,
-              discount_amount_paise AS discountAmountPaise, coupon_code AS couponCode, amount_paise AS amountPaise,
-              status, payment_reference AS paymentReference, paid_at AS paidAt, created_at AS createdAt
-       FROM cart_payment_orders
-       WHERE order_id = ?`
-    )
-    .get(normalizedOrderId);
-  if (cartOrder) return { kind: 'cart', ...cartOrder };
-
-  const serviceOrder = db
-    .prepare(
-      `SELECT order_id AS orderId, user_id AS userId, booking_id AS bookingId, booking_group_id AS bookingGroupId,
-              original_amount_paise AS originalAmountPaise, amount_paise AS amountPaise, status,
-              payment_reference AS paymentReference, paid_at AS paidAt, created_at AS createdAt
-       FROM service_payment_orders
-       WHERE order_id = ?`
-    )
-    .get(normalizedOrderId);
-  if (serviceOrder) {
-    return {
-      kind: 'service',
-      ...serviceOrder,
-      discountAmountPaise: Math.max(0, Number(serviceOrder.originalAmountPaise || 0) - Number(serviceOrder.amountPaise || 0)),
-      couponCode: '',
-    };
-  }
-
-  return null;
-}
-
-function getServiceInvoiceSource(bookingId, actor) {
-  const booking = db
-    .prepare(
-      `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, service_name AS serviceName,
-              booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus,
-              payment_order_id AS paymentOrderId, payment_reference AS paymentReference, paid_at AS paidAt
-       FROM bookings
-       WHERE id = ?`
-    )
-    .get(Number(bookingId));
-
-  if (!booking) {
-    const error = new Error('booking not found');
-    error.statusCode = 404;
-    throw error;
-  }
-  if (!canAccessBooking(actor, booking.userId)) {
-    const error = new Error('forbidden');
-    error.statusCode = 403;
-    throw error;
-  }
-  if (String(booking.paymentStatus || '').toLowerCase() !== 'paid') {
-    const error = new Error('Invoice is available only for paid bookings.');
-    error.statusCode = 409;
-    throw error;
-  }
-
-  const owner = getUserById(booking.userId);
-  const paymentOrder = resolveServiceInvoiceOrder(booking.paymentOrderId);
-  const relatedBookings = booking.paymentOrderId
-    ? db
-        .prepare(
-          `SELECT id, user_id AS userId, service_name AS serviceName, booking_date AS bookingDate, booking_time AS bookingTime,
-                  payment_order_id AS paymentOrderId, payment_reference AS paymentReference, paid_at AS paidAt
-           FROM bookings
-           WHERE user_id = ?
-             AND payment_order_id = ?
-             AND payment_status = 'paid'
-           ORDER BY booking_date, booking_time, id`
-        )
-        .all(booking.userId, booking.paymentOrderId)
-    : [booking];
-
-  const pricingUser = getUserProfileById(booking.userId) || owner || {};
-  const bookingsWithAmounts = relatedBookings.map((entry) => {
-    const service = getServiceByName(entry.serviceName);
-    return {
-      ...entry,
-      amountPaise: Math.round(Number(getEffectiveServicePriceInr(service, pricingUser) || 0) * 100),
-    };
-  });
-
-  const fallbackSubtotal = bookingsWithAmounts.reduce((sum, entry) => sum + Number(entry.amountPaise || 0), 0);
-  const originalAmountPaise = Number(paymentOrder?.originalAmountPaise ?? fallbackSubtotal);
-  const totalAmountPaise = Number(paymentOrder?.amountPaise ?? fallbackSubtotal);
-  const discountAmountPaise = Number(paymentOrder?.discountAmountPaise || Math.max(0, originalAmountPaise - totalAmountPaise));
-  const invoiceRecord = getOrCreateInvoiceRecord({
-    contextType: 'service_order',
-    contextRef: booking.paymentOrderId || `booking_${booking.id}`,
-    userId: booking.userId,
-    paymentOrderId: booking.paymentOrderId || '',
-    paymentReference: paymentOrder?.paymentReference || booking.paymentReference || '',
-    totalAmountPaise,
-    metadata: {
-      bookingIds: bookingsWithAmounts.map((entry) => entry.id),
-      orderKind: paymentOrder?.kind || 'fallback',
-    },
-  });
-
-  return {
-    invoiceRecord,
-    fileName: `invoice-${sanitizeInvoiceFileName(invoiceRecord.invoiceNumber)}.pdf`,
-    issuedAt: paymentOrder?.paidAt || booking.paidAt || invoiceRecord.issuedAt,
-    title: 'Billing Invoice',
-    customer: {
-      name: owner?.name || 'User',
-      email: owner?.email || '',
-      phone: owner?.mobile || '',
-    },
-    payment: {
-      orderId: booking.paymentOrderId || '',
-      reference: paymentOrder?.paymentReference || booking.paymentReference || '',
-      paidAt: paymentOrder?.paidAt || booking.paidAt || '',
-    },
-    items: buildServiceInvoiceItems(bookingsWithAmounts),
-    subtotalAmountPaise: originalAmountPaise,
-    discountAmountPaise,
-    totalAmountPaise,
-    footerNote:
-      paymentOrder?.couponCode
-        ? `Discount applied using coupon code ${paymentOrder.couponCode}.`
-        : 'Thank you for choosing H2 House Of Health.',
-  };
-}
-
-function getMembershipInvoiceSource(orderId, actor) {
-  const order = db
-    .prepare(
-      `SELECT mpo.order_id AS orderId, mpo.user_id AS userId, mpo.plan_id AS planId, mpo.people_count AS peopleCount,
-              mpo.member_details_json AS memberDetailsJson, mpo.original_amount_paise AS originalAmountPaise,
-              mpo.discount_amount_paise AS discountAmountPaise, mpo.coupon_code AS couponCode, mpo.amount_paise AS amountPaise,
-              mpo.status, mpo.payment_reference AS paymentReference, mpo.paid_at AS paidAt, mpo.created_at AS createdAt,
-              u.name AS userName, u.email AS userEmail, u.mobile AS userMobile
-       FROM membership_payment_orders mpo
-       JOIN users u ON u.id = mpo.user_id
-       WHERE mpo.order_id = ?`
-    )
-    .get(String(orderId || '').trim());
-
-  if (!order) {
-    const error = new Error('membership order not found');
-    error.statusCode = 404;
-    throw error;
-  }
-  if (actor.role !== 'admin' && Number(actor.id) !== Number(order.userId)) {
-    const error = new Error('forbidden');
-    error.statusCode = 403;
-    throw error;
-  }
-  if (String(order.status || '').toLowerCase() !== 'paid') {
-    const error = new Error('Invoice is available only for paid membership orders.');
-    error.statusCode = 409;
-    throw error;
-  }
-
-  let memberDetails = [];
-  try {
-    memberDetails = order.memberDetailsJson ? JSON.parse(order.memberDetailsJson) : [];
-  } catch {
-    memberDetails = [];
-  }
-
-  const plan = MEMBERSHIP_PLANS.find((item) => item.id === String(order.planId || '').trim());
-  const originalAmountPaise = Number(order.originalAmountPaise ?? order.amountPaise ?? 0);
-  const totalAmountPaise = Number(order.amountPaise || 0);
-  const discountAmountPaise = Number(order.discountAmountPaise || 0);
-  const invoiceRecord = getOrCreateInvoiceRecord({
-    contextType: 'membership_order',
-    contextRef: order.orderId,
-    userId: order.userId,
-    paymentOrderId: order.orderId,
-    paymentReference: order.paymentReference || '',
-    totalAmountPaise,
-    metadata: {
-      planId: order.planId,
-      peopleCount: order.peopleCount,
-    },
-  });
-
-  const items = [
-    {
-      label: plan?.name || 'Membership',
-      description: `${Number(order.peopleCount || 1)} member${Number(order.peopleCount || 1) === 1 ? '' : 's'} covered`,
-      amountPaise: originalAmountPaise,
-    },
-  ];
-  for (const member of memberDetails) {
-    items.push({
-      label: `Covered Member: ${String(member?.name || 'Member').trim() || 'Member'}`,
-      description: [member?.email, member?.contactNumber].filter(Boolean).join(' | '),
-      amountPaise: 0,
-    });
-  }
-
-  return {
-    invoiceRecord,
-    fileName: `invoice-${sanitizeInvoiceFileName(invoiceRecord.invoiceNumber)}.pdf`,
-    issuedAt: order.paidAt || invoiceRecord.issuedAt,
-    title: 'Membership Invoice',
-    customer: {
-      name: order.userName || 'User',
-      email: order.userEmail || '',
-      phone: order.userMobile || '',
-    },
-    payment: {
-      orderId: order.orderId,
-      reference: order.paymentReference || '',
-      paidAt: order.paidAt || '',
-    },
-    items,
-    subtotalAmountPaise: originalAmountPaise,
-    discountAmountPaise,
-    totalAmountPaise,
-    footerNote:
-      order.couponCode
-        ? `Membership discount applied using coupon code ${order.couponCode}.`
-        : 'Membership invoice generated successfully.',
-  };
 }
 
 function getCurrentSqliteTimestamp() {
@@ -6195,7 +4727,6 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
   if (payload.error) return res.status(400).json({ message: payload.error });
 
   const selectedService = getServiceByName(payload.data.serviceName);
-  const selectedCategory = String(selectedService?.category || '').toUpperCase();
   if (
     selectedService &&
     isAddOnService(selectedService) &&
@@ -6243,21 +4774,12 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
     return res.status(409).json({ message });
   }
 
-  let paymentStatus = selectedService?.membershipOnly ? 'paid' : 'unpaid';
-  if (selectedCategory === 'HYDROGEN SESSION') {
-    const remainingFree = getHydrogenFreeSessionsRemaining(targetUser);
-    if (remainingFree > 0) {
-      paymentStatus = 'paid';
-    }
-  }
-  const bookingStatus = paymentStatus === 'paid' ? 'booked' : 'pending';
-
   const result = db
     .prepare(
       `INSERT INTO bookings (
         user_id, doctor_id, client_name, client_email, client_phone,
         service_name, booking_date, booking_time, assigned_staff, status, payment_status, notes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
     )
     .run(
       targetUser.id,
@@ -6269,8 +4791,7 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
       payload.data.bookingDate,
       payload.data.bookingTime,
       'H2 House Of Health',
-      bookingStatus,
-      paymentStatus,
+      selectedService?.membershipOnly ? 'paid' : 'unpaid',
       payload.data.notes || defaultNotes,
       getCurrentSqliteTimestamp()
     );
@@ -6311,7 +4832,7 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
       membershipExpiresAt: targetUser.membershipExpiresAt || null,
       membershipPeopleCount: targetUser.membershipPeopleCount ?? null,
     },
-    paymentLinkUrl: paymentStatus === 'paid' ? '' : buildBookingPaymentLink(req, booking.id, targetUser.id),
+    paymentLinkUrl: selectedService?.membershipOnly ? '' : buildBookingPaymentLink(req, booking.id, targetUser.id),
   });
 }
 
@@ -6589,197 +5110,6 @@ function getHydrogenSessionCountFromServiceName(serviceName) {
   return match ? Number(match[1]) : 1;
 }
 
-function getHydrogenServiceCatalogNames() {
-  return SERVICE_CATALOG.filter((item) => String(item.category || '').toUpperCase() === 'HYDROGEN SESSION').map((item) => item.name);
-}
-
-function normalizeMembershipPricingUser(user, userId = null) {
-  const incoming = user && typeof user === 'object' ? { ...user } : {};
-  const resolvedUserId = Number.isInteger(Number(incoming.id))
-    ? Number(incoming.id)
-    : Number.isInteger(Number(userId))
-      ? Number(userId)
-      : null;
-  if (!Number.isInteger(resolvedUserId)) {
-    return incoming;
-  }
-
-  const needsProfile =
-    !incoming.membershipPlan ||
-    !incoming.membershipStartedAt ||
-    !incoming.membershipExpiresAt ||
-    !incoming.membershipStatus;
-  if (!needsProfile) {
-    return { ...incoming, id: resolvedUserId };
-  }
-
-  const profile = getUserProfileById(resolvedUserId);
-  if (!profile) {
-    return { ...incoming, id: resolvedUserId };
-  }
-
-  return {
-    ...profile,
-    ...incoming,
-    id: resolvedUserId,
-  };
-}
-
-function getMembershipCycleStartIsoDate(user) {
-  const startedMs = user?.membershipStartedAt ? Date.parse(String(user.membershipStartedAt)) : NaN;
-  if (Number.isFinite(startedMs)) {
-    return new Date(startedMs).toISOString().slice(0, 10);
-  }
-
-  const expiresMs = user?.membershipExpiresAt ? Date.parse(String(user.membershipExpiresAt)) : NaN;
-  if (Number.isFinite(expiresMs)) {
-    const inferredStart = expiresMs - MEMBERSHIP_VALIDITY_DAYS * 24 * 60 * 60 * 1000;
-    return new Date(inferredStart).toISOString().slice(0, 10);
-  }
-  return '';
-}
-
-function getMembershipHydrogenSessionAllowance(user) {
-  if (!isMembershipActiveForUser(user)) return 0;
-
-  const normalizedPlanId = String(user?.membershipPlan || '').trim();
-  const plan = MEMBERSHIP_PLANS.find((item) => item.id === normalizedPlanId) || null;
-  if (plan) {
-    const planSessions = Number(plan.h2SessionsIncluded || 0);
-    const planPeopleCount = Number(plan.peopleCount || 1);
-    if (planSessions > 0 && planPeopleCount > 0) {
-      const perPersonSessions = Math.floor(planSessions / planPeopleCount);
-      if (perPersonSessions > 0) return perPersonSessions;
-    }
-  }
-  return DEFAULT_MEMBERSHIP_INCLUDED_HYDROGEN_SESSIONS;
-}
-
-function getHydrogenMembershipCoverage(user, { userId = null, excludeBookingIds = [] } = {}) {
-  const normalizedUser = normalizeMembershipPricingUser(user, userId);
-  const resolvedUserId = Number.isInteger(Number(normalizedUser?.id))
-    ? Number(normalizedUser.id)
-    : Number.isInteger(Number(userId))
-      ? Number(userId)
-      : null;
-  const allowance = getMembershipHydrogenSessionAllowance(normalizedUser);
-  if (!Number.isInteger(resolvedUserId) || allowance <= 0) {
-    return {
-      allowance: 0,
-      usedSessions: 0,
-      remainingSessions: 0,
-      consumptionStatus: 'completed',
-      coveredBookingIds: new Set(),
-    };
-  }
-
-  const hydrogenNames = getHydrogenServiceCatalogNames();
-  if (!hydrogenNames.length) {
-    return {
-      allowance,
-      usedSessions: 0,
-      remainingSessions: allowance,
-      consumptionStatus: 'completed',
-      coveredBookingIds: new Set(),
-    };
-  }
-
-  const placeholders = hydrogenNames.map(() => '?').join(', ');
-  const excluded = buildExcludedBookingIdsClause(excludeBookingIds);
-  const rows = db
-    .prepare(
-      `SELECT id,
-              booking_date AS bookingDate,
-              status,
-              payment_status AS paymentStatus,
-              created_at AS createdAt
-       FROM bookings
-       WHERE user_id = ?
-         AND status = 'completed'
-         AND service_name IN (${placeholders})
-         ${excluded.clause}
-       ORDER BY created_at, id`
-    )
-    .all(resolvedUserId, ...hydrogenNames, ...excluded.params);
-
-  const cycleStartDate = getMembershipCycleStartIsoDate(normalizedUser);
-  const eligibleRows = rows.filter((row) => {
-    if (cycleStartDate && String(row.bookingDate || '') < cycleStartDate) return false;
-    if (isHoldExpiredBooking(row)) return false;
-    return true;
-  });
-
-  const coveredIds = eligibleRows.slice(0, allowance).map((row) => Number(row.id)).filter((id) => Number.isInteger(id));
-  const usedSessions = coveredIds.length;
-
-  return {
-    allowance,
-    usedSessions,
-    remainingSessions: Math.max(0, allowance - usedSessions),
-    consumptionStatus: 'completed',
-    coveredBookingIds: new Set(coveredIds),
-  };
-}
-
-function getHydrogenMembershipPricingAdjustments({
-  user,
-  userId = null,
-  hydrogenSessionCount = 0,
-  packagePriceInr = 0,
-  extraSessionPriceInr = 0,
-  extraSessions = 0,
-  addOnAmountInr = 0,
-  hydrogenBookingIds = [],
-  coverage = null,
-}) {
-  const safeHydrogenSessionCount = Math.max(0, Number(hydrogenSessionCount || 0));
-  const safePackagePriceInr = Math.max(0, Number(packagePriceInr || 0));
-  const safeExtraSessionPriceInr = Math.max(0, Number(extraSessionPriceInr || 0));
-  const safeExtraSessions = Math.max(0, Number(extraSessions || 0));
-  const safeAddOnAmountInr = Math.max(0, Number(addOnAmountInr || 0));
-  const hydrogenSubtotalInr = safePackagePriceInr + safeExtraSessionPriceInr * safeExtraSessions;
-  const normalizedCoverage =
-    coverage ||
-    getHydrogenMembershipCoverage(user, {
-      userId,
-    });
-  const coveredBookingIds = normalizedCoverage.coveredBookingIds || new Set();
-  const persistedBookingIds = (Array.isArray(hydrogenBookingIds) ? hydrogenBookingIds : [])
-    .map((id) => Number(id))
-    .filter((id) => Number.isInteger(id));
-  const isPersistedSelection = persistedBookingIds.length > 0;
-  const coverageRemainingSessions = Math.max(0, Number(normalizedCoverage.remainingSessions || 0));
-  const completedBasedCoverage = String(normalizedCoverage?.consumptionStatus || '').toLowerCase() === 'completed';
-  const coveredHydrogenSessions =
-    completedBasedCoverage
-      ? Math.min(coverageRemainingSessions, safeHydrogenSessionCount)
-      : isPersistedSelection
-      ? persistedBookingIds.filter((id) => coveredBookingIds.has(id)).length
-      : Math.min(coverageRemainingSessions, safeHydrogenSessionCount);
-  const perSessionCreditInr =
-    safeExtraSessionPriceInr > 0
-      ? safeExtraSessionPriceInr
-      : safeHydrogenSessionCount > 0
-        ? hydrogenSubtotalInr / safeHydrogenSessionCount
-        : 0;
-  const hydrogenIncludedDiscountInr = Math.min(hydrogenSubtotalInr, coveredHydrogenSessions * perSessionCreditInr);
-  const hydrogenPayableAmountInr = Math.max(0, hydrogenSubtotalInr - hydrogenIncludedDiscountInr);
-
-  return {
-    membershipIncludedSessions: coveredHydrogenSessions,
-    membershipIncludedSessionsTotal: Number(normalizedCoverage.allowance || 0),
-    membershipSessionsRemaining: completedBasedCoverage
-      ? Math.max(0, coverageRemainingSessions - coveredHydrogenSessions)
-      : isPersistedSelection
-        ? coverageRemainingSessions
-        : Math.max(0, coverageRemainingSessions - coveredHydrogenSessions),
-    hydrogenSubtotalInr,
-    hydrogenIncludedDiscountInr,
-    hydrogenPayableAmountInr,
-    totalAmountInr: hydrogenPayableAmountInr + safeAddOnAmountInr,
-  };
-}
-
 function createBookingGroupId(prefix = 'group') {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 }
@@ -6802,19 +5132,16 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
     throw new Error('Invalid hydrogen service configured on booking group.');
   }
 
+  const packageSessions = getHydrogenSessionCountFromServiceName(baseService.name);
   const singleSessionService =
     SERVICE_CATALOG.find(
       (item) =>
         String(item.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
         getHydrogenSessionCountFromServiceName(item.name) === 1
     ) || baseService;
-
-  const membershipActive = isMembershipActiveForUser(user);
-  const memberSessionPriceInr = membershipActive ? getEffectiveServicePriceInr(singleSessionService, user) : 0;
-  const packageSessions = membershipActive ? hydrogenBookings.length : getHydrogenSessionCountFromServiceName(baseService.name);
-  const extraSessions = membershipActive ? 0 : Math.max(0, hydrogenBookings.length - packageSessions);
-  const packagePriceInr = membershipActive ? 0 : getEffectiveServicePriceInr(baseService, user);
-  const extraSessionPriceInr = membershipActive ? memberSessionPriceInr : getEffectiveServicePriceInr(singleSessionService, user);
+  const extraSessions = Math.max(0, hydrogenBookings.length - packageSessions);
+  const packagePriceInr = getEffectiveServicePriceInr(baseService, user);
+  const extraSessionPriceInr = getEffectiveServicePriceInr(singleSessionService, user);
   const addOnBookings = bookings.filter((entry) => {
     const service = getServiceByName(entry.serviceName);
     return isAddOnService(service);
@@ -6830,22 +5157,8 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
     };
   });
   const addOnAmountInr = addOnItems.reduce((sum, item) => sum + Number(item.amountInr || 0), 0);
-  const membershipCoverage = getHydrogenMembershipCoverage(user, {
-    userId: user?.id,
-    excludeBookingIds: [],
-  });
-  const pricingAdjustments = getHydrogenMembershipPricingAdjustments({
-    user,
-    userId: user?.id,
-    hydrogenSessionCount: hydrogenBookings.length,
-    packagePriceInr,
-    extraSessionPriceInr,
-    extraSessions,
-    addOnAmountInr,
-    hydrogenBookingIds: hydrogenBookings.map((entry) => Number(entry.id)).filter((id) => Number.isInteger(id)),
-    coverage: membershipCoverage,
-  });
-  const hydrogenAmountInr = Number(pricingAdjustments.hydrogenPayableAmountInr || 0);
+  const totalAmountInr =
+    Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions + Number(addOnAmountInr || 0);
 
   return {
     serviceName: baseService.name,
@@ -6853,11 +5166,8 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
     extraSessions,
     packagePriceInr,
     extraSessionPriceInr,
-    membershipActive,
-    memberSessionPriceInr,
-    hydrogenAmountInr,
     addOnItems,
-    totalAmountInr: Number(pricingAdjustments.totalAmountInr || 0),
+    totalAmountInr,
     bookingCount: bookings.length,
   };
 }
@@ -6882,49 +5192,11 @@ function getPayableUserBookings(userId) {
     )
     .all(userId);
 
-  const filteredRows = rows.filter((entry) => {
+  return rows.filter((entry) => {
     if (isHoldExpiredBooking(entry)) return false;
     const service = getServiceByName(entry.serviceName);
     return service && !service.membershipOnly;
   });
-
-  if (!filteredRows.length) return [];
-
-  const pricingUser = normalizeMembershipPricingUser(getUserProfileById(userId), userId);
-  const byKey = new Map();
-  for (const entry of filteredRows) {
-    const key = entry.bookingGroupId || `single_${entry.id}`;
-    if (!byKey.has(key)) byKey.set(key, []);
-    byKey.get(key).push(entry);
-  }
-
-  const payableIds = new Set();
-  for (const entries of byKey.values()) {
-    const hydrogenEntries = entries.filter((entry) => {
-      const service = getServiceByName(entry.serviceName);
-      return String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION';
-    });
-    const isHydrogenGroup = Boolean(
-      String(entries[0]?.bookingGroupId || '').startsWith('hydrogen_') || hydrogenEntries.length > 0
-    );
-
-    if (isHydrogenGroup) {
-      const summary = buildHydrogenGroupPaymentSummary(entries, pricingUser);
-      if (Number(summary.totalAmountInr || 0) <= 0) {
-        continue;
-      }
-      entries.forEach((entry) => payableIds.add(Number(entry.id)));
-      continue;
-    }
-
-    const service = getServiceByName(entries[0]?.serviceName);
-    const amountInr = Number(getEffectiveServicePriceInr(service, pricingUser) || 0);
-    if (amountInr > 0) {
-      payableIds.add(Number(entries[0].id));
-    }
-  }
-
-  return filteredRows.filter((entry) => payableIds.has(Number(entry.id)));
 }
 
 function buildAggregatePaymentSummary(bookings, user) {
@@ -6949,9 +5221,6 @@ function buildAggregatePaymentSummary(bookings, user) {
 
     if (groupKey.startsWith('hydrogen_') || hydrogenEntries.length) {
       const summary = buildHydrogenGroupPaymentSummary(entries, user);
-      if (Number(summary.totalAmountInr || 0) <= 0) {
-        continue;
-      }
       units.push({
         type: 'hydrogen_package',
         key: groupKey,
@@ -6967,7 +5236,6 @@ function buildAggregatePaymentSummary(bookings, user) {
     const service = getServiceByName(booking.serviceName);
     if (!service || service.membershipOnly) continue;
     const amountInr = Number(getEffectiveServicePriceInr(service, user) || 0);
-    if (amountInr <= 0) continue;
     units.push({
       type: 'single',
       key: groupKey,
@@ -7409,7 +5677,7 @@ function validateBookingPayload(body, user) {
   }
 
   if (!ALLOWED_SLOT_START_TIMES.includes(bookingTime)) {
-    return { error: 'bookingTime must be one of the allowed 1-hour slots' };
+    return { error: 'bookingTime must be one of the allowed 1.5-hour slots' };
   }
 
   if (isBookingSlotInPast(bookingDate, bookingTime)) {
@@ -7418,7 +5686,7 @@ function validateBookingPayload(body, user) {
 
   return {
     data: {
-      serviceName: service.name,
+      serviceName,
       bookingDate,
       bookingTime,
       notes,
@@ -7430,15 +5698,7 @@ function isBookingSlotInPast(bookingDate, bookingTime) {
   const normalizedDate = String(bookingDate || '').trim();
   const normalizedTime = String(bookingTime || '').trim();
   if (!normalizedDate || !normalizedTime) return false;
-  const dateMatch = normalizedDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  const timeMatch = normalizedTime.match(/^(\d{2}):(\d{2})$/);
-  if (!dateMatch || !timeMatch) return false;
-  const year = Number(dateMatch[1]);
-  const monthIndex = Number(dateMatch[2]) - 1;
-  const day = Number(dateMatch[3]);
-  const hours = Number(timeMatch[1]);
-  const minutes = Number(timeMatch[2]);
-  const slotDateTime = new Date(year, monthIndex, day, hours, minutes, 0, 0);
+  const slotDateTime = new Date(`${normalizedDate}T${normalizedTime}:00`);
   if (Number.isNaN(slotDateTime.getTime())) return false;
   return slotDateTime.getTime() < Date.now();
 }
@@ -7494,87 +5754,12 @@ function isMembershipActiveForUser(user) {
   return expiresAt > Date.now();
 }
 
-function formatLocalIsoDate(value) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function getMembershipIsoDateRange(user) {
-  if (!isMembershipActiveForUser(user)) return null;
-
-  const startedAtMs = user?.membershipStartedAt ? new Date(user.membershipStartedAt).getTime() : null;
-  const storedExpiresAtMs = user?.membershipExpiresAt ? new Date(user.membershipExpiresAt).getTime() : null;
-  const expiresAtMs =
-    Number.isFinite(startedAtMs) && startedAtMs > 0
-      ? startedAtMs + MEMBERSHIP_VALIDITY_DAYS * 24 * 60 * 60 * 1000
-      : storedExpiresAtMs;
-
-  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= 0) return null;
-
-  let effectiveStartedAtMs = startedAtMs;
-  if (!Number.isFinite(effectiveStartedAtMs) || effectiveStartedAtMs <= 0) {
-    effectiveStartedAtMs = expiresAtMs - MEMBERSHIP_VALIDITY_DAYS * 24 * 60 * 60 * 1000;
-  }
-
-  return {
-    startIso: formatLocalIsoDate(effectiveStartedAtMs),
-    endIso: formatLocalIsoDate(expiresAtMs),
-  };
-}
-
-function getHydrogenServiceNames() {
-  return SERVICE_CATALOG.filter((service) => String(service.category || '').toUpperCase() === 'HYDROGEN SESSION').map((service) => service.name);
-}
-
-function countHydrogenSessionsUsedForMembership(userId, user) {
-  const normalizedUserId = Number(userId);
-  if (!Number.isInteger(normalizedUserId)) return 0;
-  const hydrogenServiceNames = getHydrogenServiceNames();
-  if (!hydrogenServiceNames.length) return 0;
-
-  const dateRange = getMembershipIsoDateRange(user);
-  const placeholders = hydrogenServiceNames.map(() => '?').join(', ');
-  const params = [normalizedUserId, ...hydrogenServiceNames];
-  let dateClause = '';
-  if (dateRange?.startIso && dateRange?.endIso) {
-    dateClause = ' AND booking_date BETWEEN ? AND ?';
-    params.push(dateRange.startIso, dateRange.endIso);
-  }
-
-  const row = db
-    .prepare(
-      `SELECT COUNT(*) AS count
-       FROM bookings
-       WHERE user_id = ?
-         AND service_name IN (${placeholders})
-         AND status = 'completed'
-         ${dateClause}`
-    )
-    .get(...params);
-
-  return Number(row?.count || 0);
-}
-
-function getHydrogenFreeSessionsRemaining(user) {
-  if (!isMembershipActiveForUser(user)) return 0;
-  const used = countHydrogenSessionsUsedForMembership(user?.id, user);
-  return Math.max(0, HYDROGEN_FREE_SESSIONS_PER_USER - used);
-}
-
 function getEffectiveServicePriceInr(service, user) {
   if (!service) return 0;
   const category = String(service.category || '').toUpperCase();
   const isHydrogen = category === 'HYDROGEN SESSION';
   const membershipActive = isMembershipActiveForUser(user);
   const userPhone = user?.mobile || '';
-
-  if (category === 'EXPERIENCE SESSION') {
-    return Number(service.priceInr || 0);
-  }
 
   if (service.membershipOnly) {
     return membershipActive ? Number(service.priceInr || 0) : 0;
@@ -7595,39 +5780,21 @@ function getEffectiveServicePriceInr(service, user) {
   return applyPhoneDiscount(Number(service.priceInr || 0), userPhone);
 }
 
-function toServiceResponse(service, user, { membershipHydrogenCoverage = null } = {}) {
+function toServiceResponse(service, user) {
   const membershipActive = isMembershipActiveForUser(user);
-  const category = String(service?.category || '').toUpperCase();
-  const isHydrogen = category === 'HYDROGEN SESSION';
-  const hydrogenCoverage =
-    membershipHydrogenCoverage ||
-    getHydrogenMembershipCoverage(user, {
-      userId: user?.id,
-    });
-  const hasIncludedHydrogenSessions = isHydrogen && Number(hydrogenCoverage.remainingSessions || 0) > 0;
-  const effectivePriceInr = hasIncludedHydrogenSessions ? 0 : getEffectiveServicePriceInr(service, user);
+  const effectivePriceInr = getEffectiveServicePriceInr(service, user);
   const discountPercent = getDiscountPercentForPhone(user?.mobile || '');
   return {
     ...service,
     effectivePriceInr,
     membershipActive,
     discountPercent,
-    membershipIncludedHydrogenSessions: Number(hydrogenCoverage.allowance || 0),
-    membershipRemainingHydrogenSessions: Number(hydrogenCoverage.remainingSessions || 0),
   };
 }
 
 function getServiceByName(name) {
   const normalized = String(name || '').trim().toLowerCase();
-  const directMatch = SERVICE_CATALOG.find((service) => service.name.toLowerCase() === normalized);
-  if (directMatch) return directMatch;
-  if (normalized === 'experience session') {
-    return SERVICE_CATALOG.find((service) => service.name.toLowerCase() === 'demo session') || null;
-  }
-  if (normalized === 'demo session') {
-    return SERVICE_CATALOG.find((service) => service.name.toLowerCase() === 'experience session') || null;
-  }
-  return null;
+  return SERVICE_CATALOG.find((service) => service.name.toLowerCase() === normalized) || null;
 }
 
 function validateDoctorPayload(body) {
@@ -7735,62 +5902,6 @@ function isDoctorAvailableOnDate(availableDays, bookingDate) {
 
 function isValidStatus(status) {
   return ['pending', 'booked', 'confirmed', 'completed', 'cancelled'].includes(status);
-}
-
-function isBookingMissedServer(booking) {
-  const status = String(booking?.status || '').trim().toLowerCase();
-  if (status === 'missed') return true;
-  if (status === 'completed' || status === 'cancelled') return false;
-  const bookingDate = String(booking?.bookingDate || '').trim();
-  const bookingTime = String(booking?.bookingTime || '').trim();
-  if (!bookingDate || !bookingTime) return false;
-  const bookingStart = new Date(`${bookingDate}T${bookingTime}:00`).getTime();
-  return Number.isFinite(bookingStart) && bookingStart < Date.now();
-}
-
-async function processMissedSessionNotifications() {
-  if (missedNotificationSweepRunning) return;
-  missedNotificationSweepRunning = true;
-  try {
-    const candidates = db
-      .prepare(
-        `SELECT b.id,
-                b.user_id AS userId,
-                b.service_name AS serviceName,
-                b.booking_date AS bookingDate,
-                b.booking_time AS bookingTime,
-                b.created_at AS createdAt,
-                b.status,
-                b.missed_notified_at AS missedNotifiedAt,
-                u.name AS clientName,
-                u.email AS clientEmail
-         FROM bookings b
-         JOIN users u ON u.id = b.user_id
-         WHERE (b.missed_notified_at IS NULL OR trim(b.missed_notified_at) = '')
-           AND lower(COALESCE(b.status, '')) NOT IN ('completed', 'cancelled')`
-      )
-      .all();
-
-    for (const booking of candidates) {
-      if (!isBookingMissedServer(booking)) continue;
-      const emailResult = await sendMissedSessionEmail({
-        toEmail: booking.clientEmail,
-        recipientName: booking.clientName,
-        serviceName: booking.serviceName,
-        bookingDate: booking.bookingDate,
-        bookingTime: booking.bookingTime,
-      });
-      if (emailResult.ok) {
-        db.prepare('UPDATE bookings SET missed_notified_at = ? WHERE id = ?').run(new Date().toISOString(), booking.id);
-      } else {
-        console.error(`Missed-session email failed for booking ${booking.id}: ${emailResult.message || 'Unknown error'}`);
-      }
-    }
-  } catch (error) {
-    console.error('Missed-session notification sweep failed:', error);
-  } finally {
-    missedNotificationSweepRunning = false;
-  }
 }
 
 function hasColumn(tableName, columnName) {
@@ -8086,83 +6197,6 @@ async function sendSignupConfirmationEmail(toEmail, name) {
   }
 }
 
-async function sendMissedSessionEmail({ toEmail, recipientName, serviceName, bookingDate, bookingTime }) {
-  const normalizedToEmail = String(toEmail || '').trim().toLowerCase();
-  if (!normalizedToEmail || !isValidEmail(normalizedToEmail)) {
-    return { ok: false, message: 'valid user email is not available' };
-  }
-
-  const safeServiceName = String(serviceName || 'Session').trim() || 'Session';
-  const safeBookingDate = String(bookingDate || '').trim();
-  const safeBookingTime = String(bookingTime || '').trim();
-  const scheduleLabel = [safeBookingDate, safeBookingTime].filter(Boolean).join(' at ');
-  const greeting = recipientName ? `Hi ${recipientName},` : 'Hi,';
-  const subject = 'Missed session notice - H2 House Of Health';
-  const text =
-    `${greeting}\n\n` +
-    `You missed your scheduled session: ${safeServiceName}\n` +
-    `Scheduled At: ${scheduleLabel || 'scheduled time'}\n\n` +
-    `Please log in to your dashboard to reschedule your session.\n\n` +
-    `If you believe this is a mistake, please contact support.`;
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">
-      <p style="margin: 0 0 12px;">${escapeHtml(greeting)}</p>
-      <p style="margin: 0 0 12px;">You missed your scheduled session:</p>
-      <p style="margin: 0 0 6px;"><strong>${escapeHtml(safeServiceName)}</strong></p>
-      <p style="margin: 0 0 12px;">Scheduled At: ${escapeHtml(scheduleLabel || 'scheduled time')}</p>
-      <p style="margin: 0;">Please log in to your dashboard to reschedule your session.</p>
-      <p style="margin: 12px 0 0; color: #6b7280;">If you believe this is a mistake, please contact support.</p>
-    </div>
-  `;
-
-  if (SENDGRID_API_KEY && SENDGRID_FROM_EMAIL) {
-    try {
-      await sgMail.send({
-        to: normalizedToEmail,
-        from: SENDGRID_FROM_EMAIL,
-        subject,
-        text,
-        html,
-      });
-      return { ok: true, delivery: 'sendgrid' };
-    } catch (error) {
-      const sendGridError = extractSendGridErrorDetails(error);
-      console.error('Failed to send missed-session email via SendGrid:', {
-        statusCode: sendGridError.statusCode,
-        detail: sendGridError.detail,
-        responseBody: sendGridError.responseBody,
-      });
-      return {
-        ok: false,
-        message:
-          sendGridError.statusCode === 403
-            ? 'SendGrid rejected the sender identity. Verify sender email/domain.'
-            : 'Unable to send missed-session email.',
-      };
-    }
-  }
-
-  const transporter = getTransporter();
-  const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-  if (!transporter || !fromEmail) {
-    return { ok: false, message: 'Email service is not configured for missed-session notifications.' };
-  }
-
-  try {
-    await transporter.sendMail({
-      from: fromEmail,
-      to: normalizedToEmail,
-      subject,
-      text,
-      html,
-    });
-    return { ok: true, delivery: 'smtp' };
-  } catch (error) {
-    console.error('Failed to send missed-session email via SMTP:', error);
-    return { ok: false, message: 'Unable to send missed-session email.' };
-  }
-}
-
 async function sendCouponEmail({ toEmail, recipientName, code, discountValue, appliesTo, expiresAt }) {
   const normalizedToEmail = String(toEmail || '').trim().toLowerCase();
   if (!normalizedToEmail) {
@@ -8381,7 +6415,6 @@ function migrate() {
       paid_at TEXT,
       payment_order_id TEXT,
       payment_reference TEXT,
-      missed_notified_at TEXT,
       notes TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -8480,12 +6513,6 @@ function migrate() {
       created_at TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS app_settings (
-      setting_key TEXT PRIMARY KEY,
-      setting_value TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
     CREATE TABLE IF NOT EXISTS coupon_redemptions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       coupon_id INTEGER NOT NULL REFERENCES coupons(id) ON DELETE CASCADE,
@@ -8510,36 +6537,6 @@ function migrate() {
       created_at TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS service_payment_orders (
-      order_id TEXT PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      booking_id INTEGER REFERENCES bookings(id) ON DELETE SET NULL,
-      booking_group_id TEXT,
-      original_amount_paise INTEGER NOT NULL,
-      amount_paise INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      payment_reference TEXT,
-      paid_at TEXT,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS invoices (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      invoice_number TEXT NOT NULL UNIQUE,
-      context_type TEXT NOT NULL,
-      context_ref TEXT NOT NULL,
-      user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      payment_order_id TEXT,
-      payment_reference TEXT,
-      total_amount_paise INTEGER NOT NULL DEFAULT 0,
-      currency TEXT NOT NULL DEFAULT 'INR',
-      metadata_json TEXT,
-      issued_at TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE(context_type, context_ref)
-    );
-
     CREATE TABLE IF NOT EXISTS admin_discount_phones (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone_key TEXT NOT NULL UNIQUE,
@@ -8548,20 +6545,10 @@ function migrate() {
       created_at TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS notes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      booking_id INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
-      note_text TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
     CREATE INDEX IF NOT EXISTS idx_bookings_user_date
       ON bookings(user_id, booking_date, booking_time);
     CREATE INDEX IF NOT EXISTS idx_admin_discount_phones_phone_key
       ON admin_discount_phones(phone_key);
-    CREATE INDEX IF NOT EXISTS idx_notes_booking
-      ON notes(booking_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_membership_subscription_members_email
       ON membership_subscription_members(email);
     CREATE INDEX IF NOT EXISTS idx_membership_subscriptions_owner
@@ -8570,22 +6557,6 @@ function migrate() {
 
   if (!hasColumn('users', 'role')) {
     db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
-  }
-
-  if (hasTable('notes') && !hasColumn('notes', 'booking_id')) {
-    db.exec('DROP TABLE notes');
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS notes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        booking_id INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
-        note_text TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_notes_booking
-        ON notes(booking_id, created_at);
-    `);
   }
 
   if (!hasColumn('users', 'age')) {
@@ -8684,14 +6655,6 @@ function migrate() {
     db.exec('ALTER TABLE membership_payment_orders ADD COLUMN coupon_code TEXT');
   }
 
-  if (hasTable('service_payment_orders') && !hasColumn('service_payment_orders', 'booking_id')) {
-    db.exec('ALTER TABLE service_payment_orders ADD COLUMN booking_id INTEGER REFERENCES bookings(id) ON DELETE SET NULL');
-  }
-
-  if (hasTable('service_payment_orders') && !hasColumn('service_payment_orders', 'booking_group_id')) {
-    db.exec('ALTER TABLE service_payment_orders ADD COLUMN booking_group_id TEXT');
-  }
-
   if (hasTable('coupons') && !hasColumn('coupons', 'recipient_email')) {
     db.exec('ALTER TABLE coupons ADD COLUMN recipient_email TEXT');
   }
@@ -8735,12 +6698,6 @@ function migrate() {
 
     CREATE INDEX IF NOT EXISTS idx_cart_payment_orders_user_status
       ON cart_payment_orders(user_id, status, created_at);
-
-    CREATE INDEX IF NOT EXISTS idx_service_payment_orders_user_status
-      ON service_payment_orders(user_id, status, created_at);
-
-    CREATE INDEX IF NOT EXISTS idx_invoices_context
-      ON invoices(context_type, context_ref);
   `);
 
   if (!hasColumn('bookings', 'payment_status')) {
@@ -8758,9 +6715,6 @@ function migrate() {
   if (!hasColumn('bookings', 'payment_order_id')) {
     db.exec('ALTER TABLE bookings ADD COLUMN payment_order_id TEXT');
   }
-  if (!hasColumn('bookings', 'missed_notified_at')) {
-    db.exec('ALTER TABLE bookings ADD COLUMN missed_notified_at TEXT');
-  }
 
   db.exec(`
     UPDATE bookings
@@ -8777,20 +6731,10 @@ function migrate() {
     WHERE original_amount_paise IS NULL;
   `);
 
-  const settingsUpsert = db.prepare(
-    `INSERT INTO app_settings (setting_key, setting_value, updated_at)
-     VALUES (?, ?, datetime('now'))
-     ON CONFLICT(setting_key) DO NOTHING`
-  );
-  Object.entries(DEFAULT_INVOICE_SETTINGS).forEach(([key, value]) => {
-    settingsUpsert.run(key, String(value || '').trim());
-  });
-
   db.exec("UPDATE users SET role = 'user' WHERE role IS NULL OR role = ''");
   db.exec("UPDATE users SET role = 'user' WHERE role = 'doctor'");
   db.exec("UPDATE users SET membership_status = 'inactive' WHERE membership_status IS NULL OR membership_status = ''");
   db.exec("UPDATE doctors SET approval_status = 'approved' WHERE approval_status IS NULL OR approval_status = ''");
-  db.exec("UPDATE bookings SET service_name = 'Demo Session' WHERE lower(service_name) = 'experience session'");
 
   backfillMembershipSubscriptionsFromOrders();
   refreshMembershipSubscriptionStates();

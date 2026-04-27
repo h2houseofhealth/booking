@@ -600,6 +600,9 @@ function attachEvents() {
       document.querySelector('[aria-label="Membership"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
+  document.querySelectorAll('[data-member-choice-join]').forEach((btn) => {
+    btn.addEventListener('click', () => elements.joinAsMemberBtn?.click());
+  });
   elements.continueAsMemberBtn?.addEventListener('click', () => {
     if (!state.user) {
       openAuthFromLanding('continue-member');

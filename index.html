@@ -694,6 +694,21 @@
         <div class="panel-head">
           <h2 id="adminTableTitle">Today's Bookings</h2>
         </div>
+        <div class="admin-section-toolbar">
+          <label class="admin-inline-search">
+            <span>From</span>
+            <input id="adminEmailAnalyticsStartDate" type="date" />
+          </label>
+          <label class="admin-inline-search">
+            <span>To</span>
+            <input id="adminEmailAnalyticsEndDate" type="date" />
+          </label>
+          <button id="adminEmailAnalyticsApplyBtn" class="btn btn-secondary" type="button">Apply</button>
+          <button id="adminEmailAnalyticsResetBtn" class="btn btn-secondary" type="button">Reset</button>
+          <button id="adminEmailAnalyticsExportBtn" class="btn btn-secondary" type="button">Export CSV</button>
+        </div>
+        <p id="adminPaymentLinkAnalytics" class="membership-copy"></p>
+        <div id="adminPaymentLinkFunnel" class="admin-email-funnel" hidden></div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -704,6 +719,7 @@
                 <th>Booked At</th>
                 <th>Status</th>
                 <th>Payment</th>
+                <th>Payment Link Email</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -1046,7 +1062,24 @@
       </form>
     </dialog>
 
+    <dialog id="bookingEmailTimelineDialog" class="booking-dialog">
+      <form method="dialog">
+        <div class="dialog-head">
+          <h2>Payment Email Timeline</h2>
+          <button id="bookingEmailTimelineCloseBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
+        </div>
+        <input id="bookingEmailTimelineBookingId" type="hidden" />
+        <div class="dialog-actions">
+          <button id="bookingEmailTimelineResendBtn" class="btn btn-primary" type="button">Resend Payment Link</button>
+        </div>
+        <p id="bookingEmailTimelineMeta" class="membership-copy"></p>
+        <div id="bookingEmailTimelineAnalytics" class="coupon-preview" hidden></div>
+        <div id="bookingEmailTimelineList" class="admin-notes-modal-list"></div>
+        <p id="bookingEmailTimelineEmpty" class="empty-state" hidden>No payment-link email events yet.</p>
+      </form>
+    </dialog>
+
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-    <script src="app.js?v=13"></script>
+    <script src="app.js?v=17"></script>
   </body>
 </html>

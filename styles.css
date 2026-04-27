@@ -5013,6 +5013,49 @@ th {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
 }
 
+.admin-email-funnel {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.75rem 0 1rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(201, 106, 45, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 248, 242, 0.65);
+}
+
+.admin-email-funnel-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 88px;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.admin-email-funnel-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #7a4b2b;
+}
+
+.admin-email-funnel-track {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(201, 106, 45, 0.15);
+  overflow: hidden;
+}
+
+.admin-email-funnel-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #c96a2d, #f2a664);
+}
+
+.admin-email-funnel-value {
+  text-align: right;
+  font-size: 0.78rem;
+  color: #5f4634;
+}
+
 .my-bookings-upcoming-header {
   display: flex;
   justify-content: space-between;

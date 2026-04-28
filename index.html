@@ -7,11 +7,7 @@
     <link rel="icon" type="image/png" href="assets/brand/H2_icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="styles.css?v=20260427-4" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Playfair+Display:wght@500;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css?v=20260427-5" />
 
   </head>
@@ -94,83 +90,103 @@
       </section>
 
       <section id="memberChoiceGate" class="panel app-only user-only member-choice-gate" aria-label="Choose membership mode" hidden>
-        <div class="member-choice-hero">
-          <div class="member-choice-hero-copy">
-            <p class="auth-kicker">Redefine wellness. Rejuvenate life.</p>
-            <h2 class="member-choice-title">Choose How You Want To <span class="member-choice-title-em">Continue</span></h2>
-            <p class="membership-copy">
-              Choose whether you want to activate membership first, enter with member benefits, or continue with non-member access.
-            </p>
-
-            <div class="member-choice-benefits" aria-label="Membership highlights">
-              <p><span class="member-choice-check" aria-hidden="true">✓</span> Book hydrogen, therapies &amp; shots in one place.</p>
-              <p><span class="member-choice-check" aria-hidden="true">✓</span> Member pricing and exclusive hydrogen session access.</p>
-              <p><span class="member-choice-check" aria-hidden="true">✓</span> Change or cancel your plan anytime.</p>
+        <div class="container">
+          <div class="member-choice-topbar" aria-label="Section navigation">
+            <div class="member-choice-brand-lockup">
+              <img class="member-choice-brand-logo" src="assets/h2-logo-wordmark.svg" alt="House of Health" />
             </div>
-
-            <div class="member-choice-primary-row">
-              <button id="joinAsMemberBtn" class="btn btn-primary" type="button">Explore All Plans</button>
-            </div>
-          </div>
-
-          <div class="member-choice-hero-media">
-            <figure class="member-choice-photo-card">
-              <img
-                src="assets/membership_choice_hero.png"
-                alt="Clinician performing a treatment session"
-                loading="lazy"
-                onerror="this.onerror=null;this.src='assets/service-experience.jpg';"
-              />
-            </figure>
-          </div>
-        </div>
-
-        <div class="member-choice-experience" aria-label="Select your experience">
-          <h3 class="member-choice-experience-title">Select Your Experience</h3>
-          <div class="member-choice-experience-grid" role="group" aria-label="Continue options">
-            <button id="continueAsMemberBtn" class="member-choice-experience-card is-featured" type="button">
-              <span class="member-choice-experience-badge">Most Popular</span>
-              <span class="member-choice-card-plan">Member</span>
-              <div class="member-choice-card-price-row">
-                <strong class="member-choice-card-price">₹4,800</strong>
-                <span class="member-choice-card-price-unit">/ session</span>
-              </div>
-              <div class="member-choice-card-highlight">
-                <span class="member-choice-card-highlight-icon" aria-hidden="true">✦</span>
-                <span>Save up to ₹50,000 annually</span>
-              </div>
-              <ul class="member-choice-card-list">
-                <li>16 sessions included</li>
-                <li>Exclusive Member pricing</li>
-                <li>Priority booking access</li>
-                <li>Complimentary consultations</li>
-              </ul>
-              <span class="member-choice-card-cta">Choose Membership</span>
-            </button>
-            <button id="continueAsNonMemberBtn" class="member-choice-experience-card" type="button">
-              <span class="member-choice-experience-badge is-placeholder" aria-hidden="true">Most Popular</span>
-              <span class="member-choice-card-plan">Non-member</span>
-              <div class="member-choice-card-price-row">
-                <strong class="member-choice-card-price">₹9,500</strong>
-                <span class="member-choice-card-price-unit">/ session</span>
-              </div>
-              <div class="member-choice-card-highlight is-placeholder" aria-hidden="true">
-                <span class="member-choice-card-highlight-icon" aria-hidden="true">✦</span>
-                <span>Placeholder</span>
-              </div>
-              <ul class="member-choice-card-list">
-                <li>No free sessions</li>
-                <li>Regular standard pricing</li>
-                <li>Standard booking window</li>
-                <li>Pay-per-visit flexibility</li>
-              </ul>
-              <span class="member-choice-card-cta">Continue without membership</span>
+            <nav class="member-choice-nav" aria-label="Primary">
+              <a href="#cmp-perfect-01">Benefits</a>
+              <a href="#servicesSection">Treatments</a>
+              <a href="#membershipSection">Pricing</a>
+              <a href="#memberChoiceGate">About Us</a>
+              <a href="#memberChoiceGate">FAQs</a>
+            </nav>
+            <button id="topExplorePlansBtn" class="member-choice-topbar-cta" type="button" aria-label="Explore all plans">
+              Explore All Plans
+              <span aria-hidden="true">→</span>
             </button>
           </div>
-          <div id="cmp-perfect-01" class="member-choice-comparison" aria-label="Member vs non-member comparison">
-            <div class="member-choice-comparison-body">
-              <div class="member-choice-matrix-block">
-                <aside class="member-choice-matrix-side">
+
+          <div class="member-choice-hero hero-inner hero">
+            <div class="member-choice-hero-copy hero-content left">
+              <p class="auth-kicker">Redefine wellness. Rejuvenate life.</p>
+              <h2 class="member-choice-title hero-title">Choose How You Want To <span class="member-choice-title-em">Continue</span></h2>
+              <p class="membership-copy hero-text">
+                Choose whether you want to activate membership first, enter with member benefits, or continue with non-member access.
+              </p>
+
+              <div class="member-choice-benefits" aria-label="Membership highlights">
+                <p><span class="member-choice-check" aria-hidden="true">✓</span> Book hydrogen, therapies &amp; shots in one place.</p>
+                <p><span class="member-choice-check" aria-hidden="true">✓</span> Member pricing and exclusive hydrogen session access.</p>
+                <p><span class="member-choice-check" aria-hidden="true">✓</span> Change or cancel your plan anytime.</p>
+              </div>
+
+              <div class="member-choice-primary-row">
+                <button id="joinAsMemberBtn" class="btn btn-primary" type="button">Explore All Plans</button>
+              </div>
+            </div>
+
+            <div class="member-choice-hero-media hero-image right">
+              <figure class="member-choice-photo-card">
+                <img
+                  class="hero-img"
+                  src="assets/membership_choice_hero.png"
+                  alt="Clinician performing a treatment session"
+                  loading="lazy"
+                  onerror="this.onerror=null;this.src='assets/service-experience.jpg';"
+                />
+              </figure>
+            </div>
+          </div>
+
+          <div class="member-choice-experience" aria-label="Select your experience">
+            <p class="member-choice-experience-kicker">Experiences That Heal</p>
+            <h3 class="member-choice-experience-title section-title">Select Your Experience</h3>
+            <div class="member-choice-experience-grid cards" role="group" aria-label="Continue options">
+              <button id="continueAsMemberBtn" class="member-choice-experience-card card-member is-featured" type="button">
+                <span class="member-choice-experience-badge">Most Popular</span>
+                <span class="member-choice-card-plan">Member</span>
+                <div class="member-choice-card-price-row">
+                  <strong class="member-choice-card-price">₹4,800</strong>
+                  <span class="member-choice-card-price-unit">/ session</span>
+                </div>
+                <div class="member-choice-card-highlight">
+                  <span class="member-choice-card-highlight-icon" aria-hidden="true">✦</span>
+                  <span>Save up to ₹50,000 annually</span>
+                </div>
+                <ul class="member-choice-card-list">
+                  <li>16 sessions included</li>
+                  <li>Exclusive Member pricing</li>
+                  <li>Priority booking access</li>
+                  <li>Complimentary consultations</li>
+                </ul>
+                <span class="member-choice-card-cta">Choose Membership</span>
+              </button>
+              <button id="continueAsNonMemberBtn" class="member-choice-experience-card card-light" type="button">
+                <span class="member-choice-experience-badge is-placeholder" aria-hidden="true">Most Popular</span>
+                <span class="member-choice-card-plan">Non-member</span>
+                <div class="member-choice-card-price-row">
+                  <strong class="member-choice-card-price">₹9,500</strong>
+                  <span class="member-choice-card-price-unit">/ session</span>
+                </div>
+                <div class="member-choice-card-highlight is-placeholder" aria-hidden="true">
+                  <span class="member-choice-card-highlight-icon" aria-hidden="true">✦</span>
+                  <span>Placeholder</span>
+                </div>
+                <ul class="member-choice-card-list">
+                  <li>No free sessions</li>
+                  <li>Regular standard pricing</li>
+                  <li>Standard booking window</li>
+                  <li>Pay-per-visit flexibility</li>
+                </ul>
+                <span class="member-choice-card-cta">Continue without membership</span>
+              </button>
+            </div>
+            <div id="cmp-perfect-01" class="member-choice-comparison" aria-label="Member vs non-member comparison">
+              <div class="member-choice-comparison-body">
+                <div class="member-choice-matrix-block">
+                  <aside class="member-choice-matrix-side">
                   <span class="member-choice-matrix-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24" fill="none">
                       <path d="M4 8.5 8 11l4-6 4 6 4-2.5-1.7 8.5H5.7L4 8.5Z" />
@@ -181,10 +197,10 @@
                   <p>See the difference between member and non-member benefits side by side.</p>
                   <a href="#membershipSection">View Full Comparison →</a>
                   <div class="member-choice-matrix-decor" aria-hidden="true">
-                    <img src="assets/pot_image_cropped.png" alt="" />
+                    <img src="assets/pot_image_cropped.svg" alt="" />
                   </div>
                 </aside>
-                <div class="member-choice-matrix-table-wrap">
+                <div class="member-choice-matrix-table-wrap table">
                   <div class="member-choice-matrix-head" aria-hidden="true">
                     <div>Included Services</div>
                     <div class="is-member">Member</div>
@@ -223,45 +239,46 @@
                 </div>
               </div>
 
-              <div class="cmp-pricing-card" aria-label="Session Pricing">
-                <div class="cmp-pricing-headline">
-                  <span class="cmp-pricing-icon" aria-hidden="true">
+                <div class="cmp-pricing-card pricing-box" aria-label="Session Pricing">
+                  <div class="cmp-pricing-headline">
+                    <span class="cmp-pricing-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24" fill="none">
                       <path d="m5 11.2 7.2-7.2a1 1 0 0 1 .7-.3h5.6a1 1 0 0 1 1 1v5.6a1 1 0 0 1-.3.7L12 18.2a1 1 0 0 1-1.4 0L5 12.6a1 1 0 0 1 0-1.4Z" />
                       <circle cx="16.2" cy="7.8" r="1.3" />
                     </svg>
                   </span>
-                  <div>
-                    <h3>Session Pricing</h3>
-                    <p>Exclusive pricing for members. More value, better outcomes.</p>
+                    <div>
+                      <h3>Session Pricing</h3>
+                      <p>Exclusive pricing for members. More value, better outcomes.</p>
+                    </div>
                   </div>
-                </div>
 
-                <div class="cmp-pricing-table-wrap">
-                  <div class="cmp-pricing-table-head">
-                    <div>Hydrogen Sessions</div>
-                    <div>Exclusive Membership Pricing <span>(16 hydrogen sessions free)</span></div>
-                    <div>Regular Pricing <span>(Pay per hydrogen session)</span></div>
-                  </div>
-                  <div class="cmp-pricing-table-row">
-                    <div>1 Hydrogen Session price</div>
-                    <div>₹4,800</div>
-                    <div>₹9,500</div>
-                  </div>
-                  <div class="cmp-pricing-table-row">
-                    <div>1 Week (4 hydrogen sessions)</div>
-                    <div>₹12,000</div>
-                    <div>₹28,000</div>
-                  </div>
-                  <div class="cmp-pricing-table-row">
-                    <div>2 Weeks (8 hydrogen sessions)</div>
-                    <div>₹22,000</div>
-                    <div>₹48,000</div>
-                  </div>
-                  <div class="cmp-pricing-table-row">
-                    <div>1 Month (16 hydrogen sessions)</div>
-                    <div>₹32,000</div>
-                    <div>₹64,000</div>
+                  <div class="cmp-pricing-table-wrap table">
+                    <div class="cmp-pricing-table-head pricing-header">
+                      <div>Hydrogen Sessions</div>
+                      <div>Exclusive Membership Pricing <span>(16 hydrogen sessions free)</span></div>
+                      <div>Regular Pricing <span>(Pay per hydrogen session)</span></div>
+                    </div>
+                    <div class="cmp-pricing-table-row">
+                      <div>1 Hydrogen Session price</div>
+                      <div>₹4,800</div>
+                      <div>₹9,500</div>
+                    </div>
+                    <div class="cmp-pricing-table-row">
+                      <div>1 Week (4 hydrogen sessions)</div>
+                      <div>₹12,000</div>
+                      <div>₹28,000</div>
+                    </div>
+                    <div class="cmp-pricing-table-row">
+                      <div>2 Weeks (8 hydrogen sessions)</div>
+                      <div>₹22,000</div>
+                      <div>₹48,000</div>
+                    </div>
+                    <div class="cmp-pricing-table-row">
+                      <div>1 Month (16 hydrogen sessions)</div>
+                      <div>₹32,000</div>
+                      <div>₹64,000</div>
+                    </div>
                   </div>
                 </div>
               </div>

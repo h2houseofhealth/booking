@@ -169,6 +169,7 @@ const elements = {
   userTabBookings: document.getElementById('userTabBookings'),
   userTabCart: document.getElementById('userTabCart'),
   joinAsMemberBtn: document.getElementById('joinAsMemberBtn'),
+  topExplorePlansBtn: document.getElementById('topExplorePlansBtn'),
   continueAsMemberBtn: document.getElementById('continueAsMemberBtn'),
   continueAsNonMemberBtn: document.getElementById('continueAsNonMemberBtn'),
   membershipSection: document.getElementById('membershipSection'),
@@ -471,6 +472,24 @@ function attachEvents() {
     renderAuthMode();
   });
 
+  elements.authBackToChoicesBtn?.addEventListener('click', () => {
+    state.showAuthCard = false;
+    state.pendingPreAuthChoice = '';
+    isRegisterMode = false;
+    isForgotPasswordMode = false;
+    signupStage = 'details';
+    forgotPasswordStage = 'email';
+    pendingSignupEmail = '';
+    pendingForgotEmail = '';
+    elements.authForm.reset();
+    elements.authError.textContent = '';
+    renderAuthMode();
+    render();
+    requestAnimationFrame(() => {
+      elements.memberChoiceGate?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
   elements.forgotPasswordBtn.addEventListener('click', () => {
     if (isForgotPasswordMode) {
       isForgotPasswordMode = false;
@@ -626,6 +645,9 @@ function attachEvents() {
     requestAnimationFrame(() => {
       document.querySelector('[aria-label="Membership"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
+  });
+  elements.topExplorePlansBtn?.addEventListener('click', () => {
+    elements.joinAsMemberBtn?.click();
   });
   document.querySelectorAll('[data-member-choice-join]').forEach((btn) => {
     btn.addEventListener('click', () => elements.joinAsMemberBtn?.click());

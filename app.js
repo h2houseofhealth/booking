@@ -1,4 +1,4 @@
-const API_URL = "";
+﻿const API_URL = "";
 const state = {
   user: null,
   bookings: [],
@@ -40,6 +40,10 @@ const state = {
   selectedHydrogenSlots: [],
   selectedHydrogenAddOnServiceName: '',
   selectedHydrogenAddOnSessionIndex: 0,
+  hydrogenComposerNotice: {
+    message: '',
+    type: '',
+  },
   hydrogenEditingGroupId: '',
   activeHydrogenSessionIndex: 0,
   activeHydrogenSessionDate: '',
@@ -237,6 +241,12 @@ const elements = {
   bookingNotesList: document.getElementById('bookingNotesList'),
   bookingNotesEmpty: document.getElementById('bookingNotesEmpty'),
   bookingNotesBookingId: document.getElementById('bookingNotesBookingId'),
+
+  noticeDialog: document.getElementById('noticeDialog'),
+  noticeDialogTitle: document.getElementById('noticeDialogTitle'),
+  noticeDialogBody: document.getElementById('noticeDialogBody'),
+  noticeDialogCloseBtn: document.getElementById('noticeDialogCloseBtn'),
+  noticeDialogOkBtn: document.getElementById('noticeDialogOkBtn'),
   servicesBackBtn: document.getElementById('servicesBackBtn'),
   servicesNextBtn: document.getElementById('servicesNextBtn'),
   bookingsBackBtn: document.getElementById('bookingsBackBtn'),
@@ -472,6 +482,17 @@ function attachEvents() {
     await submitAuth();
   });
 
+  function closeNoticeDialog() {
+    try {
+      elements.noticeDialog?.close?.();
+    } catch {
+      elements.noticeDialog?.removeAttribute?.('open');
+    }
+  }
+
+  elements.noticeDialogOkBtn?.addEventListener('click', closeNoticeDialog);
+  elements.noticeDialogCloseBtn?.addEventListener('click', closeNoticeDialog);
+
   elements.logoutBtn.addEventListener('click', async () => {
     const response = await fetch(`${API_URL}/api/auth/logout`, { method: 'POST' });
     if (!response.ok) {
@@ -482,7 +503,7 @@ function attachEvents() {
       } catch {
         // ignore json parsing errors for empty responses
       }
-      alert(message);
+      showNotice({ title: 'Logout failed', body: message });
       return;
     }
     state.user = null;
@@ -811,7 +832,7 @@ function attachEvents() {
     try {
       await payAllUserBookings();
     } catch (error) {
-      alert(error?.message || 'Unable to start payment right now.');
+      showNotice({ title: 'Payment failed', body: error?.message || 'Unable to start payment right now.' });
     }
   });
   elements.closeProfileDialogBtn.addEventListener('click', closeProfileDialog);
@@ -866,7 +887,7 @@ function attachEvents() {
         elements.membershipAddPersonError.hidden = false;
         elements.membershipAddPersonError.textContent = error?.message || 'Unable to add person right now.';
       } else {
-        alert(error?.message || 'Unable to add person right now.');
+        showNotice({ title: 'Unable to add person', body: error?.message || 'Unable to add person right now.' });
       }
     } finally {
       if (submitBtn) {
@@ -1537,7 +1558,7 @@ async function loadServiceAvailability() {
       if (requestId !== availabilityRequestId) return;
       console.log('API DATA:', data);
 
-      // 🔥 THIS IS THE FIX
+      // ðŸ”¥ THIS IS THE FIX
       state.slotAvailability = data.slots || data.availability || {};
       state.slotCapacityByService = data.slotCapacityByService || {};
       state.slotHoldCounts = data.holds || {};
@@ -1717,11 +1738,11 @@ function getAdminCalendarSelectedServiceName() {
 function openAdminCalendarBooking(serviceName, bookingTime = '') {
   const normalizedService = String(serviceName || '').trim();
   if (!normalizedService) {
-    alert('Select a service first.');
+    showNotice({ title: 'Notice', body: 'Select a service first.' });
     return;
   }
   if (!isAdminCustomerFormReady()) {
-    alert('Enter customer name, email, and contact number first.');
+    showNotice({ title: 'Notice', body: 'Enter customer name, email, and contact number first.' });
     return;
   }
   openDialog();
@@ -1745,7 +1766,7 @@ function openAdminConsultationBookingFromCalendar() {
     }) ||
     null;
   if (!consultationService) {
-    alert('Consultation service is not configured.');
+    showNotice({ title: 'Error', body: 'Consultation service is not configured.' });
     return;
   }
   const serviceAvailability = state.adminCalendarAvailability?.[consultationService.name] || {};
@@ -2104,7 +2125,7 @@ async function unlockAdminDiscounts() {
     await loadAdminDiscountUsers();
     render();
   } catch (error) {
-    alert(error.message || 'Invalid discount password.');
+    showNotice({ title: 'Error', body: error.message || 'Invalid discount password.' });
   }
 }
 
@@ -2195,7 +2216,7 @@ function updateBookingSummary() {
   
   const summaryLines = [];
   summaryLines.push(
-    `<div><span>${escapeHtml(getServiceDisplayName(selectedService))}${isHydrogenFree ? ` <small>(Free • ${hydrogenFreeRemaining} left)</small>` : ''}</span><span>Rs. ${basePrice.toLocaleString('en-IN')}</span></div>`
+    `<div><span>${escapeHtml(getServiceDisplayName(selectedService))}${isHydrogenFree ? ` <small>(Free â€¢ ${hydrogenFreeRemaining} left)</small>` : ''}</span><span>Rs. ${basePrice.toLocaleString('en-IN')}</span></div>`
   );
   
   if (selectedAddOn) {
@@ -2398,7 +2419,7 @@ async function upsertBooking() {
   const isAdmin = state.user?.role === 'admin';
   if (isAdmin) {
     if (!isAdminCustomerFormReady()) {
-      alert('Enter customer name, email, and contact number first.');
+      showNotice({ title: 'Missing customer details', body: 'Enter customer name, email, and contact number first.' });
       return;
     }
     payload.customerName = state.adminCustomerForm.name;
@@ -2437,18 +2458,19 @@ async function upsertBooking() {
         requestAnimationFrame(() => {
           elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
-        alert(
-          `Added to cart.\n\nCart items: ${Number(cartSummary.unitCount || 0)}\nUse Pay Now in cart to continue payment.`
-        );
+        showNotice({
+          title: 'Added to cart',
+          body: [`Cart items: ${Number(cartSummary.unitCount || 0)}`, 'Use Pay Now in cart to continue payment.'],
+        });
       }
     } else {
       // Editing existing booking
       closeDialog();
       render();
-      alert('Booking updated.');
+      showNotice({ title: 'Booking updated', body: 'Changes saved.' });
     }
   } catch (error) {
-    alert(error?.message || 'Unable to save booking.');
+    showNotice({ title: 'Unable to save booking', body: error?.message || 'Unable to save booking.' });
   }
 }
 
@@ -2456,7 +2478,7 @@ async function openPaymentWithBookingId(bookingId) {
   try {
     await payBooking(bookingId);
   } catch (error) {
-    alert(error?.message || 'Unable to proceed with payment.');
+    showNotice({ title: 'Payment failed', body: error?.message || 'Unable to proceed with payment.' });
   }
 }
 
@@ -2466,13 +2488,13 @@ async function showAdminPaymentLinkDialog(bookingId, customerPhone) {
   const phoneNumber = String(customerPhone || '').trim();
   
   if (!paymentLink) {
-    alert('Payment link is not available for this booking.');
+    showNotice({ title: 'Payment link unavailable', body: 'Payment link is not available for this booking.' });
     return;
   }
 
   copyTextToClipboard(paymentLink);
   if (!phoneNumber) {
-    alert(`Payment Link\n\n${paymentLink}\n\nNo registered mobile number found. Link copied.`);
+    showNotice({ title: 'Payment link', body: [paymentLink, '', 'No registered mobile number found.', 'Link copied.'] });
     return;
   }
   
@@ -2492,9 +2514,12 @@ async function sendPaymentLinkViaSMS(bookingId, phoneNumber) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phoneNumber }),
     });
-    alert(`Payment link sent to ${phoneNumber}\n\n${result.message || 'SMS sent successfully'}`);
+    showNotice({
+      title: 'Payment link sent',
+      body: [`Sent to: ${phoneNumber}`, result.message || 'SMS sent successfully'],
+    });
   } catch (error) {
-    alert(error?.message || 'Unable to send payment link via SMS.');
+    showNotice({ title: 'SMS failed', body: error?.message || 'Unable to send payment link via SMS.' });
   }
 }
 
@@ -2511,7 +2536,7 @@ async function changeStatus(id, status) {
 async function copyBookingPaymentLink(id) {
   const result = await api(`/api/bookings/${id}/payment-link`);
   copyTextToClipboard(result.paymentLinkUrl || '');
-  alert(`Payment Link\n\n${result.paymentLinkUrl}\n\nPayment link copied.`);
+  showNotice({ title: 'Payment link', body: [result.paymentLinkUrl || '', '', 'Payment link copied.'] });
 }
 
 async function payBooking(id) {
@@ -2555,24 +2580,24 @@ async function payBooking(id) {
         render();
         const bookingCount = Number(verifyResult.bookingCount || result.bookingCount || 1);
         const totalAmountInr = Number(result.summary?.totalAmountInr || result.booking?.amountInr || 0);
-        alert(
-          bookingCount > 1
-            ? `Payment successful. ${bookingCount} booking(s) marked as booked. Total paid: Rs. ${totalAmountInr.toLocaleString(
-                'en-IN'
-              )}.`
-            : `Payment successful. Booking marked as booked. Amount paid: Rs. ${totalAmountInr.toLocaleString('en-IN')}.`
-        );
+        showNotice({
+          title: 'Payment successful',
+          body:
+            bookingCount > 1
+              ? `${bookingCount} booking(s) marked as booked.\nTotal paid: Rs. ${totalAmountInr.toLocaleString('en-IN')}.`
+              : `Booking marked as booked.\nAmount paid: Rs. ${totalAmountInr.toLocaleString('en-IN')}.`,
+        });
       } catch (error) {
         await loadDashboardData();
         render();
-        alert(error.message || 'Payment verification failed.');
+        showNotice({ title: 'Payment failed', body: error.message || 'Payment verification failed.' });
       }
     },
     modal: {
       ondismiss: async () => {
         await loadDashboardData();
         render();
-        alert('Payment was canceled.');
+        showNotice({ title: 'Payment canceled', body: 'Payment was canceled.' });
       },
     },
   };
@@ -2632,15 +2657,16 @@ async function payAllUserBookings() {
           if (elements.userCouponCode) elements.userCouponCode.value = '';
           renderCartCouponPreview();
           render();
-          alert(
-            `Payment successful. ${Number(verifyResult.unitCount || 0)} item(s) paid in one checkout. Total paid: Rs. ${Number(
+          showNotice({
+            title: 'Payment successful',
+            body: `Paid ${Number(verifyResult.unitCount || 0)} item(s) in one checkout.\nTotal paid: Rs. ${Number(
               verifyResult.totalAmountInr || result.summary?.totalAmountInr || 0
-            ).toLocaleString('en-IN')}.`
-          );
+            ).toLocaleString('en-IN')}.`,
+          });
         } catch (error) {
           await loadDashboardData();
           render();
-          alert(error.message || 'Payment verification failed.');
+          showNotice({ title: 'Payment failed', body: error.message || 'Payment verification failed.' });
         } finally {
           if (payButton) {
             payButton.disabled = false;
@@ -2656,7 +2682,7 @@ async function payAllUserBookings() {
             payButton.disabled = false;
             payButton.textContent = originalLabel;
           }
-          alert('Payment was canceled.');
+          showNotice({ title: 'Payment canceled', body: 'Payment was canceled.' });
         },
       },
     };
@@ -2679,21 +2705,26 @@ async function payAllUserBookings() {
 async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, addOnServiceName, addOnSessionIndex }) {
   const isAdmin = state.user?.role === 'admin';
   if (isAdmin && !isAdminCustomerFormReady()) {
-    alert('Enter customer name, email, and contact number first.');
+    setHydrogenComposerNotice('Enter customer name, email, and contact number first.', 'error');
+    renderServices();
     return;
   }
+  clearHydrogenComposerNotice();
   const dailyLimitConflict = findHydrogenDailyLimitConflictClient(slots);
   if (dailyLimitConflict) {
-    alert(
-      `Only ${MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER} hydrogen sessions can be booked in one day. Check ${dailyLimitConflict.bookingDate}.`
+    setHydrogenComposerNotice(
+      `Booking limit reached: max ${MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER} hydrogen sessions per day. Reduce sessions on ${dailyLimitConflict.bookingDate}.`,
+      'error'
     );
+    renderServices();
     return;
   }
   if (!isAdmin && addOnServiceName) {
     const addOnSlot = slots?.[Number(addOnSessionIndex || 0)];
     const cooldownConflict = findIvCooldownConflictClient(addOnServiceName, addOnSlot?.bookingDate || '');
     if (cooldownConflict) {
-      alert(getIvCooldownAlertMessage(cooldownConflict));
+      setHydrogenComposerNotice(getIvCooldownAlertMessage(cooldownConflict), 'error');
+      renderServices();
       return;
     }
   }
@@ -2716,6 +2747,8 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
       addOnSessionIndex,
     }),
   });
+
+  clearHydrogenComposerNotice();
 
   const summary = result.summary || {};
   const addOn = summary.addOn || null;
@@ -2779,22 +2812,26 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
     copyTextToClipboard(result.paymentLinkUrl);
     lines.push('', `Payment Link: ${result.paymentLinkUrl}`, 'Payment link copied.');
   }
-  alert(`Booking Saved\n\n${lines.join('\n')}`);
+  showNotice({ title: 'Booking saved', body: lines });
 }
 
 async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSessions, slots, addOnServiceName, addOnSessionIndex }) {
+  clearHydrogenComposerNotice();
   const dailyLimitConflict = findHydrogenDailyLimitConflictClient(slots, bookingGroupId);
   if (dailyLimitConflict) {
-    alert(
-      `Only ${MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER} hydrogen sessions can be booked in one day. Check ${dailyLimitConflict.bookingDate}.`
+    setHydrogenComposerNotice(
+      `Booking limit reached: max ${MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER} hydrogen sessions per day. Reduce sessions on ${dailyLimitConflict.bookingDate}.`,
+      'error'
     );
+    renderServices();
     return;
   }
   if (addOnServiceName) {
     const addOnSlot = slots?.[Number(addOnSessionIndex || 0)];
     const cooldownConflict = findIvCooldownConflictClient(addOnServiceName, addOnSlot?.bookingDate || '', '', bookingGroupId);
     if (cooldownConflict) {
-      alert(getIvCooldownAlertMessage(cooldownConflict));
+      setHydrogenComposerNotice(getIvCooldownAlertMessage(cooldownConflict), 'error');
+      renderServices();
       return;
     }
   }
@@ -2810,6 +2847,8 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
       addOnSessionIndex,
     }),
   });
+
+  clearHydrogenComposerNotice();
 
   const summary = result.summary || {};
   const addOn = summary.addOn || null;
@@ -2863,7 +2902,7 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
       )?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
-  alert(`Booking Updated\n\n${lines.join('\n')}`);
+  showNotice({ title: 'Booking updated', body: lines });
 }
 
 async function deleteBooking(booking) {
@@ -2919,10 +2958,10 @@ async function fetchBookingNotes(bookingId) {
       [String(bookingId)]: notes,
     };
     if (!Array.isArray(result?.notes)) {
-      alert('Notes are unavailable. Please confirm the server is updated.');
+      showNotice({ title: 'Notice', body: 'Notes are unavailable. Please confirm the server is updated.' });
     }
   } catch (error) {
-    alert(error.message || 'Unable to load booking notes.');
+    showNotice({ title: 'Error', body: error.message || 'Unable to load booking notes.' });
   } finally {
     state.adminBookingNotesLoading = false;
     renderBookingNotes();
@@ -2932,12 +2971,12 @@ async function fetchBookingNotes(bookingId) {
 async function addBookingNote() {
   const bookingId = Number(elements.bookingNotesBookingId?.value || 0);
   if (!bookingId) {
-    alert('Select a booking first.');
+    showNotice({ title: 'Notice', body: 'Select a booking first.' });
     return;
   }
   const noteText = String(elements.bookingNotesInput?.value || '').trim();
   if (!noteText) {
-    alert('Enter a note before saving.');
+    showNotice({ title: 'Notice', body: 'Enter a note before saving.' });
     return;
   }
   try {
@@ -2948,7 +2987,7 @@ async function addBookingNote() {
     });
     const note = result?.note;
     if (!note?.id) {
-      alert('Unable to save this note right now.');
+      showNotice({ title: 'Error', body: 'Unable to save this note right now.' });
       return;
     }
     state.adminBookingNotesByBooking = {
@@ -2958,7 +2997,7 @@ async function addBookingNote() {
     if (elements.bookingNotesInput) elements.bookingNotesInput.value = '';
     renderBookingNotes();
   } catch (error) {
-    alert(error.message || 'Unable to save this note right now.');
+    showNotice({ title: 'Error', body: error.message || 'Unable to save this note right now.' });
   }
 }
 
@@ -2966,7 +3005,7 @@ async function updateBookingNote(noteId) {
   const edit = state.adminBookingNoteEdits?.[noteId];
   const nextText = String(edit?.text || '').trim();
   if (!nextText) {
-    alert('Note text cannot be empty.');
+    showNotice({ title: 'Notice', body: 'Note text cannot be empty.' });
     return;
   }
   try {
@@ -2977,7 +3016,7 @@ async function updateBookingNote(noteId) {
     });
     const updated = result?.note;
     if (!updated?.id) {
-      alert('Unable to update this note right now.');
+      showNotice({ title: 'Error', body: 'Unable to update this note right now.' });
       return;
     }
     const bookingId = String(updated.bookingId || elements.bookingNotesBookingId?.value || '');
@@ -2993,7 +3032,7 @@ async function updateBookingNote(noteId) {
     }
     renderBookingNotes();
   } catch (error) {
-    alert(error.message || 'Unable to update this note right now.');
+    showNotice({ title: 'Error', body: error.message || 'Unable to update this note right now.' });
   }
 }
 
@@ -3013,7 +3052,7 @@ async function deleteBookingNote(noteId) {
     }
     renderBookingNotes();
   } catch (error) {
-    alert(error.message || 'Unable to delete this note right now.');
+    showNotice({ title: 'Error', body: error.message || 'Unable to delete this note right now.' });
   }
 }
 
@@ -3095,29 +3134,33 @@ async function saveSingleSessionServiceBooking(serviceName) {
     editingBookingId ? selection.editingTime || selection.bookingTime || '' : selection.bookingTime || ''
   ).trim();
   if (!effectiveBookingDate || !effectiveBookingTime) {
-    alert('Set hydrogen session date and time first.');
+    showNotice({ title: 'Notice', body: 'Set hydrogen session date and time first.' });
     return;
   }
   const selectedService = getServiceCatalogEntry(serviceName);
   if (selectedService?.membershipOnly && !isCurrentUserMembershipActive()) {
-    alert('✨ An exclusive benefit for our members. Activate your membership to enjoy this service at no cost.');
+    showNotice({
+      title: 'Members only',
+      body: '✨ An exclusive benefit for our members. Activate your membership to enjoy this service at no cost.',
+    });
     return;
   }
   if (getBookingCategory(serviceName) === 'IV ADD-ON' && hasHydrogenPackageAddOnOnDateClient(effectiveBookingDate)) {
-    alert(
-      'A hydrogen package on this date already includes an add-on. Separate Therapy/Shot bookings are not allowed on the same day.'
-    );
+    showNotice({
+      title: 'Not allowed',
+      body: 'A hydrogen package on this date already includes an add-on. Separate Therapy/Shot bookings are not allowed on the same day.',
+    });
     return;
   }
   const cooldownConflict = findIvCooldownConflictClient(serviceName, effectiveBookingDate, editingBookingId);
   if (cooldownConflict) {
-    alert(getIvCooldownAlertMessage(cooldownConflict));
+    showNotice({ title: 'Not available', body: getIvCooldownAlertMessage(cooldownConflict) });
     return;
   }
 
   const isAdmin = state.user?.role === 'admin';
   if (isAdmin && !isAdminCustomerFormReady()) {
-    alert('Enter customer name, email, and contact number first.');
+    showNotice({ title: 'Notice', body: 'Enter customer name, email, and contact number first.' });
     return;
   }
 
@@ -3165,10 +3208,16 @@ async function saveSingleSessionServiceBooking(serviceName) {
   }
   if (isAdmin && result.paymentLinkUrl) {
     copyTextToClipboard(result.paymentLinkUrl);
-    alert(`Booking saved to All User Bookings.\n\nPayment Link: ${result.paymentLinkUrl}\n\nPayment link copied.`);
+    showNotice({
+      title: 'Booking saved',
+      body: ['Saved to All User Bookings.', '', `Payment Link: ${result.paymentLinkUrl}`, 'Payment link copied.'],
+    });
     return;
   }
-  alert(editingBookingId ? 'Booking updated.' : isAdmin ? 'Booking saved to All User Bookings.' : 'Booking saved to My Bookings.');
+  showNotice({
+    title: editingBookingId ? 'Booking updated' : 'Booking saved',
+    body: editingBookingId ? 'Changes saved.' : isAdmin ? 'Saved to All User Bookings.' : 'Saved to My Bookings.',
+  });
 }
 
 function resetHydrogenComposer({ keepCategory = false } = {}) {
@@ -3226,7 +3275,7 @@ function openHydrogenPackageEditor(row) {
     `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`)
   );
   if (!hydrogenEntries.length) {
-    alert('Hydrogen package data is incomplete.');
+    showNotice({ title: 'Error', body: 'Hydrogen package data is incomplete.' });
     return;
   }
 
@@ -3538,7 +3587,7 @@ function renderServicePanelContext() {
     const membershipStatus = String(resolvedCustomer?.membershipStatus || 'inactive');
     const membershipSummary =
       membershipStatus === 'active'
-        ? `Active${resolvedCustomer?.membershipPeopleCount ? ` • ${resolvedCustomer.membershipPeopleCount} member${resolvedCustomer.membershipPeopleCount > 1 ? 's' : ''}` : ''}`
+        ? `Active${resolvedCustomer?.membershipPeopleCount ? ` â€¢ ${resolvedCustomer.membershipPeopleCount} member${resolvedCustomer.membershipPeopleCount > 1 ? 's' : ''}` : ''}`
         : 'Inactive';
     const activeDiscount = Number(resolvedCustomer?.discountPercent || 0);
     elements.adminClientMeta.hidden = false;
@@ -3653,7 +3702,7 @@ function renderProfileMembershipBadge() {
     return;
   }
   const expiresAt = getEffectiveMembershipExpiryDate(state.user?.membershipStartedAt, state.user?.membershipExpiresAt);
-  elements.userMembershipBadge.textContent = '★ Member';
+  elements.userMembershipBadge.textContent = 'â˜… Member';
   elements.userMembershipBadge.title =
     expiresAt && !Number.isNaN(expiresAt.getTime()) ? `Membership active until ${expiresAt.toLocaleDateString()}` : 'Membership active';
 }
@@ -3942,7 +3991,7 @@ function createServiceDetailItem(service, options = {}) {
   } else if (isMembershipOnly && hasMemberAccess) {
     priceDisplay.textContent = 'Included';
   } else {
-    priceDisplay.textContent = `₹${effectivePrice.toLocaleString('en-IN')}`;
+    priceDisplay.textContent = `â‚¹${effectivePrice.toLocaleString('en-IN')}`;
   }
   priceSection.appendChild(priceDisplay);
 
@@ -3951,7 +4000,7 @@ function createServiceDetailItem(service, options = {}) {
   if (sessionCount > 1) {
     const sessionBadge = document.createElement('span');
     sessionBadge.className = 'service-sessions';
-    sessionBadge.textContent = `${sessionCount}×`;
+    sessionBadge.textContent = `${sessionCount}Ã—`;
     priceSection.appendChild(sessionBadge);
   }
 
@@ -4078,6 +4127,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     state.activeHydrogenSessionIndex = 0;
     state.activeHydrogenSessionDate = '';
     state.activeHydrogenSessionTime = '';
+    clearHydrogenComposerNotice();
     renderServices();
   });
 
@@ -4154,6 +4204,13 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     </header>
   `;
 
+  if (state.hydrogenComposerNotice?.message) {
+    const notice = document.createElement('div');
+    notice.className = `hydrogen-composer-notice ${state.hydrogenComposerNotice.type === 'error' ? 'is-error' : 'is-info'}`.trim();
+    notice.textContent = state.hydrogenComposerNotice.message;
+    schedulePanel.appendChild(notice);
+  }
+
   const scheduleList = document.createElement('div');
   scheduleList.className = 'hydrogen-schedule-list';
   for (let idx = 0; idx < requiredSlots; idx += 1) {
@@ -4196,6 +4253,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     state.selectedHydrogenSlots[idx].bookingTime = timeSelect.value || bookingTime || SLOT_OPTIONS[0].value;
 
     dateInput.addEventListener('change', () => {
+      clearHydrogenComposerNotice();
       const nextDate = dateInput.value || getTodayIsoDate();
       state.selectedHydrogenSlots[idx] = {
         ...(state.selectedHydrogenSlots[idx] || {}),
@@ -4214,6 +4272,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
       state.selectedHydrogenSlots[idx].bookingTime = timeSelect.value || SLOT_OPTIONS[0].value;
     });
     timeSelect.addEventListener('change', () => {
+      clearHydrogenComposerNotice();
       state.selectedHydrogenSlots[idx] = {
         ...(state.selectedHydrogenSlots[idx] || {}),
         bookingDate: dateInput.value || getTodayIsoDate(),
@@ -4249,8 +4308,8 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
         ? selectedServiceHasMemberAccess
           ? 'Included in Membership'
           : 'Members only'
-        : `₹${selectedServicePrice.toLocaleString('en-IN')}`;
-  const stickyPriceClass = /₹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
+        : `â‚¹${selectedServicePrice.toLocaleString('en-IN')}`;
+  const stickyPriceClass = /â‚¹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
 
   const stickyWrap = document.createElement('div');
   stickyWrap.className = 'service-sticky-book';
@@ -4276,9 +4335,11 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
       if (addOnServiceName) {
         const addOnSlot = slots?.[Number(addOnSessionIndex || 0)];
         if (addOnSlot && hasStandaloneIvOnDateClient(addOnSlot.bookingDate, state.hydrogenEditingGroupId)) {
-          alert(
-            'A separate Therapy/Shot is already booked on this date. Hydrogen packages with an add-on cannot be combined with separate Therapy/Shot bookings on the same day.'
+          setHydrogenComposerNotice(
+            'A separate Therapy/Shot is already booked on this date. Hydrogen packages with an add-on cannot be combined with separate Therapy/Shot bookings on the same day.',
+            'error'
           );
+          renderServices();
           return;
         }
       }
@@ -4302,7 +4363,8 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
         });
       }
     } catch (error) {
-      alert(error.message || `Unable to ${isEditingHydrogenGroup ? 'update' : 'save'} hydrogen booking.`);
+      setHydrogenComposerNotice(error.message || `Unable to ${isEditingHydrogenGroup ? 'update' : 'save'} hydrogen booking.`, 'error');
+      renderServices();
     }
   });
   stickyWrap.appendChild(stickyButton);
@@ -4370,7 +4432,7 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
       ? hasMemberAccess
         ? 'Included in Membership'
         : 'Members only'
-      : `₹${price.toLocaleString('en-IN')}`;
+      : `â‚¹${price.toLocaleString('en-IN')}`;
     summary.innerHTML = `
       <strong>${escapeHtml(service.name)}</strong>
       <span>${escapeHtml(priceText)}</span>
@@ -4473,8 +4535,8 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
     ? selectedServiceHasMemberAccess
       ? 'Included in Membership'
       : 'Members only'
-    : `₹${selectedServicePrice.toLocaleString('en-IN')}`;
-  const stickyPriceClass = /₹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
+    : `â‚¹${selectedServicePrice.toLocaleString('en-IN')}`;
+  const stickyPriceClass = /â‚¹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
 
   const stickyWrap = document.createElement('div');
   stickyWrap.className = 'service-sticky-book';
@@ -4497,7 +4559,7 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
         bookingTime: timeSelect.value || SLOT_OPTIONS[0].value,
       });
     } catch (error) {
-      alert(error.message || 'Unable to add this hydrogen session to cart.');
+      showNotice({ title: 'Error', body: error.message || 'Unable to add this hydrogen session to cart.' });
     }
   });
   stickyWrap.appendChild(stickyButton);
@@ -4510,37 +4572,38 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
 async function saveIvUnifiedBookingToCart({ serviceName, bookingDate, bookingTime }) {
   const service = getServiceCatalogEntry(serviceName);
   if (!service) {
-    alert('Selected service is not available.');
+    showNotice({ title: 'Error', body: 'Selected service is not available.' });
     return;
   }
   const safeDate = String(bookingDate || '').trim();
   const safeTime = String(bookingTime || '').trim();
   if (!safeDate || !safeTime) {
-    alert('Set hydrogen session date and time first.');
+    showNotice({ title: 'Notice', body: 'Set hydrogen session date and time first.' });
     return;
   }
 
   if (service?.membershipOnly && !isCurrentUserMembershipActive()) {
-    alert('This service is available only for active members.');
+    showNotice({ title: 'Members only', body: 'This service is available only for active members.' });
     return;
   }
 
   if (getBookingCategory(serviceName) === 'IV ADD-ON' && hasHydrogenPackageAddOnOnDateClient(safeDate)) {
-    alert(
-      'A hydrogen package on this date already includes an add-on. Separate Therapy/Shot bookings are not allowed on the same day.'
-    );
+    showNotice({
+      title: 'Not allowed',
+      body: 'A hydrogen package on this date already includes an add-on. Separate Therapy/Shot bookings are not allowed on the same day.',
+    });
     return;
   }
 
   const cooldownConflict = findIvCooldownConflictClient(serviceName, safeDate);
   if (cooldownConflict) {
-    alert(getIvCooldownAlertMessage(cooldownConflict));
+    showNotice({ title: 'Not available', body: getIvCooldownAlertMessage(cooldownConflict) });
     return;
   }
 
   const isAdmin = state.user?.role === 'admin';
   if (isAdmin && !isAdminCustomerFormReady()) {
-    alert('Enter customer name, email, and contact number first.');
+    showNotice({ title: 'Notice', body: 'Enter customer name, email, and contact number first.' });
     return;
   }
 
@@ -4575,16 +4638,18 @@ async function saveIvUnifiedBookingToCart({ serviceName, bookingDate, bookingTim
   }
   if (isAdmin && result.paymentLinkUrl) {
     copyTextToClipboard(result.paymentLinkUrl);
-    alert(`Booking saved to All User Bookings.\n\nPayment Link: ${result.paymentLinkUrl}\n\nPayment link copied.`);
+    showNotice({
+      title: 'Booking saved',
+      body: ['Saved to All User Bookings.', '', `Payment Link: ${result.paymentLinkUrl}`, 'Payment link copied.'],
+    });
     return;
   }
 
   const cartSummary = buildUserCartSummary(state.bookings || []);
-  alert(
-    `Added to cart.\n\n${serviceName} on ${formatDateTime(safeDate, safeTime)}\nCart items: ${Number(
-      cartSummary.unitCount || 0
-    )}`
-  );
+  showNotice({
+    title: 'Added to cart',
+    body: `${serviceName} on ${formatDateTime(safeDate, safeTime)}\nCart items: ${Number(cartSummary.unitCount || 0)}`,
+  });
 }
 
 function getHydrogenSessionCountFromServiceName(serviceName) {
@@ -4792,7 +4857,7 @@ function getHydrogenPlanOptions(services) {
       sessionBtn.className = `hydrogen-session-item${idx === state.activeHydrogenSessionIndex ? ' is-active' : ''}${
         assigned ? ' is-assigned' : ''
       }`;
-      sessionBtn.textContent = `Hydrogen Session ${idx + 1}${assigned ? ' ✓' : ''}`;
+      sessionBtn.textContent = `Hydrogen Session ${idx + 1}${assigned ? ' âœ“' : ''}`;
       sessionBtn.addEventListener('click', () => {
         state.activeHydrogenSessionIndex = idx;
         state.activeHydrogenSessionDate = state.selectedHydrogenSlots[idx]?.bookingDate || getTodayIsoDate();
@@ -4947,9 +5012,10 @@ function getHydrogenPlanOptions(services) {
         if (selectedAddOnService) {
           const addOnSlot = submitSlots[state.selectedHydrogenAddOnSessionIndex];
           if (addOnSlot && hasStandaloneIvOnDateClient(addOnSlot.bookingDate, state.hydrogenEditingGroupId)) {
-            alert(
-              'A separate Therapy/Shot is already booked on this date. Hydrogen packages with an add-on cannot be combined with separate Therapy/Shot bookings on the same day.'
-            );
+            showNotice({
+              title: 'Not allowed',
+              body: 'A separate Therapy/Shot is already booked on this date. Hydrogen packages with an add-on cannot be combined with separate Therapy/Shot bookings on the same day.',
+            });
             return;
           }
         }
@@ -4972,7 +5038,10 @@ function getHydrogenPlanOptions(services) {
           });
         }
       } catch (error) {
-        alert(error.message || `Unable to ${isEditingHydrogenGroup ? 'update' : 'save'} hydrogen booking.`);
+        showNotice({
+          title: 'Error',
+          body: error.message || `Unable to ${isEditingHydrogenGroup ? 'update' : 'save'} hydrogen booking.`,
+        });
       }
     });
     if (isEditingHydrogenGroup) {
@@ -5066,7 +5135,7 @@ function getHydrogenPlanOptions(services) {
     const sessionBtn = document.createElement('button');
     sessionBtn.type = 'button';
     sessionBtn.className = `hydrogen-session-item is-active${selection.bookingDate && selection.bookingTime ? ' is-assigned' : ''}`;
-    sessionBtn.textContent = `Hydrogen Session 1${selection.bookingDate && selection.bookingTime ? ' ✓' : ''}`;
+    sessionBtn.textContent = `Hydrogen Session 1${selection.bookingDate && selection.bookingTime ? ' âœ“' : ''}`;
     sessionsList.appendChild(sessionBtn);
     sidebar.appendChild(sessionsList);
     layout.appendChild(sidebar);
@@ -5200,7 +5269,7 @@ function getHydrogenPlanOptions(services) {
       try {
         await saveSingleSessionServiceBooking(selectedService.name);
       } catch (error) {
-        alert(error.message || 'Unable to save booking.');
+        showNotice({ title: 'Error', body: error.message || 'Unable to save booking.' });
       }
     });
     card.appendChild(saveBtn);
@@ -5357,7 +5426,7 @@ function getHydrogenPlanOptions(services) {
         const holdNote = document.createElement('span');
         holdNote.className = 'slot-hold-note';
         const holdMinutes = Number(state.bookingHoldMinutes || BOOKING_HOLD_MINUTES) || BOOKING_HOLD_MINUTES;
-        holdNote.textContent = `On hold: ${holdCount} • try again in ${holdMinutes} min`;
+        holdNote.textContent = `On hold: ${holdCount} â€¢ try again in ${holdMinutes} min`;
         slotMetaWrap.appendChild(holdNote);
       }
       slotRow.appendChild(slotTime);
@@ -5503,7 +5572,7 @@ function renderMembershipCalendarDetails(dateKey, bookings) {
         return `
         <div class="membership-calendar-detail-item">
           <strong>${escapeHtml(booking.serviceName || 'Hydrogen Session')}</strong>
-          <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))} • ${escapeHtml(derivedStatus)}</span>
+          <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))} â€¢ ${escapeHtml(derivedStatus)}</span>
         </div>
       `;
       }
@@ -5615,8 +5684,8 @@ function renderMembership() {
   }
   if (elements.membershipDashboardStatus) {
     elements.membershipDashboardStatus.textContent = active
-      ? `${activePlanName}${effectiveExpiry ? ` • valid till ${effectiveExpiry.toLocaleDateString()}` : ''}`
-      : 'Non-member account • standard pricing and pay-per-visit access';
+      ? `${activePlanName}${effectiveExpiry ? ` â€¢ valid till ${effectiveExpiry.toLocaleDateString()}` : ''}`
+      : 'Non-member account â€¢ standard pricing and pay-per-visit access';
   }
 
   const allBookings = (state.bookings || []).filter(
@@ -5644,7 +5713,7 @@ function renderMembership() {
     elements.membershipStatMembersMeta.textContent = active ? 'Covered' : 'Total';
   }
   if (elements.membershipStatValid) {
-    elements.membershipStatValid.textContent = active ? (effectiveExpiry ? effectiveExpiry.toLocaleDateString() : '-') : '₹9,500';
+    elements.membershipStatValid.textContent = active ? (effectiveExpiry ? effectiveExpiry.toLocaleDateString() : '-') : 'â‚¹9,500';
   }
   if (elements.membershipStatValidLabel) {
     elements.membershipStatValidLabel.textContent = active ? 'Valid Till' : 'Non-member Price';
@@ -5682,8 +5751,8 @@ function renderMembership() {
   }
   if (elements.membershipUsageNote) {
     elements.membershipUsageNote.textContent = active
-      ? `${remainingSessions} hydrogen sessions remaining (per member)${missedSessions > 0 ? ` • Missed hydrogen sessions: ${missedSessions}` : ''}`
-      : `You have ${allBookings.length} total booking${allBookings.length === 1 ? '' : 's'}${upcomingBookings.length ? ` • ${upcomingBookings.length} upcoming` : ''}. Upgrade to membership to unlock 16 included hydrogen sessions.`;
+      ? `${remainingSessions} hydrogen sessions remaining (per member)${missedSessions > 0 ? ` â€¢ Missed hydrogen sessions: ${missedSessions}` : ''}`
+      : `You have ${allBookings.length} total booking${allBookings.length === 1 ? '' : 's'}${upcomingBookings.length ? ` â€¢ ${upcomingBookings.length} upcoming` : ''}. Upgrade to membership to unlock 16 included hydrogen sessions.`;
   }
 
   const upcoming = active
@@ -5724,11 +5793,11 @@ function renderMembership() {
       const validityLine =
         startedAt && !Number.isNaN(startedAt.getTime())
           ? `Validity starts from ${startedAt.toLocaleDateString()}` +
-            (expiresAt && !Number.isNaN(expiresAt.getTime()) ? ` • ends on ${expiresAt.toLocaleDateString()}` : '')
+            (expiresAt && !Number.isNaN(expiresAt.getTime()) ? ` â€¢ ends on ${expiresAt.toLocaleDateString()}` : '')
           : '';
       elements.membershipPeopleMeta.textContent = `${members.length} of ${currentPeopleCount} member${
         currentPeopleCount === 1 ? '' : 's'
-      } added${validityLine ? ` • ${validityLine}` : ''}`;
+      } added${validityLine ? ` â€¢ ${validityLine}` : ''}`;
 
       elements.membershipPeopleList.innerHTML = '';
       if (!members.length) {
@@ -5804,7 +5873,7 @@ function renderMembership() {
       <div class="membership-card-body">
         <div class="membership-card-price-block">
           <p class="membership-price">Rs. ${estimatedAmountInr.toLocaleString('en-IN')}</p>
-          <p class="membership-price-caption">1-year access • ${escapeHtml(plan.validityDays)} days</p>
+          <p class="membership-price-caption">1-year access â€¢ ${escapeHtml(plan.validityDays)} days</p>
         </div>
         <p class="membership-includes-label">Includes:</p>
         <ul class="membership-feature-list">
@@ -5933,7 +6002,7 @@ function openMembershipCheckoutDialog(plan, additionalPeople) {
   }
 
   if (elements.membershipDialogTitle) {
-    elements.membershipDialogTitle.textContent = `Membership Details • ${plan.name}`;
+    elements.membershipDialogTitle.textContent = `Membership Details â€¢ ${plan.name}`;
   }
   renderMembershipCheckoutSummary();
   renderMembershipCouponPreview();
@@ -5990,7 +6059,7 @@ function closeMembershipAddPersonDialog() {
 function openMembershipAddPersonDialog() {
   if (!elements.membershipAddPersonDialog) return;
   if (state.user?.role !== 'user' || !isCurrentUserMembershipActive()) {
-    alert('Active membership is required to add a person.');
+    showNotice({ title: 'Members only', body: 'Active membership is required to add a person.' });
     return;
   }
   const startedAtValue =
@@ -6019,13 +6088,13 @@ function openMembershipAddPersonDialog() {
 function openMembershipAddPersonUpgradeCheckoutDialog() {
   if (!elements.membershipDialog || !elements.membershipMembersGrid) return;
   if (state.user?.role !== 'user' || !isCurrentUserMembershipActive()) {
-    alert('Active membership is required to add a person.');
+    showNotice({ title: 'Members only', body: 'Active membership is required to add a person.' });
     return;
   }
 
   const addPersonPlan = (state.membership.plans || []).find((plan) => String(plan.id) === 'h2_add_person') || null;
   if (!addPersonPlan) {
-    alert('Add Person plan is not configured.');
+    showNotice({ title: 'Error', body: 'Add Person plan is not configured.' });
     return;
   }
 
@@ -6089,7 +6158,7 @@ function openMembershipAddPersonUpgradeCheckoutDialog() {
   }
 
   if (elements.membershipDialogTitle) {
-    elements.membershipDialogTitle.textContent = `Membership Details • ${addPersonPlan.name}`;
+    elements.membershipDialogTitle.textContent = `Membership Details â€¢ ${addPersonPlan.name}`;
   }
   renderMembershipCheckoutSummary();
   renderMembershipCouponPreview();
@@ -6201,7 +6270,7 @@ function renderMembershipCheckoutSummary() {
   const startedAt = startedAtValue ? new Date(startedAtValue) : null;
   const addPersonValidityNote =
     planId === 'h2_add_person' && startedAt && !Number.isNaN(startedAt.getTime())
-      ? ` • Validity starts from ${startedAt.toLocaleDateString()}`
+      ? ` â€¢ Validity starts from ${startedAt.toLocaleDateString()}`
       : '';
 
   if (preview) {
@@ -6209,13 +6278,13 @@ function renderMembershipCheckoutSummary() {
     const discount = Number(preview.discountAmountInr || 0);
     const payable = Number(preview.payableAmountInr || Math.max(0, original - discount));
     elements.membershipPlanSummary.textContent =
-      `Members: ${targetPeopleCount} • Estimated: Rs. ${original.toLocaleString('en-IN')}` +
-      ` • Coupon: -Rs. ${discount.toLocaleString('en-IN')}` +
-      ` • Payable: Rs. ${payable.toLocaleString('en-IN')}${addPersonValidityNote}`;
+      `Members: ${targetPeopleCount} â€¢ Estimated: Rs. ${original.toLocaleString('en-IN')}` +
+      ` â€¢ Coupon: -Rs. ${discount.toLocaleString('en-IN')}` +
+      ` â€¢ Payable: Rs. ${payable.toLocaleString('en-IN')}${addPersonValidityNote}`;
     return;
   }
 
-  elements.membershipPlanSummary.textContent = `Members: ${targetPeopleCount} • Estimated Amount: Rs. ${estimatedAmountInr.toLocaleString(
+  elements.membershipPlanSummary.textContent = `Members: ${targetPeopleCount} â€¢ Estimated Amount: Rs. ${estimatedAmountInr.toLocaleString(
     'en-IN'
   )}${addPersonValidityNote}`;
 }
@@ -6251,7 +6320,7 @@ function renderCartCouponPreview() {
 
 async function previewMembershipCoupon() {
   if (!state.membershipCheckout) {
-    alert('Select a membership plan first.');
+    showNotice({ title: 'Notice', body: 'Select a membership plan first.' });
     return;
   }
   const couponCode = String(elements.membershipCouponCode?.value || '').trim();
@@ -6279,7 +6348,7 @@ async function previewMembershipCoupon() {
     state.membershipCouponPreview = null;
     renderMembershipCouponPreview();
     renderMembershipCheckoutSummary();
-    alert(error.message || 'Unable to apply this coupon.');
+    showNotice({ title: 'Error', body: error.message || 'Unable to apply this coupon.' });
   }
 }
 
@@ -6306,7 +6375,7 @@ async function previewCartCoupon() {
     state.cartCouponPreview = null;
     renderCartCouponPreview();
     renderUserCheckoutSummary(state.bookings || []);
-    alert(error.message || 'Unable to apply this coupon.');
+    showNotice({ title: 'Error', body: error.message || 'Unable to apply this coupon.' });
   }
 }
 
@@ -6314,7 +6383,7 @@ async function submitMembershipCheckout() {
   if (!state.membershipCheckout) return;
   const plan = (state.membership.plans || []).find((item) => String(item.id) === String(state.membershipCheckout.planId));
   if (!plan) {
-    alert('Membership plan not found.');
+    showNotice({ title: 'Error', body: 'Membership plan not found.' });
     return;
   }
 
@@ -6322,7 +6391,7 @@ async function submitMembershipCheckout() {
   try {
     await activateMembershipWithPayment(plan, state.membershipCheckout.additionalPeople, memberDetails);
   } catch (error) {
-    alert(error.message || 'Unable to continue with membership payment.');
+    showNotice({ title: 'Error', body: error.message || 'Unable to continue with membership payment.' });
   }
 }
 
@@ -6377,14 +6446,14 @@ async function activateMembershipWithPayment(plan, additionalPeople = 0, memberD
         requestAnimationFrame(() => {
           elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
-        alert(result.message || 'Membership activated. Redirecting to Services.');
+        showNotice({ title: 'Success', body: result.message || 'Membership activated. Redirecting to Services.' });
       } catch (error) {
-        alert(error.message || 'Membership payment verification failed.');
+        showNotice({ title: 'Error', body: error.message || 'Membership payment verification failed.' });
       }
     },
     modal: {
       ondismiss: () => {
-        alert('Membership payment was canceled.');
+        showNotice({ title: 'Notice', body: 'Membership payment was canceled.' });
       },
     },
   };
@@ -6610,9 +6679,9 @@ function renderAdminUserSessionDialog() {
 
   const summary = buildAdminUserSessionSummary(selectedUser);
   elements.adminUserSessionTitle.textContent = selectedUser.name || 'User Sessions';
-  elements.adminUserSessionMeta.textContent = [selectedUser.email, selectedUser.mobile ? `ID ${selectedUser.id} • ${selectedUser.mobile}` : `ID ${selectedUser.id}`]
+  elements.adminUserSessionMeta.textContent = [selectedUser.email, selectedUser.mobile ? `ID ${selectedUser.id} â€¢ ${selectedUser.mobile}` : `ID ${selectedUser.id}`]
     .filter(Boolean)
-    .join(' • ');
+    .join(' â€¢ ');
 
   const kpis = [
     { title: 'Total Sessions', value: summary.total, tone: 'total' },
@@ -6648,7 +6717,7 @@ function renderAdminUserSessionDialog() {
       row.innerHTML = `
         <div>
           <h4>${escapeHtml(booking?.serviceName || 'Session')}</h4>
-          <p>${escapeHtml(formatAdminBookingDateTime(booking?.bookingDate, booking?.bookingTime).replace(/\n/g, ' • '))}</p>
+          <p>${escapeHtml(formatAdminBookingDateTime(booking?.bookingDate, booking?.bookingTime).replace(/\n/g, ' â€¢ '))}</p>
         </div>
         <div class="admin-user-session-badges">
           <span class="status-chip status-${escapeHtml(derivedStatus)}">${escapeHtml(derivedStatus)}</span>
@@ -7148,7 +7217,7 @@ function openMembershipDetailsModal(order) {
       <div class="admin-membership-modal-head">
         <div>
           <h3>${escapeHtml(getMembershipPlanDisplayName(order.planId))}</h3>
-          <p>${escapeHtml(order.userEmail || '-')} • ${escapeHtml(order.userMobile || '-')}</p>
+          <p>${escapeHtml(order.userEmail || '-')} â€¢ ${escapeHtml(order.userMobile || '-')}</p>
         </div>
         <span class="status-chip payment-${escapeHtml(String(order.status || 'created').toLowerCase())}">${escapeHtml(
           String(order.status || 'created')
@@ -7390,7 +7459,7 @@ function renderAdminDiscountUsers() {
       const phone = user.mobile || 'no-phone';
       info.innerHTML = `
         <strong>${escapeHtml(user.name || 'User')}</strong>
-        <span>${escapeHtml(email)} • ${escapeHtml(phone)}</span>
+        <span>${escapeHtml(email)} â€¢ ${escapeHtml(phone)}</span>
         <span>${escapeHtml(statusLabel)}</span>
       `;
       left.append(checkbox, info);
@@ -7410,12 +7479,12 @@ function renderAdminDiscountUsers() {
 async function applyAdminDiscountToSelected() {
   const selectedUsers = getSelectedDiscountUsers();
   if (!selectedUsers.length) {
-    alert('Select at least one user to apply a discount.');
+    showNotice({ title: 'Notice', body: 'Select at least one user to apply a discount.' });
     return;
   }
   const percent = Number(elements.adminDiscountBulkPercent?.value || 0);
   if (!Number.isFinite(percent) || percent <= 0 || percent > 100) {
-    alert('Enter a valid discount percentage between 1 and 100.');
+    showNotice({ title: 'Notice', body: 'Enter a valid discount percentage between 1 and 100.' });
     return;
   }
 
@@ -7439,7 +7508,10 @@ async function applyAdminDiscountToSelected() {
   state.adminDiscountSelectedUsers = [];
   state.adminDiscountSelectedWindowOpen = false;
   if (failures.length) {
-    alert(`Discount applied with some issues. Could not apply for: ${failures.join(', ')}.`);
+    showNotice({
+      title: 'Partial success',
+      body: `Discount applied with some issues. Could not apply for: ${failures.join(', ')}.`,
+    });
     render();
     return;
   }
@@ -7545,7 +7617,7 @@ async function applyAdminUserDiscount({ userId, email, phone, discountPercent })
     await loadDashboardData();
     render();
   } catch (error) {
-    alert(error.message || 'Unable to apply discount.');
+    showNotice({ title: 'Error', body: error.message || 'Unable to apply discount.' });
   }
 }
 
@@ -7553,7 +7625,7 @@ async function saveAdminDiscountPhone() {
   const phone = String(elements.adminDiscountPhone?.value || '').trim();
   const discountPercent = Number(elements.adminDiscountPercent?.value || 0);
   if (!phone || !Number.isFinite(discountPercent) || discountPercent <= 0) {
-    alert('Enter a valid phone number and discount percentage.');
+    showNotice({ title: 'Notice', body: 'Enter a valid phone number and discount percentage.' });
     return;
   }
 
@@ -7631,10 +7703,10 @@ function renderAdminCoupons() {
       item.discountType === 'flat'
         ? `Rs. ${Number(item.discountValue || 0).toLocaleString('en-IN')} off`
         : `${Number(item.discountValue || 0)}% off`;
-    const maxRedemptions = item.maxRedemptions == null ? '∞' : String(item.maxRedemptions);
+    const maxRedemptions = item.maxRedemptions == null ? 'âˆž' : String(item.maxRedemptions);
     const expiresText = item.expiresAt ? formatDateOnly(item.expiresAt) : 'No expiry';
     const recipientLabel = item.recipientEmail
-      ? `${item.recipientName ? `${item.recipientName} • ` : ''}${item.recipientEmail}`
+      ? `${item.recipientName ? `${item.recipientName} â€¢ ` : ''}${item.recipientEmail}`
       : 'No recipient';
     const emailStatus = item.emailStatus ? item.emailStatus.toUpperCase() : 'N/A';
     const emailedAtText = item.emailedAt ? formatDateOnly(item.emailedAt) : '-';
@@ -7644,7 +7716,7 @@ function renderAdminCoupons() {
         <p>${escapeHtml(discountLabel)}</p>
         ${item.description ? `<p>${escapeHtml(item.description)}</p>` : ''}
         <p>Recipient: ${escapeHtml(recipientLabel)}</p>
-        <p>Email: ${escapeHtml(emailStatus)} • Last sent: ${escapeHtml(emailedAtText)}</p>
+        <p>Email: ${escapeHtml(emailStatus)} â€¢ Last sent: ${escapeHtml(emailedAtText)}</p>
         ${item.emailStatus === 'failed' && item.emailError ? `<p>${escapeHtml(item.emailError)}</p>` : ''}
         <p>Uses: ${escapeHtml(String(item.totalRedemptions || 0))}/${escapeHtml(maxRedemptions)}</p>
         <p>Expires: ${escapeHtml(expiresText)}</p>
@@ -7657,7 +7729,7 @@ function renderAdminCoupons() {
     copyBtn.textContent = 'Copy';
     copyBtn.addEventListener('click', () => {
       copyTextToClipboard(item.code || '');
-      alert('Coupon code copied.');
+      showNotice({ title: 'Copied', body: 'Coupon code copied.' });
     });
 
     const removeBtn = document.createElement('button');
@@ -7693,15 +7765,15 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
   const expiresAt = String(elements.adminCouponExpiresAt?.value || '').trim();
 
   if (recipientEmail && !isLikelyEmail(recipientEmail)) {
-    alert('Enter a valid recipient email.');
+    showNotice({ title: 'Notice', body: 'Enter a valid recipient email.' });
     return;
   }
   if (sendEmail && !recipientEmail) {
-    alert('Recipient email is required to send a coupon.');
+    showNotice({ title: 'Notice', body: 'Recipient email is required to send a coupon.' });
     return;
   }
   if (!Number.isFinite(discountValue) || discountValue <= 0 || discountValue > 100) {
-    alert('Enter a valid discount percentage between 1 and 100.');
+    showNotice({ title: 'Notice', body: 'Enter a valid discount percentage between 1 and 100.' });
     return;
   }
   if (!code) {
@@ -7751,11 +7823,14 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
 
     const sentCode = result.code || code;
     if (!sendEmail) {
-      alert(`Coupon ${sentCode} saved.`);
+      showNotice({ title: 'Saved', body: `Coupon ${sentCode} saved.` });
     } else if (result.emailStatus === 'failed') {
-      alert(`Coupon ${sentCode} was created, but the email could not be sent. ${result.emailMessage || ''}`.trim());
+      showNotice({
+        title: 'Email failed',
+        body: `Coupon ${sentCode} was created, but the email could not be sent. ${result.emailMessage || ''}`.trim(),
+      });
     } else {
-      alert(`Coupon ${sentCode} sent to ${recipientEmail}.`);
+      showNotice({ title: 'Email sent', body: `Coupon ${sentCode} sent to ${recipientEmail}.` });
     }
   } finally {
     if (elements.adminCouponSubmitBtn) {
@@ -7787,7 +7862,7 @@ async function resendAdminCoupon(couponId) {
   });
   await loadDashboardData();
   render();
-  alert('Coupon email sent.');
+  showNotice({ title: 'Email sent', body: 'Coupon email sent.' });
 }
 
 function cell(content) {
@@ -8100,7 +8175,7 @@ function createActionButton(label, onClick) {
     try {
       await onClick();
     } catch (error) {
-      alert(error.message || 'Action failed');
+      showNotice({ title: 'Action failed', body: error.message || 'Action failed' });
     }
   });
   return button;
@@ -8120,13 +8195,62 @@ function copyTextToClipboard(value) {
   }
 }
 
+function normalizeNoticeBody(body) {
+  if (Array.isArray(body)) {
+    return body.map((line) => String(line ?? '')).join('\n').trim();
+  }
+  return String(body ?? '').trim();
+}
+
+function normalizeNoticeType(typeValue, titleValue) {
+  const raw = String(typeValue || '').trim().toLowerCase();
+  if (['error', 'success', 'warning', 'info'].includes(raw)) return raw;
+
+  const title = String(titleValue || '').trim().toLowerCase();
+  if (!title) return 'info';
+  if (title.includes('error') || title.includes('failed')) return 'error';
+  if (title.includes('success') || title.includes('saved') || title.includes('copied') || title.includes('sent')) return 'success';
+  if (title.includes('warning') || title.includes('not allowed') || title.includes('partial')) return 'warning';
+  return 'info';
+}
+
+function showNotice({ title = 'Notice', body = '', type = '' } = {}) {
+  const normalizedTitle = String(title || 'Notice').trim() || 'Notice';
+  const normalizedBody = normalizeNoticeBody(body);
+  const normalizedType = normalizeNoticeType(type, normalizedTitle);
+
+  if (!elements.noticeDialog || !elements.noticeDialogTitle || !elements.noticeDialogBody) {
+    alert([normalizedTitle, normalizedBody].filter(Boolean).join('\n\n'));
+    return;
+  }
+
+  elements.noticeDialogTitle.textContent = normalizedTitle;
+  elements.noticeDialogBody.textContent = normalizedBody;
+  try {
+    elements.noticeDialog.dataset.type = normalizedType;
+  } catch {}
+
+  try {
+    if (typeof elements.noticeDialog.showModal === 'function') {
+      elements.noticeDialog.showModal();
+    } else {
+      elements.noticeDialog.setAttribute('open', 'open');
+    }
+  } catch {
+    alert([normalizedTitle, normalizedBody].filter(Boolean).join('\n\n'));
+  }
+}
+
 function openPortalDocument(url) {
   const targetUrl = url.startsWith('http') ? url : `${API_URL}${url}`;
   const popup = window.open(targetUrl, '_blank');
   if (!popup) {
     console.warn('Popup was blocked. Please allow popups in your browser settings.');
     // Show user notification instead of navigating
-    alert('The invoice could not open. Please check if popups are blocked and try again.');
+    showNotice({
+      title: 'Popup blocked',
+      body: 'The invoice could not open. Please allow popups and try again.',
+    });
   }
 }
 
@@ -8284,6 +8408,17 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
+function setHydrogenComposerNotice(message = '', type = 'error') {
+  state.hydrogenComposerNotice = {
+    message: String(message || '').trim(),
+    type: String(type || '').trim(),
+  };
+}
+
+function clearHydrogenComposerNotice() {
+  setHydrogenComposerNotice('', '');
+}
+
 function renderMyBookingsSessionTracking() {
   if (state.user?.role !== 'user') return;
 
@@ -8291,35 +8426,32 @@ function renderMyBookingsSessionTracking() {
     if (String(booking?.status || '').toLowerCase() === 'cancelled') return false;
     return isBookingPaid(booking);
   });
-  const now = new Date();
   const todayKey = getTodayIsoDate();
 
-  // Count sessions
-  let totalSessions = 0;
+  const hydrogenBookings = bookings.filter((booking) => getBookingCategory(booking?.serviceName) === 'HYDROGEN SESSION');
+
+  // Count hydrogen sessions
+  let totalSessions = hydrogenBookings.length;
   let upcomingCount = 0;
   let completedCount = 0;
   const upcomingBookings = [];
 
-  bookings.forEach((booking) => {
-    if (String(booking.status || '').toLowerCase() === 'cancelled') return;
-    if (getBookingCategory(booking.serviceName) === 'HYDROGEN SESSION') {
-      // Each hydrogen booking counts as one session
-      totalSessions++;
-      if (booking.bookingDate > todayKey || (booking.bookingDate === todayKey && !isBookingSlotInPast(booking.bookingDate, booking.bookingTime))) {
-        upcomingCount++;
-        upcomingBookings.push(booking);
-      } else if (String(booking.status || '').toLowerCase() === 'completed') {
-        completedCount++;
-      }
-    } else if (getBookingCategory(booking.serviceName) === 'IV ADD-ON') {
-      // Each IV therapy/shot counts as one session
-      totalSessions++;
-      if (booking.bookingDate > todayKey || (booking.bookingDate === todayKey && !isBookingSlotInPast(booking.bookingDate, booking.bookingTime))) {
-        upcomingCount++;
-        upcomingBookings.push(booking);
-      } else if (String(booking.status || '').toLowerCase() === 'completed') {
-        completedCount++;
-      }
+  hydrogenBookings.forEach((booking) => {
+    const bookingStatus = String(booking?.status || '').toLowerCase();
+    if (bookingStatus === 'cancelled') return;
+
+    if (bookingStatus === 'completed') {
+      completedCount += 1;
+      return;
+    }
+
+    const isUpcoming =
+      booking.bookingDate > todayKey ||
+      (booking.bookingDate === todayKey && !isBookingSlotInPast(booking.bookingDate, booking.bookingTime));
+
+    if (isUpcoming) {
+      upcomingCount += 1;
+      upcomingBookings.push(booking);
     }
   });
 
@@ -8384,7 +8516,7 @@ function renderMyBookingsSessionTracking() {
     const firstOfMonth = new Date(year, monthIndex, 1);
     const startDay = firstOfMonth.getDay();
     const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-    const bookedByDate = buildBookingsByDate(bookings, year, monthIndex);
+    const bookedByDate = buildBookingsByDate(hydrogenBookings, year, monthIndex);
     const todayKey2 = getCalendarDateKey(year, monthIndex, today.getDate());
 
     if (!state.myBookingsCalendarSelectedDate || !state.myBookingsCalendarSelectedDate.startsWith(`${year}-${String(monthIndex + 1).padStart(2, '0')}-`)) {
@@ -8432,7 +8564,7 @@ function renderMyBookingsSessionTracking() {
         const lines = dayBookings.slice(0, 3).map((booking) => `
           <div class="mybookings-calendar-detail-item">
             <strong>${escapeHtml(booking.serviceName || 'Hydrogen Session')}</strong>
-            <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))} • ${escapeHtml(getDerivedBookingStatus(booking))}</span>
+            <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))} â€¢ ${escapeHtml(getDerivedBookingStatus(booking))}</span>
           </div>
         `).join('');
         const moreCount = dayBookings.length - 3;
@@ -8446,3 +8578,4 @@ function renderMyBookingsSessionTracking() {
     }
   }
 }
+

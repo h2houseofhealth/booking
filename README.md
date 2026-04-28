@@ -141,3 +141,21 @@ Open `http://localhost:3000`
 4. Create SES SMTP credentials.
 5. Copy `.env.example` to `.env` and fill SES values.
 6. Restart the server and test OTP signup with a non-verified recipient email.
+
+## SendGrid Event Webhook (Booking Payment Links)
+
+To show real final delivery state in Admin Bookings (instead of only API acceptance), configure SendGrid Event Webhook:
+
+1. In SendGrid, go to `Settings -> Mail Settings -> Event Webhook`.
+2. Set webhook URL to:
+   `https://<your-domain>/api/webhooks/sendgrid`
+3. Enable events:
+   - `processed`
+   - `delivered`
+   - `deferred`
+   - `bounce`
+   - `dropped`
+   - `spamreport`
+4. Save and send a test event.
+
+Booking rows will then display delivery event status like `SENT • DELIVERED` or `FAILED` with bounce/drop reason.

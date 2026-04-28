@@ -66,6 +66,15 @@ const state = {
   adminBookingNotesByBooking: {},
   adminBookingNotesLoading: false,
   adminBookingNoteEdits: {},
+  adminBookingEmailEventsByBooking: {},
+  adminBookingEmailAnalyticsByBooking: {},
+  adminBookingEmailTimelineLoading: false,
+  adminPaymentLinkAnalytics: null,
+  adminPaymentLinkAnalyticsRows: [],
+  adminEmailAnalyticsFilters: {
+    startDate: '',
+    endDate: '',
+  },
   adminCalendarDate: '',
   adminCalendarCategory: 'HYDROGEN SESSION',
   adminCalendarServiceName: '',
@@ -150,6 +159,13 @@ const elements = {
   adminStatTotal: document.getElementById('adminStatTotal'),
   adminHistoryCard: document.getElementById('adminHistoryCard'),
   historyCount: document.getElementById('historyCount'),
+  adminPaymentLinkAnalytics: document.getElementById('adminPaymentLinkAnalytics'),
+  adminPaymentLinkFunnel: document.getElementById('adminPaymentLinkFunnel'),
+  adminEmailAnalyticsStartDate: document.getElementById('adminEmailAnalyticsStartDate'),
+  adminEmailAnalyticsEndDate: document.getElementById('adminEmailAnalyticsEndDate'),
+  adminEmailAnalyticsApplyBtn: document.getElementById('adminEmailAnalyticsApplyBtn'),
+  adminEmailAnalyticsResetBtn: document.getElementById('adminEmailAnalyticsResetBtn'),
+  adminEmailAnalyticsExportBtn: document.getElementById('adminEmailAnalyticsExportBtn'),
   memberChoiceGate: document.getElementById('memberChoiceGate'),
   userTabNav: document.getElementById('userTabNav'),
   userTabServices: document.getElementById('userTabServices'),
@@ -157,6 +173,7 @@ const elements = {
   userTabBookings: document.getElementById('userTabBookings'),
   userTabCart: document.getElementById('userTabCart'),
   joinAsMemberBtn: document.getElementById('joinAsMemberBtn'),
+  topExplorePlansBtn: document.getElementById('topExplorePlansBtn'),
   continueAsMemberBtn: document.getElementById('continueAsMemberBtn'),
   continueAsNonMemberBtn: document.getElementById('continueAsNonMemberBtn'),
   membershipSection: document.getElementById('membershipSection'),
@@ -247,6 +264,14 @@ const elements = {
   noticeDialogBody: document.getElementById('noticeDialogBody'),
   noticeDialogCloseBtn: document.getElementById('noticeDialogCloseBtn'),
   noticeDialogOkBtn: document.getElementById('noticeDialogOkBtn'),
+  bookingEmailTimelineDialog: document.getElementById('bookingEmailTimelineDialog'),
+  bookingEmailTimelineCloseBtn: document.getElementById('bookingEmailTimelineCloseBtn'),
+  bookingEmailTimelineBookingId: document.getElementById('bookingEmailTimelineBookingId'),
+  bookingEmailTimelineMeta: document.getElementById('bookingEmailTimelineMeta'),
+  bookingEmailTimelineAnalytics: document.getElementById('bookingEmailTimelineAnalytics'),
+  bookingEmailTimelineList: document.getElementById('bookingEmailTimelineList'),
+  bookingEmailTimelineEmpty: document.getElementById('bookingEmailTimelineEmpty'),
+  bookingEmailTimelineResendBtn: document.getElementById('bookingEmailTimelineResendBtn'),
   servicesBackBtn: document.getElementById('servicesBackBtn'),
   servicesNextBtn: document.getElementById('servicesNextBtn'),
   bookingsBackBtn: document.getElementById('bookingsBackBtn'),
@@ -457,6 +482,24 @@ function attachEvents() {
     renderAuthMode();
   });
 
+  elements.authBackToChoicesBtn?.addEventListener('click', () => {
+    state.showAuthCard = false;
+    state.pendingPreAuthChoice = '';
+    isRegisterMode = false;
+    isForgotPasswordMode = false;
+    signupStage = 'details';
+    forgotPasswordStage = 'email';
+    pendingSignupEmail = '';
+    pendingForgotEmail = '';
+    elements.authForm.reset();
+    elements.authError.textContent = '';
+    renderAuthMode();
+    render();
+    requestAnimationFrame(() => {
+      elements.memberChoiceGate?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
   elements.forgotPasswordBtn.addEventListener('click', () => {
     if (isForgotPasswordMode) {
       isForgotPasswordMode = false;
@@ -539,9 +582,12 @@ function attachEvents() {
     state.adminBookingNotesByBooking = {};
     state.adminBookingNotesLoading = false;
     state.adminBookingNoteEdits = {};
-    state.adminBookingNotesByBooking = {};
-    state.adminBookingNotesLoading = false;
-    state.adminBookingNoteEdits = {};
+    state.adminBookingEmailEventsByBooking = {};
+    state.adminBookingEmailAnalyticsByBooking = {};
+    state.adminBookingEmailTimelineLoading = false;
+    state.adminPaymentLinkAnalytics = null;
+    state.adminPaymentLinkAnalyticsRows = [];
+    state.adminEmailAnalyticsFilters = { startDate: '', endDate: '' };
     state.adminCalendarDate = '';
     state.adminCalendarCategory = 'HYDROGEN SESSION';
     state.adminCalendarServiceName = '';
@@ -620,6 +666,9 @@ function attachEvents() {
     requestAnimationFrame(() => {
       document.querySelector('[aria-label="Membership"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
+  });
+  elements.topExplorePlansBtn?.addEventListener('click', () => {
+    elements.joinAsMemberBtn?.click();
   });
   document.querySelectorAll('[data-member-choice-join]').forEach((btn) => {
     btn.addEventListener('click', () => elements.joinAsMemberBtn?.click());
@@ -954,6 +1003,34 @@ function attachEvents() {
     await addBookingNote();
   });
   elements.bookingNotesCloseBtn?.addEventListener('click', closeBookingNotesDialog);
+  elements.bookingEmailTimelineCloseBtn?.addEventListener('click', closeBookingEmailTimelineDialog);
+  elements.bookingEmailTimelineResendBtn?.addEventListener('click', async () => {
+    await resendPaymentLinkFromTimeline();
+  });
+  elements.adminEmailAnalyticsApplyBtn?.addEventListener('click', async () => {
+    state.adminEmailAnalyticsFilters.startDate = String(elements.adminEmailAnalyticsStartDate?.value || '').trim();
+    state.adminEmailAnalyticsFilters.endDate = String(elements.adminEmailAnalyticsEndDate?.value || '').trim();
+    try {
+      await loadDashboardData();
+      render();
+    } catch (error) {
+      alert(error?.message || 'Unable to apply analytics date filters.');
+    }
+  });
+  elements.adminEmailAnalyticsResetBtn?.addEventListener('click', async () => {
+    state.adminEmailAnalyticsFilters = { startDate: '', endDate: '' };
+    if (elements.adminEmailAnalyticsStartDate) elements.adminEmailAnalyticsStartDate.value = '';
+    if (elements.adminEmailAnalyticsEndDate) elements.adminEmailAnalyticsEndDate.value = '';
+    try {
+      await loadDashboardData();
+      render();
+    } catch (error) {
+      alert(error?.message || 'Unable to reset analytics date filters.');
+    }
+  });
+  elements.adminEmailAnalyticsExportBtn?.addEventListener('click', () => {
+    exportPaymentLinkAnalyticsCsv();
+  });
   elements.adminCouponForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     await saveAdminCoupon({ sendEmail: true });
@@ -1422,6 +1499,10 @@ async function refreshAdminCustomerContext() {
 
 async function loadDashboardData() {
   if (state.user?.role === 'admin') {
+    const analyticsParams = new URLSearchParams();
+    if (state.adminEmailAnalyticsFilters?.startDate) analyticsParams.set('startDate', state.adminEmailAnalyticsFilters.startDate);
+    if (state.adminEmailAnalyticsFilters?.endDate) analyticsParams.set('endDate', state.adminEmailAnalyticsFilters.endDate);
+    const analyticsUrl = `/api/admin/analytics/payment-link-conversion${analyticsParams.toString() ? `?${analyticsParams.toString()}` : ''}`;
     const [
       bookingsResult,
       membershipOrdersResult,
@@ -1429,6 +1510,7 @@ async function loadDashboardData() {
       couponsResult,
       genericServicesResult,
       adminUsersResult,
+      paymentLinkAnalyticsResult,
     ] = await Promise.all([
       api('/api/bookings'),
       api('/api/admin/membership-orders'),
@@ -1436,12 +1518,15 @@ async function loadDashboardData() {
       api('/api/admin/coupons'),
       api('/api/services'),
       api('/api/admin/users'),
+      api(analyticsUrl),
     ]);
     state.bookings = bookingsResult.bookings || [];
     state.adminMembershipOrders = membershipOrdersResult.orders || [];
     state.adminDiscountPhones = discountPhonesResult.discountPhones || [];
     state.adminCoupons = couponsResult.coupons || [];
     state.adminUsers = adminUsersResult.users || [];
+    state.adminPaymentLinkAnalytics = paymentLinkAnalyticsResult?.analytics || null;
+    state.adminPaymentLinkAnalyticsRows = Array.isArray(paymentLinkAnalyticsResult?.rows) ? paymentLinkAnalyticsResult.rows : [];
     state.membership = { plans: [], active: false, current: null };
     state.membershipBrowseVisible = false;
     state.services = genericServicesResult.services || [];
@@ -1492,6 +1577,8 @@ async function loadDashboardData() {
     state.adminDiscountPhones = [];
     state.adminCoupons = [];
     state.adminResolvedCustomer = null;
+    state.adminPaymentLinkAnalytics = null;
+    state.adminPaymentLinkAnalyticsRows = [];
     state.adminCustomerForm = { name: '', email: '', phone: '' };
     state.adminCalendarDate = '';
     state.adminCalendarCategory = 'HYDROGEN SESSION';
@@ -1758,12 +1845,24 @@ function openAdminCalendarBooking(serviceName, bookingTime = '') {
 }
 
 function openAdminConsultationBookingFromCalendar() {
+  const services = Array.isArray(state.services) ? state.services : [];
+  if (!services.length) {
+    alert('Services are not loaded yet. Please refresh and try again.');
+    return;
+  }
+
   const consultationService =
-    state.services.find((service) => String(service?.category || '').toUpperCase() === 'EXPERIENCE SESSION') ||
-    state.services.find((service) => {
+    services.find((service) => {
+      const category = String(service?.category || '').trim().toUpperCase();
+      return category === 'EXPERIENCE SESSION' || category === 'CONSULTATION';
+    }) ||
+    services.find((service) => {
       const normalizedName = String(service?.name || '').toLowerCase();
       return normalizedName.includes('consult') || normalizedName.includes('demo') || normalizedName.includes('experience');
     }) ||
+    // Fallback for catalogs that only define hydrogen sessions.
+    services.find((service) => String(service?.category || '').trim().toUpperCase() === 'HYDROGEN SESSION') ||
+    services[0] ||
     null;
   if (!consultationService) {
     showNotice({ title: 'Error', body: 'Consultation service is not configured.' });
@@ -2443,11 +2542,12 @@ async function upsertBooking() {
     if (isNewBooking) {
       const bookingId = result?.booking?.id || result?.bookings?.[0]?.id;
       if (isAdmin) {
+        const registeredEmail = String(result?.customer?.email || '').trim() || String(state.adminCustomerForm.email || '').trim();
         const registeredMobile = String(result?.customer?.mobile || '').trim() || String(state.adminCustomerForm.phone || '').trim();
-        // Admin flow: show SMS payment link option
+        // Admin flow: send payment link to user's email
         closeDialog();
         render();
-        await showAdminPaymentLinkDialog(bookingId, registeredMobile);
+        await showAdminPaymentLinkDialog(bookingId, registeredEmail, registeredMobile);
       } else {
         // User flow: add to cart and let checkout happen only from "Pay Now"
         closeDialog();
@@ -2482,9 +2582,10 @@ async function openPaymentWithBookingId(bookingId) {
   }
 }
 
-async function showAdminPaymentLinkDialog(bookingId, customerPhone) {
+async function showAdminPaymentLinkDialog(bookingId, customerEmail, customerPhone) {
   const result = await api(`/api/bookings/${bookingId}/payment-link`);
   const paymentLink = result.paymentLinkUrl || '';
+  const emailAddress = String(customerEmail || state.adminCustomerForm?.email || '').trim();
   const phoneNumber = String(customerPhone || '').trim();
   
   if (!paymentLink) {
@@ -2495,24 +2596,74 @@ async function showAdminPaymentLinkDialog(bookingId, customerPhone) {
   copyTextToClipboard(paymentLink);
   if (!phoneNumber) {
     showNotice({ title: 'Payment link', body: [paymentLink, '', 'No registered mobile number found.', 'Link copied.'] });
+  if (!emailAddress) {
+    alert(`Payment Link\n\n${paymentLink}\n\nNo customer email found. Link copied.`);
     return;
   }
   
   const confirmSend = confirm(
-    `Send payment link to ${phoneNumber}?\n\n${paymentLink}`
+    `Send payment link to ${emailAddress}?\n\n${paymentLink}`
   );
   
   if (confirmSend) {
-    await sendPaymentLinkViaSMS(bookingId, phoneNumber);
+    await sendPaymentLinkViaEmail(bookingId, emailAddress, paymentLink, phoneNumber);
+    return;
+  }
+
+  if (phoneNumber) {
+    alert(`Payment link copied.\n\nTip: You can also share manually on phone ${phoneNumber}.`);
   }
 }
 
-async function sendPaymentLinkViaSMS(bookingId, phoneNumber) {
+function normalizePhoneForShare(phoneNumber = '') {
+  return String(phoneNumber || '').replace(/[^\d+]/g, '');
+}
+
+function buildPaymentLinkShareMessage(paymentLink = '') {
+  return (
+    `H2 House Of Health Payment Link\n\n` +
+    `Please complete your booking payment using the secure link below:\n${String(paymentLink || '').trim()}\n\n` +
+    `If this was not expected, please ignore this message.`
+  );
+}
+
+function openPaymentLinkFallbackShare(paymentLink = '', phoneNumber = '', reason = '') {
+  const link = String(paymentLink || '').trim();
+  if (!link) return;
+
+  const normalizedPhone = normalizePhoneForShare(phoneNumber);
+  const shareMessage = buildPaymentLinkShareMessage(link);
+  const encodedMessage = encodeURIComponent(shareMessage);
+  const whatsappUrl = normalizedPhone
+    ? `https://wa.me/${normalizedPhone}?text=${encodedMessage}`
+    : `https://wa.me/?text=${encodedMessage}`;
+  const smsUrl = normalizedPhone
+    ? `sms:${normalizedPhone}?body=${encodedMessage}`
+    : '';
+
+  copyTextToClipboard(link);
+  const contextLine = reason ? `Reason: ${reason}\n\n` : '';
+  const promptLine = normalizedPhone
+    ? `Open fallback share now?\n\nYes = WhatsApp\nNo = SMS\nCancel = only keep copied link`
+    : `Open WhatsApp share with the copied link now?`;
+  const proceedWhatsapp = confirm(
+    `${contextLine}Payment link copied.\n\n${promptLine}`
+  );
+  if (proceedWhatsapp) {
+    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  if (normalizedPhone && smsUrl) {
+    window.location.href = smsUrl;
+  }
+}
+
+async function sendPaymentLinkViaEmail(bookingId, email, paymentLink = '', phoneNumber = '') {
   try {
-    const result = await api(`/api/bookings/${bookingId}/send-payment-link-sms`, {
+    const response = await fetch(`${API_URL}/api/bookings/${bookingId}/send-payment-link-email`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phoneNumber }),
+      body: JSON.stringify({ email }),
     });
     showNotice({
       title: 'Payment link sent',
@@ -2520,6 +2671,41 @@ async function sendPaymentLinkViaSMS(bookingId, phoneNumber) {
     });
   } catch (error) {
     showNotice({ title: 'SMS failed', body: error?.message || 'Unable to send payment link via SMS.' });
+    let result = null;
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      try {
+        result = await response.json();
+      } catch {
+        result = null;
+      }
+    }
+    if (response.status !== 202) {
+      const statusMessage = `Email provider acceptance is pending (HTTP ${response.status}).`;
+      throw new Error(result?.message || statusMessage);
+    }
+
+    await loadDashboardData();
+    render();
+    const link = String(result?.paymentLinkUrl || '').trim();
+    const messageId = String(result?.messageId || '').trim();
+    if (link) copyTextToClipboard(link);
+    alert(
+      `Email request accepted for ${email}\n\n${result.message || 'Provider accepted the request.'}` +
+        (messageId ? `\n\nMessage ID: ${messageId}` : '') +
+        (link ? `\n\nPayment Link:\n${link}\n\nLink copied.` : '')
+    );
+  } catch (error) {
+    await loadDashboardData();
+    render();
+    const message = error?.message || 'Unable to send payment link via email.';
+    const fallbackLink = String(paymentLink || '').trim();
+    if (fallbackLink) {
+      openPaymentLinkFallbackShare(fallbackLink, phoneNumber, message);
+      alert(`${message}\n\nFallback share opened. Payment link copied.`);
+      return;
+    }
+    alert(message);
   }
 }
 
@@ -2803,8 +2989,9 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
   }
 
   if (isAdmin && totalAmountInr > 0 && paymentBookingId) {
+    const registeredEmail = String(result?.customer?.email || '').trim() || String(state.adminCustomerForm.email || '').trim();
     const registeredMobile = String(result?.customer?.mobile || '').trim() || String(state.adminCustomerForm.phone || '').trim();
-    await showAdminPaymentLinkDialog(paymentBookingId, registeredMobile);
+    await showAdminPaymentLinkDialog(paymentBookingId, registeredEmail, registeredMobile);
     return;
   }
 
@@ -3121,6 +3308,125 @@ function renderBookingNotes() {
     }
 
     elements.bookingNotesList.appendChild(card);
+  });
+}
+
+function openBookingEmailTimelineDialog(booking) {
+  const bookingId = Number(booking?.id || 0);
+  if (!bookingId || !elements.bookingEmailTimelineDialog || !elements.bookingEmailTimelineBookingId) return;
+  elements.bookingEmailTimelineBookingId.value = String(bookingId);
+  if (elements.bookingEmailTimelineDialog.open) {
+    elements.bookingEmailTimelineDialog.close();
+  }
+  const serviceLabel = String(booking?.serviceName || 'Booking');
+  const clientLabel = String(booking?.clientName || '').trim();
+  if (elements.bookingEmailTimelineMeta) {
+    elements.bookingEmailTimelineMeta.textContent = `${serviceLabel}${clientLabel ? ` - ${clientLabel}` : ''}`;
+  }
+  elements.bookingEmailTimelineDialog.showModal();
+  fetchBookingEmailTimeline(bookingId);
+}
+
+function closeBookingEmailTimelineDialog() {
+  if (!elements.bookingEmailTimelineDialog) return;
+  elements.bookingEmailTimelineDialog.close();
+}
+
+function getBookingEmailEvents(bookingId) {
+  const key = String(bookingId || '');
+  const events = state.adminBookingEmailEventsByBooking?.[key];
+  return Array.isArray(events) ? events : [];
+}
+
+function formatSecondsToReadable(seconds) {
+  const total = Number(seconds || 0);
+  if (!Number.isFinite(total) || total < 0) return '-';
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${Math.max(1, minutes)}m`;
+}
+
+async function fetchBookingEmailTimeline(bookingId) {
+  if (!bookingId) return;
+  state.adminBookingEmailTimelineLoading = true;
+  renderBookingEmailTimeline();
+  try {
+    const params = new URLSearchParams();
+    if (state.adminEmailAnalyticsFilters?.startDate) params.set('startDate', state.adminEmailAnalyticsFilters.startDate);
+    if (state.adminEmailAnalyticsFilters?.endDate) params.set('endDate', state.adminEmailAnalyticsFilters.endDate);
+    const result = await api(
+      `/api/bookings/${encodeURIComponent(bookingId)}/payment-link-events${params.toString() ? `?${params.toString()}` : ''}`
+    );
+    const events = Array.isArray(result?.events) ? result.events : [];
+    state.adminBookingEmailEventsByBooking = {
+      ...(state.adminBookingEmailEventsByBooking || {}),
+      [String(bookingId)]: events,
+    };
+    state.adminBookingEmailAnalyticsByBooking = {
+      ...(state.adminBookingEmailAnalyticsByBooking || {}),
+      [String(bookingId)]: result?.analytics || null,
+    };
+  } catch (error) {
+    alert(error.message || 'Unable to load payment-link email timeline.');
+  } finally {
+    state.adminBookingEmailTimelineLoading = false;
+    renderBookingEmailTimeline();
+  }
+}
+
+function renderBookingEmailTimeline() {
+  if (!elements.bookingEmailTimelineList || !elements.bookingEmailTimelineEmpty) return;
+  const bookingId = String(elements.bookingEmailTimelineBookingId?.value || '');
+  const events = getBookingEmailEvents(bookingId);
+  const analytics = state.adminBookingEmailAnalyticsByBooking?.[bookingId] || null;
+  const isLoading = state.adminBookingEmailTimelineLoading;
+  elements.bookingEmailTimelineList.innerHTML = '';
+  elements.bookingEmailTimelineEmpty.textContent = isLoading ? 'Loading email timeline...' : 'No payment-link email events yet.';
+  elements.bookingEmailTimelineEmpty.hidden = isLoading ? false : events.length > 0;
+
+  if (elements.bookingEmailTimelineAnalytics) {
+    if (analytics) {
+      const lines = [];
+      lines.push(`Converted: ${analytics.paid ? 'Yes' : 'No'}`);
+      if (analytics.paidAt) lines.push(`Paid At: ${formatDateOnly(analytics.paidAt)}`);
+      if (analytics.firstDeliveredAt) lines.push(`First Delivered: ${formatDateOnly(analytics.firstDeliveredAt)}`);
+      if (analytics.firstOpenedAt) lines.push(`First Opened: ${formatDateOnly(analytics.firstOpenedAt)}`);
+      if (analytics.firstClickedAt) lines.push(`First Clicked: ${formatDateOnly(analytics.firstClickedAt)}`);
+      if (Number.isFinite(Number(analytics.conversionAfterDeliveredSeconds))) {
+        lines.push(`Conversion After Delivered: ${formatSecondsToReadable(analytics.conversionAfterDeliveredSeconds)}`);
+      }
+      if (Number.isFinite(Number(analytics.conversionAfterOpenedSeconds))) {
+        lines.push(`Conversion After Opened: ${formatSecondsToReadable(analytics.conversionAfterOpenedSeconds)}`);
+      }
+      if (Number.isFinite(Number(analytics.conversionAfterClickedSeconds))) {
+        lines.push(`Conversion After Clicked: ${formatSecondsToReadable(analytics.conversionAfterClickedSeconds)}`);
+      }
+      elements.bookingEmailTimelineAnalytics.textContent = lines.join(' | ');
+      elements.bookingEmailTimelineAnalytics.hidden = false;
+    } else {
+      elements.bookingEmailTimelineAnalytics.hidden = true;
+      elements.bookingEmailTimelineAnalytics.textContent = '';
+    }
+  }
+
+  events.forEach((entry) => {
+    const eventName = String(entry?.eventName || '').trim().toLowerCase();
+    const title = eventName ? eventName.toUpperCase() : 'EVENT';
+    const card = document.createElement('article');
+    card.className = 'admin-note-card';
+    const parts = [];
+    parts.push(entry?.eventAt ? formatDateOnly(entry.eventAt) : '-');
+    if (entry?.recipientEmail) parts.push(String(entry.recipientEmail));
+    if (entry?.messageId) parts.push(`message: ${String(entry.messageId).slice(0, 64)}`);
+    if (entry?.detail) parts.push(String(entry.detail));
+    card.innerHTML = `
+      <div class="admin-note-meta">
+        <span>${escapeHtml(title)}</span>
+      </div>
+      <p>${escapeHtml(parts.join(' | '))}</p>
+    `;
+    elements.bookingEmailTimelineList.appendChild(card);
   });
 }
 
@@ -3529,15 +3835,17 @@ function render() {
     if (elements.adminHistoryToggleBtnWrap) {
       elements.adminHistoryToggleBtnWrap.hidden = !state.adminHistoryVisible;
     }
-    
-  renderAdminRows(adminFiltered);
-  renderAdminCalendar();
-  renderAdminUserSessionDialog();
-  renderAdminMembershipOrders();
-  renderAdminDiscountPhones();
-  renderAdminDiscountUsers();
-  renderAdminCoupons();
-  renderMyBookingsSessionTracking();
+
+    syncAdminEmailAnalyticsFilterInputs();
+    renderAdminPaymentLinkAnalytics();
+    renderAdminRows(adminFiltered);
+    renderAdminCalendar();
+    renderAdminUserSessionDialog();
+    renderAdminMembershipOrders();
+    renderAdminDiscountPhones();
+    renderAdminDiscountUsers();
+    renderAdminCoupons();
+    renderMyBookingsSessionTracking();
   } else {
     const cartPayableBookings = getUserCartPayableBookings(state.bookings || []);
     const cartDisplayBookings = getUserCartDisplayBookings(state.bookings || []);
@@ -7097,6 +7405,149 @@ function buildUserCartSummary(bookings = state.bookings) {
   };
 }
 
+function renderAdminPaymentLinkAnalytics() {
+  if (!elements.adminPaymentLinkAnalytics) return;
+  const analytics = state.adminPaymentLinkAnalytics || null;
+  if (!analytics) {
+    elements.adminPaymentLinkAnalytics.textContent = '';
+    if (elements.adminPaymentLinkFunnel) {
+      elements.adminPaymentLinkFunnel.hidden = true;
+      elements.adminPaymentLinkFunnel.innerHTML = '';
+    }
+    return;
+  }
+  const emailed = Number(analytics.emailedBookings || 0);
+  if (!emailed) {
+    elements.adminPaymentLinkAnalytics.textContent = 'Payment-link email analytics: no emailed bookings yet.';
+    if (elements.adminPaymentLinkFunnel) {
+      elements.adminPaymentLinkFunnel.hidden = true;
+      elements.adminPaymentLinkFunnel.innerHTML = '';
+    }
+    return;
+  }
+  const pct = (value) => `${Math.round((Number(value || 0) / emailed) * 100)}%`;
+  const rangeLabel =
+    analytics.startDate || analytics.endDate
+      ? ` [${analytics.startDate || 'start'} to ${analytics.endDate || 'today'}]`
+      : '';
+  elements.adminPaymentLinkAnalytics.textContent =
+    `Payment-link analytics${rangeLabel}: ` +
+    `Emailed ${emailed}, Delivered ${analytics.delivered}/${emailed} (${pct(analytics.delivered)}), ` +
+    `Opened ${analytics.opened}/${emailed} (${pct(analytics.opened)}), ` +
+    `Clicked ${analytics.clicked}/${emailed} (${pct(analytics.clicked)}), ` +
+    `Converted ${analytics.convertedPaid}/${emailed} (${pct(analytics.convertedPaid)}), ` +
+    `Bounced ${analytics.bounced}, Deferred ${analytics.deferred}, Spam reports ${analytics.spamreport}.`;
+
+  if (elements.adminPaymentLinkFunnel) {
+    const stages = [
+      { label: 'Emailed', value: emailed },
+      { label: 'Delivered', value: Number(analytics.delivered || 0) },
+      { label: 'Opened', value: Number(analytics.opened || 0) },
+      { label: 'Clicked', value: Number(analytics.clicked || 0) },
+      { label: 'Paid', value: Number(analytics.convertedPaid || 0) },
+    ];
+    elements.adminPaymentLinkFunnel.innerHTML = '';
+    stages.forEach((stage) => {
+      const widthPct = emailed > 0 ? Math.max(0, Math.min(100, Math.round((stage.value / emailed) * 100))) : 0;
+      const row = document.createElement('div');
+      row.className = 'admin-email-funnel-row';
+      row.innerHTML = `
+        <span class="admin-email-funnel-label">${escapeHtml(stage.label)}</span>
+        <div class="admin-email-funnel-track">
+          <span class="admin-email-funnel-fill" style="width:${widthPct}%"></span>
+        </div>
+        <span class="admin-email-funnel-value">${stage.value} (${widthPct}%)</span>
+      `;
+      elements.adminPaymentLinkFunnel.appendChild(row);
+    });
+    elements.adminPaymentLinkFunnel.hidden = false;
+  }
+}
+
+function syncAdminEmailAnalyticsFilterInputs() {
+  if (elements.adminEmailAnalyticsStartDate) {
+    const nextStart = String(state.adminEmailAnalyticsFilters?.startDate || '');
+    if (elements.adminEmailAnalyticsStartDate.value !== nextStart) {
+      elements.adminEmailAnalyticsStartDate.value = nextStart;
+    }
+  }
+  if (elements.adminEmailAnalyticsEndDate) {
+    const nextEnd = String(state.adminEmailAnalyticsFilters?.endDate || '');
+    if (elements.adminEmailAnalyticsEndDate.value !== nextEnd) {
+      elements.adminEmailAnalyticsEndDate.value = nextEnd;
+    }
+  }
+}
+
+function exportPaymentLinkAnalyticsCsv() {
+  const rows = Array.isArray(state.adminPaymentLinkAnalyticsRows) ? state.adminPaymentLinkAnalyticsRows : [];
+  if (!rows.length) {
+    alert('No analytics rows available to export.');
+    return;
+  }
+  const headers = [
+    'booking_id',
+    'emailed_at',
+    'paid_at',
+    'paid',
+    'delivered',
+    'opened',
+    'clicked',
+    'bounced',
+    'deferred',
+    'spam_report',
+  ];
+  const csvRows = [headers.join(',')];
+  for (const row of rows) {
+    const values = [
+      Number(row.bookingId || 0),
+      String(row.emailedAt || ''),
+      String(row.paidAt || ''),
+      row.paid ? '1' : '0',
+      row.delivered ? '1' : '0',
+      row.opened ? '1' : '0',
+      row.clicked ? '1' : '0',
+      row.bounced ? '1' : '0',
+      row.deferred ? '1' : '0',
+      row.spamreport ? '1' : '0',
+    ].map((value) => `"${String(value).replaceAll('"', '""')}"`);
+    csvRows.push(values.join(','));
+  }
+  const csvText = csvRows.join('\n');
+  const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 10);
+  link.href = url;
+  link.download = `payment-link-analytics-${stamp}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+async function resendPaymentLinkFromTimeline() {
+  const bookingId = Number(elements.bookingEmailTimelineBookingId?.value || 0);
+  if (!bookingId) {
+    alert('Select a booking first.');
+    return;
+  }
+  const booking = (state.bookings || []).find((entry) => Number(entry?.id) === bookingId);
+  if (!booking) {
+    alert('Booking details are not available.');
+    return;
+  }
+  const recipientEmail = String(booking.paymentLinkRecipientEmail || booking.clientEmail || '').trim().toLowerCase();
+  if (!recipientEmail || !isValidEmail(recipientEmail)) {
+    alert('Valid recipient email not found for this booking.');
+    return;
+  }
+  const paymentLinkResult = await api(`/api/bookings/${bookingId}/payment-link`);
+  const fallbackLink = String(paymentLinkResult?.paymentLinkUrl || '').trim();
+  await sendPaymentLinkViaEmail(bookingId, recipientEmail, fallbackLink, String(booking.clientMobile || '').trim());
+  await fetchBookingEmailTimeline(bookingId);
+}
+
 function renderCartButtonState() {
   if (!elements.cartBtn || !elements.cartCount) return;
   const isUser = state.user?.role === 'user';
@@ -7142,6 +7593,34 @@ function renderAdminRows(bookings) {
     tr.appendChild(cell(formatBookingCreatedAtIndia(booking.createdAt)));
     tr.appendChild(statusCell(derivedStatus));
     tr.appendChild(paymentCell(booking.paymentStatus || 'unpaid'));
+    const emailStatus = String(booking.paymentLinkEmailStatus || '').trim().toLowerCase();
+    const emailRecipient = String(booking.paymentLinkRecipientEmail || '').trim();
+    const emailSentAt = booking.paymentLinkEmailedAt ? formatDateOnly(booking.paymentLinkEmailedAt) : '';
+    const emailError = String(booking.paymentLinkEmailError || '').trim();
+    const deliveryStatus = String(booking.paymentLinkDeliveryStatus || '').trim().toLowerCase();
+    const deliveryDetail = String(booking.paymentLinkDeliveryDetail || '').trim();
+    const deliveryEventAt = booking.paymentLinkEmailEventAt ? formatDateOnly(booking.paymentLinkEmailEventAt) : '';
+    let emailCellText = 'Not sent';
+    if (emailStatus === 'sent') {
+      const finalLabel = deliveryStatus ? `SENT • ${deliveryStatus.toUpperCase()}` : 'SENT';
+      emailCellText =
+        `${finalLabel}` +
+        `${emailRecipient ? `\n${emailRecipient}` : ''}` +
+        `${emailSentAt ? `\nRequested: ${emailSentAt}` : ''}` +
+        `${deliveryEventAt ? `\nEvent: ${deliveryEventAt}` : ''}` +
+        `${deliveryDetail ? `\n${deliveryDetail}` : ''}`;
+    } else if (emailStatus === 'failed') {
+      const failDetail = deliveryStatus && !emailError ? deliveryStatus : emailError;
+      emailCellText =
+        `FAILED` +
+        `${emailRecipient ? `\n${emailRecipient}` : ''}` +
+        `${failDetail ? `\n${failDetail}` : ''}` +
+        `${deliveryEventAt ? `\nEvent: ${deliveryEventAt}` : ''}` +
+        `${deliveryDetail && deliveryDetail !== failDetail ? `\n${deliveryDetail}` : ''}`;
+    } else if (emailRecipient) {
+      emailCellText = `Pending\n${emailRecipient}`;
+    }
+    tr.appendChild(multilineCell(emailCellText));
 
     const actionCell = document.createElement('td');
     const actions = document.createElement('div');
@@ -7160,6 +7639,7 @@ function renderAdminRows(bookings) {
       createActionButton('Cancel', () => changeStatus(booking.id, 'cancelled'))
     );
     actions.append(createActionButton('Notes', () => openBookingNotesDialog(booking.id)));
+    actions.append(createActionButton('Email Timeline', () => openBookingEmailTimelineDialog(booking)));
 
     actionCell.appendChild(actions);
     tr.appendChild(actionCell);
@@ -8417,6 +8897,9 @@ function setHydrogenComposerNotice(message = '', type = 'error') {
 
 function clearHydrogenComposerNotice() {
   setHydrogenComposerNotice('', '');
+function isValidEmail(value) {
+  const normalized = String(value || '').trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
 }
 
 function renderMyBookingsSessionTracking() {

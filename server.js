@@ -35,6 +35,22 @@ const SENDGRID_API_KEY = normalizeEnvValue(process.env.SENDGRID_API_KEY);
 const SENDGRID_FROM_EMAIL = normalizeEnvValue(
   process.env.SENDGRID_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER || ''
 );
+const SENDGRID_VERIFIED_SENDER = normalizeEnvValue(process.env.SENDGRID_VERIFIED_SENDER || '');
+const SENDGRID_OTP_FROM_EMAIL = normalizeEnvValue(process.env.SENDGRID_OTP_FROM_EMAIL || SENDGRID_FROM_EMAIL);
+const SENDGRID_BOOKING_FROM_EMAIL = normalizeEnvValue(
+  process.env.SENDGRID_BOOKING_FROM_EMAIL || deriveBookingSenderEmail(SENDGRID_FROM_EMAIL)
+);
+const SENDGRID_MARKETING_FROM_EMAIL = normalizeEnvValue(process.env.SENDGRID_MARKETING_FROM_EMAIL || SENDGRID_BOOKING_FROM_EMAIL);
+const SENDGRID_OTP_VERIFIED_SENDER = normalizeEnvValue(process.env.SENDGRID_OTP_VERIFIED_SENDER || SENDGRID_VERIFIED_SENDER);
+const SENDGRID_BOOKING_VERIFIED_SENDER = normalizeEnvValue(
+  process.env.SENDGRID_BOOKING_VERIFIED_SENDER || SENDGRID_VERIFIED_SENDER
+);
+const SENDGRID_MARKETING_VERIFIED_SENDER = normalizeEnvValue(
+  process.env.SENDGRID_MARKETING_VERIFIED_SENDER || SENDGRID_VERIFIED_SENDER
+);
+const MARKETING_LIST_UNSUBSCRIBE = normalizeEnvValue(process.env.MARKETING_LIST_UNSUBSCRIBE || '');
+const SENDGRID_WEBHOOK_PUBLIC_KEY = normalizeEnvValue(process.env.SENDGRID_WEBHOOK_PUBLIC_KEY || '');
+const SENDGRID_WEBHOOK_TOLERANCE_SECONDS = 5 * 60;
 const AVATAR_MAX_SIZE_BYTES = 10 * 1024 * 1024;
 const SEED_DEMO_DOCTORS = normalizeEnvValue(process.env.SEED_DEMO_DOCTORS || 'false').toLowerCase() === 'true';
 const SES_API_REGION = (
@@ -370,6 +386,24 @@ function normalizeEnvValue(value) {
   return normalized;
 }
 
+function deriveBookingSenderEmail(email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized.includes('@')) return normalized;
+  const [, domain = ''] = normalized.split('@');
+  if (!domain) return normalized;
+  return `bookings@${domain}`;
+}
+
+function buildMarketingHeaders() {
+  const rawValue = String(MARKETING_LIST_UNSUBSCRIBE || '').trim();
+  if (!rawValue) return {};
+  const value = rawValue.includes('<') ? rawValue : `<${rawValue}>`;
+  return {
+    'List-Unsubscribe': value,
+    'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+  };
+}
+
 function extractSendGridErrorDetails(error) {
   const statusCode = Number(error?.code || error?.response?.statusCode || 500);
   const body = error?.response?.body;
@@ -384,6 +418,96 @@ function extractSendGridErrorDetails(error) {
     detail,
     responseBody: body || null,
   };
+}
+
+const TRACKED_PAYMENT_LINK_EVENTS = new Set(['delivered', 'open', 'click', 'bounce', 'deferred', 'spamreport', 'dropped']);
+
+function normalizePaymentLinkEventName(value) {
+  const eventName = String(value || '').trim().toLowerCase();
+  if (!eventName) return '';
+  if (eventName === 'opened') return 'open';
+  if (eventName === 'clicked') return 'click';
+  if (eventName === 'bounced') return 'bounce';
+  return eventName;
+}
+
+function buildPaymentLinkEventDedupeKey({ bookingId, eventName, recipient, messageId, sgEventId, eventAt, detail }) {
+  const source = [
+    String(bookingId || ''),
+    String(eventName || ''),
+    String(recipient || '').toLowerCase(),
+    String(messageId || ''),
+    String(sgEventId || ''),
+    String(eventAt || ''),
+    String(detail || ''),
+  ].join('|');
+  return crypto.createHash('sha256').update(source).digest('hex');
+}
+
+function parseIsoDateOnly(value) {
+  const normalized = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null;
+  return normalized;
+}
+
+function buildDateRangeFilter({ startDate, endDate, sqlColumn }) {
+  const from = parseIsoDateOnly(startDate);
+  const to = parseIsoDateOnly(endDate);
+  if (from && to && from > to) {
+    return { error: 'startDate cannot be after endDate' };
+  }
+  const clauses = [];
+  const params = [];
+  if (from) {
+    clauses.push(`date(${sqlColumn}) >= date(?)`);
+    params.push(from);
+  }
+  if (to) {
+    clauses.push(`date(${sqlColumn}) <= date(?)`);
+    params.push(to);
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params, from, to };
+}
+
+async function verifySendGridWebhookSignature(req) {
+  if (!SENDGRID_WEBHOOK_PUBLIC_KEY) {
+    if (IS_PRODUCTION) {
+      return { ok: false, statusCode: 500, message: 'SENDGRID_WEBHOOK_PUBLIC_KEY is not configured.' };
+    }
+    return { ok: true, skipped: true };
+  }
+
+  const signature = String(req.headers['x-twilio-email-event-webhook-signature'] || '').trim();
+  const timestamp = String(req.headers['x-twilio-email-event-webhook-timestamp'] || '').trim();
+  if (!signature || !timestamp) {
+    return { ok: false, statusCode: 401, message: 'Missing SendGrid webhook signature headers.' };
+  }
+
+  const timestampSeconds = Number(timestamp);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(timestampSeconds) || Math.abs(nowSeconds - timestampSeconds) > SENDGRID_WEBHOOK_TOLERANCE_SECONDS) {
+    return { ok: false, statusCode: 401, message: 'Webhook signature timestamp is outside tolerance window.' };
+  }
+
+  const rawBody = typeof req.rawBody === 'string' ? req.rawBody : JSON.stringify(req.body || []);
+  const publicKeyBytes = Buffer.from(SENDGRID_WEBHOOK_PUBLIC_KEY, 'base64');
+  const signatureBytes = Buffer.from(signature, 'base64');
+  if (!publicKeyBytes.length || !signatureBytes.length) {
+    return { ok: false, statusCode: 401, message: 'Invalid SendGrid webhook signature encoding.' };
+  }
+
+  try {
+    const key = await crypto.webcrypto.subtle.importKey('raw', publicKeyBytes, { name: 'Ed25519' }, false, ['verify']);
+    const payload = Buffer.from(`${timestamp}${rawBody}`, 'utf8');
+    const verified = await crypto.webcrypto.subtle.verify('Ed25519', key, signatureBytes, payload);
+    if (!verified) {
+      return { ok: false, statusCode: 401, message: 'SendGrid webhook signature verification failed.' };
+    }
+    return { ok: true };
+  } catch (error) {
+    console.error('SendGrid webhook signature verification error:', String(error?.message || error));
+    return { ok: false, statusCode: 401, message: 'Unable to verify SendGrid webhook signature.' };
+  }
 }
 
 function escapeHtml(value) {
@@ -411,7 +535,15 @@ function getRazorpayConfigError() {
   return null;
 }
 
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      if (String(req.originalUrl || '').startsWith('/api/webhooks/sendgrid')) {
+        req.rawBody = buf.toString('utf8');
+      }
+    },
+  })
+);
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname)));
 app.use('/uploads', express.static(uploadsDir));
@@ -2138,6 +2270,14 @@ app.get('/api/bookings', requireAuth, (req, res) => {
            b.status,
            b.payment_status AS paymentStatus,
            b.paid_at AS paidAt,
+           b.payment_link_recipient_email AS paymentLinkRecipientEmail,
+           b.payment_link_emailed_at AS paymentLinkEmailedAt,
+           b.payment_link_email_status AS paymentLinkEmailStatus,
+           b.payment_link_email_error AS paymentLinkEmailError,
+           b.payment_link_delivery_status AS paymentLinkDeliveryStatus,
+           b.payment_link_delivery_detail AS paymentLinkDeliveryDetail,
+           b.payment_link_email_event AS paymentLinkEmailEvent,
+           b.payment_link_email_event_at AS paymentLinkEmailEventAt,
            b.notes,
            b.created_at AS createdAt
     FROM bookings b
@@ -3464,6 +3604,7 @@ app.get('/api/bookings/:id/payment-link', requireAuth, (req, res) => {
 });
 
 app.get('/api/bookings/:id/invoice-link', requireAuth, (req, res) => {
+app.get('/api/bookings/:id/payment-link-events', requireAuth, (req, res) => {
   const bookingId = Number(req.params.id);
   if (!Number.isInteger(bookingId)) {
     return res.status(400).json({ message: 'invalid booking id' });
@@ -3476,6 +3617,9 @@ app.get('/api/bookings/:id/invoice-link', requireAuth, (req, res) => {
               booking_group_id AS bookingGroupId,
               status,
               payment_status AS paymentStatus
+              payment_status AS paymentStatus,
+              paid_at AS paidAt,
+              payment_link_emailed_at AS paymentLinkEmailedAt
        FROM bookings
        WHERE id = ?`
     )
@@ -3498,6 +3642,507 @@ app.get('/api/bookings/:id/invoice-link', requireAuth, (req, res) => {
 
   return res.json({
     invoiceUrl: `${getRequestOrigin(req)}/invoice/booking?token=${encodeURIComponent(token)}`,
+
+  const range = buildDateRangeFilter({
+    startDate: req.query?.startDate,
+    endDate: req.query?.endDate,
+    sqlColumn: 'event_at',
+  });
+  if (range.error) {
+    return res.status(400).json({ message: range.error });
+  }
+
+  const events = db
+    .prepare(
+      `SELECT id,
+              event_name AS eventName,
+              recipient_email AS recipientEmail,
+              message_id AS messageId,
+              sg_event_id AS sgEventId,
+              detail,
+              event_at AS eventAt
+       FROM booking_email_events
+       WHERE booking_id = ?
+         ${range.where ? `AND ${range.where.replace(/^WHERE\s+/i, '')}` : ''}
+       ORDER BY datetime(event_at) ASC, id ASC`
+    )
+    .all(bookingId, ...range.params);
+
+  const paidAtMs = booking.paidAt ? Date.parse(`${String(booking.paidAt).replace(' ', 'T')}Z`) : NaN;
+  let firstDeliveredAt = '';
+  let firstOpenedAt = '';
+  let firstClickedAt = '';
+  let firstBouncedAt = '';
+  let firstDeferredAt = '';
+  let firstSpamReportedAt = '';
+  for (const event of events) {
+    const eventName = normalizePaymentLinkEventName(event?.eventName);
+    const eventAt = String(event?.eventAt || '');
+    if (eventName === 'delivered' && !firstDeliveredAt) firstDeliveredAt = eventAt;
+    if (eventName === 'open' && !firstOpenedAt) firstOpenedAt = eventAt;
+    if (eventName === 'click' && !firstClickedAt) firstClickedAt = eventAt;
+    if (eventName === 'bounce' && !firstBouncedAt) firstBouncedAt = eventAt;
+    if (eventName === 'deferred' && !firstDeferredAt) firstDeferredAt = eventAt;
+    if (eventName === 'spamreport' && !firstSpamReportedAt) firstSpamReportedAt = eventAt;
+  }
+
+  const toMs = (value) => {
+    if (!value) return NaN;
+    const normalized = String(value).includes('T') ? String(value) : `${String(value).replace(' ', 'T')}Z`;
+    return Date.parse(normalized);
+  };
+  const conversionAfter = (value) => {
+    const eventMs = toMs(value);
+    if (!Number.isFinite(paidAtMs) || !Number.isFinite(eventMs) || paidAtMs < eventMs) return null;
+    return Math.max(0, Math.round((paidAtMs - eventMs) / 1000));
+  };
+
+  return res.json({
+    events,
+    analytics: {
+      bookingId,
+      startDate: range.from || null,
+      endDate: range.to || null,
+      paid: String(booking.paymentStatus || '').toLowerCase() === 'paid',
+      paidAt: booking.paidAt || null,
+      requestedAt: booking.paymentLinkEmailedAt || null,
+      firstDeliveredAt: firstDeliveredAt || null,
+      firstOpenedAt: firstOpenedAt || null,
+      firstClickedAt: firstClickedAt || null,
+      firstBouncedAt: firstBouncedAt || null,
+      firstDeferredAt: firstDeferredAt || null,
+      firstSpamReportedAt: firstSpamReportedAt || null,
+      conversionAfterDeliveredSeconds: conversionAfter(firstDeliveredAt),
+      conversionAfterOpenedSeconds: conversionAfter(firstOpenedAt),
+      conversionAfterClickedSeconds: conversionAfter(firstClickedAt),
+    },
+  });
+});
+
+app.get('/api/admin/analytics/payment-link-conversion', requireAuth, requireAdmin, (_req, res) => {
+  const range = buildDateRangeFilter({
+    startDate: _req.query?.startDate,
+    endDate: _req.query?.endDate,
+    sqlColumn: 'payment_link_emailed_at',
+  });
+  if (range.error) {
+    return res.status(400).json({ message: range.error });
+  }
+
+  const rows = db
+    .prepare(
+      `SELECT id,
+              payment_link_emailed_at AS emailedAt,
+              payment_status AS paymentStatus,
+              paid_at AS paidAt
+       FROM bookings
+       WHERE payment_link_emailed_at IS NOT NULL
+         ${range.where ? `AND ${range.where.replace(/^WHERE\s+/i, '')}` : ''}`
+    )
+    .all(...range.params);
+
+  const eventsByBooking = db
+    .prepare(
+      `SELECT booking_id AS bookingId, event_name AS eventName
+       FROM booking_email_events`
+    )
+    .all();
+
+  const bucket = new Map();
+  for (const row of rows) {
+    bucket.set(Number(row.id), {
+      paid: String(row.paymentStatus || '').toLowerCase() === 'paid' && Boolean(row.paidAt),
+      delivered: false,
+      opened: false,
+      clicked: false,
+      bounced: false,
+      deferred: false,
+      spamreport: false,
+    });
+  }
+  for (const event of eventsByBooking) {
+    const bookingId = Number(event.bookingId);
+    const item = bucket.get(bookingId);
+    if (!item) continue;
+    const eventName = normalizePaymentLinkEventName(event.eventName);
+    if (eventName in item) item[eventName] = true;
+  }
+
+  const totals = {
+    startDate: range.from || null,
+    endDate: range.to || null,
+    emailedBookings: bucket.size,
+    delivered: 0,
+    opened: 0,
+    clicked: 0,
+    bounced: 0,
+    deferred: 0,
+    spamreport: 0,
+    convertedPaid: 0,
+    convertedAfterDelivered: 0,
+    convertedAfterOpened: 0,
+    convertedAfterClicked: 0,
+  };
+  const exportRows = [];
+  for (const entry of bucket.values()) {
+    if (entry.delivered) totals.delivered += 1;
+    if (entry.opened) totals.opened += 1;
+    if (entry.clicked) totals.clicked += 1;
+    if (entry.bounced) totals.bounced += 1;
+    if (entry.deferred) totals.deferred += 1;
+    if (entry.spamreport) totals.spamreport += 1;
+    if (entry.paid) totals.convertedPaid += 1;
+    if (entry.paid && entry.delivered) totals.convertedAfterDelivered += 1;
+    if (entry.paid && entry.opened) totals.convertedAfterOpened += 1;
+    if (entry.paid && entry.clicked) totals.convertedAfterClicked += 1;
+  }
+
+  for (const row of rows) {
+    const bookingId = Number(row.id);
+    const event = bucket.get(bookingId) || {};
+    exportRows.push({
+      bookingId,
+      emailedAt: row.emailedAt || '',
+      paidAt: row.paidAt || '',
+      paid: Boolean(event.paid),
+      delivered: Boolean(event.delivered),
+      opened: Boolean(event.opened),
+      clicked: Boolean(event.clicked),
+      bounced: Boolean(event.bounced),
+      deferred: Boolean(event.deferred),
+      spamreport: Boolean(event.spamreport),
+    });
+  }
+
+  return res.json({ analytics: totals, rows: exportRows });
+});
+
+app.post('/api/bookings/:id/send-payment-link-email', requireAuth, async (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = db
+    .prepare(
+      `SELECT b.id,
+              b.user_id AS userId,
+              b.client_name AS clientName,
+              b.client_email AS clientEmail,
+              u.email AS userEmail,
+              b.service_name AS serviceName,
+              b.booking_date AS bookingDate,
+              b.booking_time AS bookingTime,
+              b.status,
+              b.payment_status AS paymentStatus,
+              b.created_at AS createdAt
+       FROM bookings b
+       LEFT JOIN users u ON u.id = b.user_id
+       WHERE b.id = ?`
+    )
+    .get(bookingId);
+
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+
+  if (!canAccessBooking(req.user, booking.userId)) {
+    return res.status(403).json({ message: 'forbidden' });
+  }
+
+  const service = getServiceByName(booking.serviceName);
+  if (!service || service.membershipOnly || booking.paymentStatus === 'paid') {
+    return res.status(409).json({ message: 'payment link is not required for this booking' });
+  }
+  if (booking.status === 'cancelled') {
+    return res.status(409).json({ message: 'cannot send payment link for a cancelled booking' });
+  }
+  if (isHoldExpiredBooking(booking)) {
+    return res.status(409).json({ message: 'This booking hold has expired. Please book another slot.' });
+  }
+
+  const recipientEmail = String(req.body?.email || booking.clientEmail || booking.userEmail || '')
+    .trim()
+    .toLowerCase();
+  if (!isValidEmail(recipientEmail)) {
+    return res.status(400).json({ message: 'valid recipient email is required' });
+  }
+  console.log('Payment link email recipient resolved:', {
+    bookingId,
+    requestedEmail: String(req.body?.email || '').trim().toLowerCase(),
+    bookingClientEmail: String(booking.clientEmail || '').trim().toLowerCase(),
+    userEmail: String(booking.userEmail || '').trim().toLowerCase(),
+    selectedRecipient: recipientEmail,
+  });
+
+  const paymentLinkUrl = buildBookingPaymentLink(req, booking.id, booking.userId);
+  const markEmailDelivery = db.prepare(
+    `UPDATE bookings
+     SET payment_link_recipient_email = ?,
+         payment_link_emailed_at = CASE WHEN ? = 'sent' THEN datetime('now') ELSE payment_link_emailed_at END,
+         payment_link_email_status = ?,
+         payment_link_email_error = ?
+     WHERE id = ?`
+  );
+  const insertBookingEmailEvent = db.prepare(
+    `INSERT INTO booking_email_events (
+      booking_id, event_name, recipient_email, message_id, sg_event_id, dedupe_key, detail, event_at, raw_payload, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+  );
+
+  const emailResult = await sendBookingPaymentLinkEmail({
+    toEmail: recipientEmail,
+    recipientName: booking.clientName || '',
+    serviceName: booking.serviceName || '',
+    bookingDate: booking.bookingDate || '',
+    bookingTime: booking.bookingTime || '',
+    paymentLinkUrl,
+    bookingId,
+    userId: booking.userId,
+  });
+
+  if (!emailResult.ok) {
+    markEmailDelivery.run(
+      recipientEmail,
+      'failed',
+      'failed',
+      String(emailResult.message || 'Unable to send payment link email.').slice(0, 500),
+      bookingId
+    );
+    const eventAt = new Date().toISOString();
+    const messageId = String(emailResult.messageId || '');
+    const detail = String(emailResult.message || 'Unable to send payment link email.').slice(0, 1000);
+    const dedupeKey = buildPaymentLinkEventDedupeKey({
+      bookingId,
+      eventName: 'request_failed',
+      recipient: recipientEmail,
+      messageId,
+      sgEventId: '',
+      eventAt,
+      detail,
+    });
+    insertBookingEmailEvent.run(bookingId, 'request_failed', recipientEmail, messageId, '', dedupeKey, detail, eventAt, null);
+    return res.status(emailResult.statusCode || 500).json({ message: emailResult.message || 'Unable to send payment link email.' });
+  }
+
+  if (Number(emailResult.statusCode || 0) !== 202) {
+    const detail = `Email provider did not confirm 202 acceptance (status: ${Number(emailResult.statusCode || 0) || 'unknown'}).`;
+    markEmailDelivery.run(recipientEmail, 'failed', 'failed', detail, bookingId);
+    const eventAt = new Date().toISOString();
+    const messageId = String(emailResult.messageId || '');
+    const dedupeKey = buildPaymentLinkEventDedupeKey({
+      bookingId,
+      eventName: 'request_failed',
+      recipient: recipientEmail,
+      messageId,
+      sgEventId: '',
+      eventAt,
+      detail,
+    });
+    insertBookingEmailEvent.run(bookingId, 'request_failed', recipientEmail, messageId, '', dedupeKey, detail, eventAt, null);
+    return res.status(502).json({ message: detail });
+  }
+
+  markEmailDelivery.run(recipientEmail, 'sent', 'sent', null, bookingId);
+  const acceptedAt = new Date().toISOString();
+  const acceptedMessageId = String(emailResult.messageId || '');
+  const acceptedDetail = 'Send request accepted by email provider (202).';
+  const acceptedDedupeKey = buildPaymentLinkEventDedupeKey({
+    bookingId,
+    eventName: 'request_accepted',
+    recipient: recipientEmail,
+    messageId: acceptedMessageId,
+    sgEventId: '',
+    eventAt: acceptedAt,
+    detail: acceptedDetail,
+  });
+  insertBookingEmailEvent.run(
+    bookingId,
+    'request_accepted',
+    recipientEmail,
+    acceptedMessageId,
+    '',
+    acceptedDedupeKey,
+    acceptedDetail,
+    acceptedAt,
+    null
+  );
+
+  return res.status(202).json({
+    sent: true,
+    paymentLinkUrl,
+    messageId: String(emailResult.messageId || ''),
+    message:
+      emailResult.delivery === 'console'
+        ? `Payment link generated for ${recipientEmail}. Email service is not configured, so the link was logged on server.`
+        : `Email request accepted for ${recipientEmail}.`,
+  });
+});
+
+app.post('/api/webhooks/sendgrid', async (req, res) => {
+  const verification = await verifySendGridWebhookSignature(req);
+  if (!verification.ok) {
+    return res.status(verification.statusCode || 401).json({ message: verification.message || 'Unauthorized webhook signature.' });
+  }
+
+  const events = Array.isArray(req.body) ? req.body : [];
+  if (!events.length) {
+    return res.status(400).json({ message: 'No SendGrid events provided.' });
+  }
+
+  const updateDelivery = db.prepare(
+    `UPDATE bookings
+     SET payment_link_recipient_email = CASE WHEN ? <> '' THEN ? ELSE payment_link_recipient_email END,
+         payment_link_delivery_status = ?,
+         payment_link_delivery_detail = ?,
+         payment_link_email_event = ?,
+         payment_link_email_event_at = ?,
+         payment_link_email_status = CASE
+           WHEN ? IN ('bounce', 'dropped', 'spamreport') THEN 'failed'
+           WHEN ? IN ('delivered', 'open', 'click') THEN 'sent'
+           ELSE payment_link_email_status
+         END,
+         payment_link_email_error = CASE
+           WHEN ? IN ('bounce', 'dropped', 'spamreport') THEN COALESCE(?, payment_link_email_error)
+           ELSE payment_link_email_error
+         END
+     WHERE id = ?`
+  );
+  const insertEvent = db.prepare(
+    `INSERT OR IGNORE INTO booking_email_events (
+      booking_id, event_name, recipient_email, message_id, sg_event_id, dedupe_key, detail, event_at, raw_payload, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+  );
+
+  let updated = 0;
+  let stored = 0;
+  for (const event of events) {
+    const customArgs = event?.custom_args || event?.unique_args || {};
+    if (String(customArgs?.context || '').trim() !== 'booking_payment_link') continue;
+
+    const bookingId = Number(customArgs?.bookingId);
+    if (!Number.isInteger(bookingId)) continue;
+
+    const eventName = normalizePaymentLinkEventName(event?.event);
+    if (!eventName) continue;
+
+    const recipient = String(event?.email || '').trim().toLowerCase();
+    const messageId = String(event?.sg_message_id || event?.smtp-id || '').trim();
+    const sgEventId = String(event?.sg_event_id || '').trim();
+    const eventAt = Number.isFinite(Number(event?.timestamp))
+      ? new Date(Number(event.timestamp) * 1000).toISOString()
+      : new Date().toISOString();
+    const detailParts = [
+      String(event?.reason || '').trim(),
+      String(event?.response || '').trim(),
+      String(event?.status || '').trim(),
+      String(event?.url || '').trim(),
+    ].filter(Boolean);
+    const detail = detailParts.join(' | ').slice(0, 500) || null;
+    const dedupeKey = buildPaymentLinkEventDedupeKey({
+      bookingId,
+      eventName,
+      recipient,
+      messageId,
+      sgEventId,
+      eventAt,
+      detail,
+    });
+
+    const insertResult = insertEvent.run(
+      bookingId,
+      eventName,
+      recipient,
+      messageId,
+      sgEventId,
+      dedupeKey,
+      detail,
+      eventAt,
+      JSON.stringify(event)
+    );
+    if (Number(insertResult?.changes || 0) > 0) stored += Number(insertResult.changes || 0);
+
+    if (!TRACKED_PAYMENT_LINK_EVENTS.has(eventName)) {
+      continue;
+    }
+
+    const result = updateDelivery.run(
+      recipient,
+      recipient,
+      eventName,
+      detail,
+      eventName,
+      eventAt,
+      eventName,
+      eventName,
+      eventName,
+      detail,
+      bookingId
+    );
+    if (Number(result?.changes || 0) > 0) updated += Number(result.changes || 0);
+
+    if (eventName === 'delivered' || eventName === 'deferred' || eventName === 'bounce') {
+      console.log('Payment link delivery webhook event:', {
+        bookingId,
+        event: eventName,
+        recipient,
+        messageId,
+        detail: detail || '',
+        eventAt,
+      });
+    }
+  }
+
+  return res.json({ ok: true, processed: events.length, updated, stored });
+});
+
+// Backward-compatible endpoint used by older cached frontend builds.
+// We do not have an SMS gateway wired yet, so this returns the link with a clear message
+// instead of failing the request.
+app.post('/api/bookings/:id/send-payment-link-sms', requireAuth, (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = db
+    .prepare(
+      `SELECT id, user_id AS userId, service_name AS serviceName, status, payment_status AS paymentStatus, created_at AS createdAt
+       FROM bookings
+       WHERE id = ?`
+    )
+    .get(bookingId);
+
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+  if (!canAccessBooking(req.user, booking.userId)) {
+    return res.status(403).json({ message: 'forbidden' });
+  }
+
+  const service = getServiceByName(booking.serviceName);
+  if (!service || service.membershipOnly || booking.paymentStatus === 'paid') {
+    return res.status(409).json({ message: 'payment link is not required for this booking' });
+  }
+  if (booking.status === 'cancelled') {
+    return res.status(409).json({ message: 'cannot send payment link for a cancelled booking' });
+  }
+  if (isHoldExpiredBooking(booking)) {
+    return res.status(409).json({ message: 'This booking hold has expired. Please book another slot.' });
+  }
+
+  const phoneNumber = String(req.body?.phoneNumber || '').trim();
+  if (!phoneNumber) {
+    return res.status(400).json({ message: 'phoneNumber is required' });
+  }
+
+  const paymentLinkUrl = buildBookingPaymentLink(req, booking.id, booking.userId);
+  return res.json({
+    sent: false,
+    paymentLinkUrl,
+    message: 'SMS gateway is not configured yet. Share the copied payment link with the customer, or use email delivery.',
   });
 });
 
@@ -4644,10 +5289,13 @@ app.get(/.*/, (_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
-  if (SENDGRID_API_KEY && SENDGRID_FROM_EMAIL) {
-    console.log(`SendGrid OTP mailer configured with sender ${SENDGRID_FROM_EMAIL}`);
+  if (SENDGRID_API_KEY && SENDGRID_OTP_FROM_EMAIL && SENDGRID_BOOKING_FROM_EMAIL) {
+    console.log(`SendGrid OTP mailer configured with sender ${SENDGRID_OTP_FROM_EMAIL}`);
+    console.log(`SendGrid booking mailer configured with sender ${SENDGRID_BOOKING_FROM_EMAIL}`);
   } else {
-    console.warn('SendGrid OTP mailer is not fully configured. Check SENDGRID_API_KEY and SENDGRID_FROM_EMAIL.');
+    console.warn(
+      'SendGrid mailers are not fully configured. Check SENDGRID_API_KEY, SENDGRID_OTP_FROM_EMAIL, and SENDGRID_BOOKING_FROM_EMAIL.'
+    );
   }
 });
 
@@ -6812,14 +7460,28 @@ async function sendCouponEmail({ toEmail, recipientName, code, discountValue, ap
     </div>
   `;
 
-  if (SENDGRID_API_KEY && SENDGRID_FROM_EMAIL) {
+  if (SENDGRID_API_KEY && SENDGRID_MARKETING_FROM_EMAIL) {
+    if (!isValidEmail(SENDGRID_MARKETING_FROM_EMAIL)) {
+      return { ok: false, statusCode: 500, message: 'SENDGRID_MARKETING_FROM_EMAIL is invalid.' };
+    }
+    if (
+      SENDGRID_MARKETING_VERIFIED_SENDER &&
+      SENDGRID_MARKETING_FROM_EMAIL.toLowerCase() !== SENDGRID_MARKETING_VERIFIED_SENDER.toLowerCase()
+    ) {
+      return {
+        ok: false,
+        statusCode: 500,
+        message: 'SENDGRID_MARKETING_FROM_EMAIL does not match SENDGRID_MARKETING_VERIFIED_SENDER.',
+      };
+    }
     try {
       await sgMail.send({
         to: normalizedToEmail,
-        from: SENDGRID_FROM_EMAIL,
+        from: SENDGRID_MARKETING_FROM_EMAIL,
         subject,
         text,
         html,
+        headers: buildMarketingHeaders(),
       });
       return { ok: true };
     } catch (error) {
@@ -6841,7 +7503,7 @@ async function sendCouponEmail({ toEmail, recipientName, code, discountValue, ap
   }
 
   const transporter = getTransporter();
-  const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const fromEmail = process.env.SMTP_MARKETING_FROM || SENDGRID_MARKETING_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   if (!transporter || !fromEmail) {
     return {
       ok: false,
@@ -6857,6 +7519,7 @@ async function sendCouponEmail({ toEmail, recipientName, code, discountValue, ap
       subject,
       text,
       html,
+      headers: buildMarketingHeaders(),
     });
     return { ok: true };
   } catch (error) {
@@ -6869,13 +7532,222 @@ async function sendCouponEmail({ toEmail, recipientName, code, discountValue, ap
   }
 }
 
+function formatDateTimeWithComma(bookingDate, bookingTime) {
+  const normalizedDate = String(bookingDate || '').trim();
+  const normalizedTime = String(bookingTime || '').trim();
+  if (!normalizedDate || !normalizedTime) return `${normalizedDate} ${normalizedTime}`.trim();
+
+  const dt = new Date(`${normalizedDate}T${normalizedTime}:00`);
+  if (Number.isNaN(dt.getTime())) return `${normalizedDate}, ${normalizedTime}`;
+
+  const datePart = dt.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+  const timePart = dt.toLocaleTimeString('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return `${datePart}, ${timePart}`;
+}
+
+async function sendBookingPaymentLinkEmail({
+  toEmail,
+  recipientName,
+  serviceName,
+  bookingDate,
+  bookingTime,
+  paymentLinkUrl,
+  bookingId,
+  userId,
+}) {
+  const normalizedToEmail = String(toEmail || '').trim().toLowerCase();
+  if (!normalizedToEmail || !isValidEmail(normalizedToEmail)) {
+    return { ok: false, statusCode: 400, message: 'Valid recipient email is required.' };
+  }
+
+  const bookingLabel =
+    bookingDate && bookingTime ? formatDateTimeWithComma(bookingDate, bookingTime) : `${String(bookingDate || '').trim()} ${String(bookingTime || '').trim()}`.trim();
+  const subject = `Your H2 booking link: ${String(serviceName || 'Session').trim()}`;
+  const greeting = recipientName ? `Hi ${recipientName},` : 'Hi,';
+  const safeLink = String(paymentLinkUrl || '').trim();
+  if (!safeLink) {
+    return { ok: false, statusCode: 400, message: 'Payment link URL is required.' };
+  }
+  let parsedPaymentUrl = null;
+  try {
+    parsedPaymentUrl = new URL(safeLink);
+  } catch {
+    return { ok: false, statusCode: 400, message: 'Payment link URL is invalid.' };
+  }
+  if (!['http:', 'https:'].includes(String(parsedPaymentUrl.protocol || '').toLowerCase())) {
+    return { ok: false, statusCode: 400, message: 'Payment link URL protocol is invalid.' };
+  }
+  const text =
+    `${greeting}\n\n` +
+    `Your session has been reserved with H2 House Of Health.\n` +
+    `Service: ${String(serviceName || 'Booking Session').trim()}\n` +
+    `Schedule: ${bookingLabel || '-'}\n\n` +
+    `To confirm this booking, please use your secure link:\n${safeLink}\n\n` +
+    `If you did not request this booking, please ignore this email.`;
+
+  const html = `
+    <div style="font-family: 'Segoe UI', Tahoma, Arial, sans-serif; line-height: 1.6; color: #1f2937; background: #f9fafb; padding: 24px;">
+      <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden;">
+        <div style="padding: 16px 20px; background: linear-gradient(135deg, #fff7ed, #ffedd5); border-bottom: 1px solid #fed7aa;">
+          <h2 style="margin: 0; font-size: 18px; color: #7c2d12;">H2 House Of Health</h2>
+          <p style="margin: 6px 0 0; font-size: 13px; color: #9a3412;">Your booking is on hold for confirmation</p>
+        </div>
+        <div style="padding: 18px 20px 20px;">
+          <p style="margin: 0 0 12px;">${escapeHtml(greeting)}</p>
+          <p style="margin: 0 0 10px;">Thank you for booking with us. Please confirm your session using the secure link below.</p>
+          <p style="margin: 0 0 4px;"><strong>Service:</strong> ${escapeHtml(String(serviceName || 'Booking Session').trim())}</p>
+          <p style="margin: 0 0 16px;"><strong>Schedule:</strong> ${escapeHtml(bookingLabel || '-')}</p>
+          <a href="${escapeHtml(safeLink)}" style="display: inline-block; background: #c96a2d; color: #ffffff; text-decoration: none; padding: 11px 18px; border-radius: 8px; font-weight: 700;">Open Secure Booking Link</a>
+          <p style="margin: 14px 0 0; font-size: 13px; color: #4b5563;">If the button does not open, copy this link:</p>
+          <p style="margin: 6px 0 0; word-break: break-all; font-size: 13px;"><a href="${escapeHtml(safeLink)}">${escapeHtml(safeLink)}</a></p>
+          <p style="margin: 14px 0 0; font-size: 12px; color: #6b7280;">If you did not request this booking, you can safely ignore this email.</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  if (SENDGRID_API_KEY && SENDGRID_BOOKING_FROM_EMAIL) {
+    if (!isValidEmail(SENDGRID_BOOKING_FROM_EMAIL)) {
+      return { ok: false, statusCode: 500, message: 'SENDGRID_BOOKING_FROM_EMAIL is invalid.' };
+    }
+    if (
+      SENDGRID_BOOKING_VERIFIED_SENDER &&
+      SENDGRID_BOOKING_FROM_EMAIL.toLowerCase() !== SENDGRID_BOOKING_VERIFIED_SENDER.toLowerCase()
+    ) {
+      return {
+        ok: false,
+        statusCode: 500,
+        message: 'SENDGRID_BOOKING_FROM_EMAIL does not match SENDGRID_BOOKING_VERIFIED_SENDER.',
+      };
+    }
+
+    try {
+      const [sendGridResponse] = await sgMail.send({
+        to: normalizedToEmail,
+        from: SENDGRID_BOOKING_FROM_EMAIL,
+        subject,
+        text,
+        html,
+        customArgs: {
+          context: 'booking_payment_link',
+          bookingId: String(bookingId || ''),
+          userId: String(userId || ''),
+        },
+        categories: ['booking_payment_link'],
+      });
+      const statusCode = Number(sendGridResponse?.statusCode || 0);
+      const headers = sendGridResponse?.headers || {};
+      const messageId = String(
+        (typeof headers.get === 'function' ? headers.get('x-message-id') : headers['x-message-id'] || headers['X-Message-Id']) || ''
+      ).trim();
+
+      console.log('Payment link email send attempt result (SendGrid):', {
+        to: normalizedToEmail,
+        from: SENDGRID_BOOKING_FROM_EMAIL,
+        subject,
+        statusCode,
+        messageId,
+      });
+
+      if (statusCode !== 202) {
+        return {
+          ok: false,
+          statusCode: statusCode || 502,
+          message: `SendGrid did not return 202 accepted. Received ${statusCode || 'unknown'}.`,
+        };
+      }
+
+      return { ok: true, delivery: 'sendgrid', statusCode, messageId };
+    } catch (error) {
+      const sendGridError = extractSendGridErrorDetails(error);
+      console.error('Failed to send booking payment link email via SendGrid:', {
+        to: normalizedToEmail,
+        from: SENDGRID_BOOKING_FROM_EMAIL,
+        subject,
+        statusCode: sendGridError.statusCode,
+        detail: sendGridError.detail,
+        responseBody: sendGridError.responseBody,
+      });
+      return {
+        ok: false,
+        statusCode: sendGridError.statusCode || 500,
+        message:
+          sendGridError.statusCode === 403
+            ? 'SendGrid rejected the sender identity. Verify the configured FROM email or authenticated domain.'
+            : 'Unable to send payment link email. Please try again.',
+      };
+    }
+  }
+
+  const transporter = getTransporter();
+  const fromEmail = process.env.SMTP_BOOKING_FROM || SENDGRID_BOOKING_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+  if (!transporter || !fromEmail) {
+    if (ALLOW_DEV_OTP_FALLBACK) {
+      const messageId = `dev-console-${Date.now()}`;
+      console.warn(`[DEV MAIL FALLBACK] Payment link for ${normalizedToEmail}: ${safeLink}`);
+      console.log('Payment link email send attempt result (DEV console):', {
+        to: normalizedToEmail,
+        from: 'console',
+        subject,
+        statusCode: 202,
+        messageId,
+      });
+      return { ok: true, delivery: 'console', statusCode: 202, messageId };
+    }
+    return {
+      ok: false,
+      statusCode: 500,
+      message: 'Email service is not configured. Please contact support.',
+    };
+  }
+
+  try {
+    const info = await transporter.sendMail({
+      from: fromEmail,
+      to: normalizedToEmail,
+      subject,
+      text,
+      html,
+    });
+    const messageId = String(info?.messageId || '').trim();
+    console.log('Payment link email send attempt result (SMTP):', {
+      to: normalizedToEmail,
+      from: fromEmail,
+      subject,
+      statusCode: 202,
+      messageId,
+    });
+    return { ok: true, delivery: 'smtp', statusCode: 202, messageId };
+  } catch (error) {
+    console.error('Failed to send booking payment link email via SMTP:', {
+      to: normalizedToEmail,
+      from: fromEmail,
+      subject,
+      error: String(error?.message || error),
+    });
+    return {
+      ok: false,
+      statusCode: 500,
+      message: 'Unable to send payment link email. Please try again.',
+    };
+  }
+}
+
 async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
   const normalizedToEmail = String(toEmail || '').trim().toLowerCase();
   const otpValue = String(otp || '').trim();
   const isPasswordReset = String(purpose || '').trim().toLowerCase() === 'password_reset';
   const flowLabel = isPasswordReset ? 'password reset' : 'signup';
 
-  if (!SENDGRID_API_KEY || !SENDGRID_FROM_EMAIL) {
+  if (!SENDGRID_API_KEY || !SENDGRID_OTP_FROM_EMAIL) {
     if (ALLOW_DEV_OTP_FALLBACK) {
       console.warn(
         `[DEV OTP FALLBACK] ${flowLabel} OTP for ${normalizedToEmail}: ${otpValue}. SendGrid is not configured, so the OTP was logged locally.`
@@ -6913,10 +7785,28 @@ async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
     </div>
   `;
 
+  if (!isValidEmail(SENDGRID_OTP_FROM_EMAIL)) {
+    return {
+      ok: false,
+      statusCode: 500,
+      message: 'SENDGRID_OTP_FROM_EMAIL is invalid.',
+    };
+  }
+  if (
+    SENDGRID_OTP_VERIFIED_SENDER &&
+    SENDGRID_OTP_FROM_EMAIL.toLowerCase() !== SENDGRID_OTP_VERIFIED_SENDER.toLowerCase()
+  ) {
+    return {
+      ok: false,
+      statusCode: 500,
+      message: 'SENDGRID_OTP_FROM_EMAIL does not match SENDGRID_OTP_VERIFIED_SENDER.',
+    };
+  }
+
   try {
     await sgMail.send({
       to: normalizedToEmail,
-      from: SENDGRID_FROM_EMAIL,
+      from: SENDGRID_OTP_FROM_EMAIL,
       subject,
       text,
       html,
@@ -6930,7 +7820,7 @@ async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
     const sendGridError = extractSendGridErrorDetails(error);
     console.error('Failed to send OTP email via SendGrid:', {
       to: normalizedToEmail,
-      from: SENDGRID_FROM_EMAIL,
+      from: SENDGRID_OTP_FROM_EMAIL,
       statusCode: sendGridError.statusCode,
       detail: sendGridError.detail,
       responseBody: sendGridError.responseBody,
@@ -7002,6 +7892,20 @@ function migrate() {
       notes TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS booking_email_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      booking_id INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+      event_name TEXT NOT NULL,
+      recipient_email TEXT,
+      message_id TEXT,
+      sg_event_id TEXT,
+      dedupe_key TEXT,
+      detail TEXT,
+      event_at TEXT NOT NULL,
+      raw_payload TEXT,
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS pending_registrations (
@@ -7131,6 +8035,8 @@ function migrate() {
 
     CREATE INDEX IF NOT EXISTS idx_bookings_user_date
       ON bookings(user_id, booking_date, booking_time);
+    CREATE INDEX IF NOT EXISTS idx_booking_email_events_booking_event_at
+      ON booking_email_events(booking_id, event_at);
     CREATE INDEX IF NOT EXISTS idx_admin_discount_phones_phone_key
       ON admin_discount_phones(phone_key);
     CREATE INDEX IF NOT EXISTS idx_membership_subscription_members_email
@@ -7274,6 +8180,14 @@ function migrate() {
     CREATE INDEX IF NOT EXISTS idx_bookings_group_id
       ON bookings(booking_group_id);
 
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_booking_email_events_sg_event_id
+      ON booking_email_events(sg_event_id)
+      WHERE sg_event_id IS NOT NULL AND sg_event_id <> '';
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_booking_email_events_dedupe_key
+      ON booking_email_events(dedupe_key)
+      WHERE dedupe_key IS NOT NULL AND dedupe_key <> '';
+
     CREATE INDEX IF NOT EXISTS idx_coupons_code
       ON coupons(code);
 
@@ -7298,6 +8212,33 @@ function migrate() {
 
   if (!hasColumn('bookings', 'payment_order_id')) {
     db.exec('ALTER TABLE bookings ADD COLUMN payment_order_id TEXT');
+  }
+  if (!hasColumn('bookings', 'payment_link_recipient_email')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN payment_link_recipient_email TEXT');
+  }
+  if (!hasColumn('bookings', 'payment_link_emailed_at')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN payment_link_emailed_at TEXT');
+  }
+  if (!hasColumn('bookings', 'payment_link_email_status')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN payment_link_email_status TEXT');
+  }
+  if (!hasColumn('bookings', 'payment_link_email_error')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN payment_link_email_error TEXT');
+  }
+  if (!hasColumn('bookings', 'payment_link_delivery_status')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN payment_link_delivery_status TEXT');
+  }
+  if (!hasColumn('bookings', 'payment_link_delivery_detail')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN payment_link_delivery_detail TEXT');
+  }
+  if (!hasColumn('bookings', 'payment_link_email_event')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN payment_link_email_event TEXT');
+  }
+  if (!hasColumn('bookings', 'payment_link_email_event_at')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN payment_link_email_event_at TEXT');
+  }
+  if (hasTable('booking_email_events') && !hasColumn('booking_email_events', 'dedupe_key')) {
+    db.exec('ALTER TABLE booking_email_events ADD COLUMN dedupe_key TEXT');
   }
 
   db.exec(`

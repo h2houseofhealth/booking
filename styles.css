@@ -3687,6 +3687,78 @@ h1, h2, h3 {
   color: rgba(var(--ink-rgb), 0.68);
 }
 
+.hydrogen-composer-notice {
+  margin: 0.6rem 0 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 14px;
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  background: rgba(var(--ink-rgb), 0.04);
+  color: rgba(var(--ink-rgb), 0.86);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.hydrogen-composer-notice.is-error {
+  border-color: rgba(215, 70, 70, 0.35);
+  background: rgba(215, 70, 70, 0.08);
+  color: rgba(180, 35, 35, 0.95);
+}
+
+.notice-dialog {
+  width: min(640px, calc(100vw - 24px));
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.notice-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.notice-shell {
+  background: rgba(255, 255, 255, 0.96);
+  color: #1a1a1a;
+  border-radius: 18px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+  padding: 16px;
+}
+
+.notice-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 12px 0 0;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  font: 14px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.notice-dialog[data-type="error"] .notice-body {
+  background: rgba(215, 70, 70, 0.08);
+  border-color: rgba(215, 70, 70, 0.28);
+  color: rgba(140, 22, 22, 0.96);
+}
+
+.notice-dialog[data-type="success"] .notice-body {
+  background: rgba(45, 160, 90, 0.1);
+  border-color: rgba(45, 160, 90, 0.25);
+  color: rgba(20, 100, 55, 0.96);
+}
+
+.notice-dialog[data-type="warning"] .notice-body {
+  background: rgba(230, 160, 35, 0.12);
+  border-color: rgba(230, 160, 35, 0.28);
+  color: rgba(125, 80, 10, 0.96);
+}
+
+.notice-dialog[data-type="info"] .notice-body {
+  background: rgba(60, 120, 220, 0.1);
+  border-color: rgba(60, 120, 220, 0.22);
+  color: rgba(20, 60, 140, 0.96);
+}
+
 .slot-meta-wrap {
   display: grid;
   gap: 0.2rem;

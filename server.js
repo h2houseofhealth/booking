@@ -311,6 +311,7 @@ const MEMBERSHIP_PLANS = [
   },
 ];
 const MEMBERSHIP_VALIDITY_DAYS = Number(MEMBERSHIP_PLANS.find((plan) => plan.id === 'h2_single')?.validityDays || 90);
+const HYDROGEN_FREE_SESSIONS_PER_USER = 16;
 
 const app = express();
 const cors = require("cors");
@@ -1148,7 +1149,14 @@ app.get('/api/admin/ses/identity-status', requireAuth, requireAdmin, async (req,
 });
 
 app.get('/api/services', requireAuth, (req, res) => {
-  const services = getVisibleServicesForUser(req.user).map((service) => toServiceResponse(service, req.user));
+  const hydrogenBalance = getHydrogenFreeSessionBalance(req.user.id, req.user);
+  const services = getVisibleServicesForUser(req.user).map((service) => {
+    const response = toServiceResponse(service, req.user);
+    if (String(response?.category || '').toUpperCase() === 'HYDROGEN SESSION' && hydrogenBalance.active) {
+      response.membershipRemainingHydrogenSessions = hydrogenBalance.remaining;
+    }
+    return response;
+  });
   res.json({ services, membershipActive: isMembershipActiveForUser(req.user) });
 });
 
@@ -1802,6 +1810,50 @@ app.get('/api/admin/membership-orders', requireAuth, requireAdmin, (_req, res) =
   res.json({ orders });
 });
 
+app.get('/api/membership-orders/:orderId/invoice-link', requireAuth, (req, res) => {
+  const orderId = String(req.params.orderId || '').trim();
+  if (!orderId) {
+    return res.status(400).json({ message: 'orderId is required' });
+  }
+
+  const order = db
+    .prepare(
+      `SELECT order_id AS orderId,
+              user_id AS userId,
+              status,
+              amount_paise AS amountPaise,
+              discount_amount_paise AS discountAmountPaise,
+              coupon_code AS couponCode,
+              payment_reference AS paymentReference,
+              paid_at AS paidAt,
+              created_at AS createdAt
+       FROM membership_payment_orders
+       WHERE order_id = ?`
+    )
+    .get(orderId);
+  if (!order) {
+    return res.status(404).json({ message: 'membership order not found' });
+  }
+
+  if (req.user.role !== 'admin' && Number(order.userId) !== Number(req.user.id)) {
+    return res.status(403).json({ message: 'forbidden' });
+  }
+
+  if (String(order.status || '').toLowerCase() !== 'paid') {
+    return res.status(409).json({ message: 'invoice is available only for paid membership orders' });
+  }
+
+  const token = createInvoiceAccessToken({
+    scope: 'membership_invoice',
+    orderId: order.orderId,
+    userId: order.userId,
+  });
+
+  return res.json({
+    invoiceUrl: `${getRequestOrigin(req)}/invoice/membership?token=${encodeURIComponent(token)}`,
+  });
+});
+
 app.get('/api/admin/discount-phones', requireAuth, requireAdmin, (_req, res) => {
   const discountPhones = db
     .prepare(
@@ -2238,7 +2290,22 @@ app.get('/api/bookings', requireAuth, (req, res) => {
         .prepare(`${baseQuery} WHERE b.user_id = ? ORDER BY b.booking_date, b.booking_time`)
         .all(req.user.id);
 
-  res.json({ bookings: rows.map(applyHoldMeta) });
+  const mapped = rows.map(applyHoldMeta);
+  if (req.user.role !== 'admin') {
+    for (const booking of mapped) {
+      if (!booking) continue;
+      const paymentStatus = String(booking.paymentStatus || '').trim().toLowerCase();
+      if (paymentStatus === 'paid') continue;
+      const service = getServiceByName(booking.serviceName);
+      if (!service) continue;
+      const effectivePriceInr = Number(getEffectiveServicePriceInr(service, req.user) || 0);
+      if (effectivePriceInr <= 0) {
+        booking.paymentStatus = 'paid';
+      }
+    }
+  }
+
+  res.json({ bookings: mapped });
 });
 
 app.get('/api/doctor/bookings', requireAuth, requireDoctor, (req, res) => {
@@ -2338,14 +2405,12 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
     normalizedSlots.push({ bookingDate, bookingTime });
   }
 
-  const packagePriceInr = getEffectiveServicePriceInr(service, req.user);
   const singleSessionService =
     SERVICE_CATALOG.find(
       (item) =>
         String(item.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
         getHydrogenSessionCountFromServiceName(item.name) === 1
     ) || service;
-  const extraSessionPriceInr = getEffectiveServicePriceInr(singleSessionService, req.user);
   const addOnServiceName = String(req.body?.addOnServiceName || '').trim();
   const addOnSessionIndexRaw = req.body?.addOnSessionIndex;
   let addOnService = null;
@@ -2361,8 +2426,16 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
     }
   }
   const addOnPriceInr = addOnService ? getEffectiveServicePriceInr(addOnService, req.user) : 0;
-  const totalAmountInr =
-    Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions + Number(addOnPriceInr || 0);
+  const pricing = buildHydrogenPackPricingSummary({
+    user: req.user,
+    userId: req.user.id,
+    baseService: service,
+    packageSessions,
+    extraSessions,
+    addOnAmountInr: addOnPriceInr,
+  });
+  const totalAmountInr = Number(pricing.totalAmountInr || 0);
+  const paymentStatus = totalAmountInr > 0 ? 'unpaid' : 'paid';
   const hydrogenDailyLimitConflict = validateHydrogenDailySessionLimit(req.user.id, normalizedSlots);
   if (hydrogenDailyLimitConflict) {
     return res.status(409).json({
@@ -2378,7 +2451,10 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
       });
     }
   }
-  const amountInPaise = Math.max(100, Math.round(totalAmountInr * 100));
+  if (totalAmountInr <= 0) {
+    return res.status(409).json({ message: 'No payment is required for this booking.' });
+  }
+  const amountInPaise = Math.round(totalAmountInr * 100);
 
   try {
     const order = await razorpay.orders.create({
@@ -2501,11 +2577,8 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
       totalSessions,
       amountInr: totalAmountInr,
       summary: {
-        packagePriceInr,
-        extraSessionPriceInr,
-        extraSessions,
+        ...(pricing.summary || {}),
         addOn: addOnSummary,
-        totalAmountInr,
       },
       user: {
         name: req.user.name,
@@ -2562,14 +2635,6 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
     normalizedSlots.push({ bookingDate, bookingTime });
   }
 
-  const packagePriceInr = getEffectiveServicePriceInr(service, req.user);
-  const singleSessionService =
-    SERVICE_CATALOG.find(
-      (item) =>
-        String(item.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
-        getHydrogenSessionCountFromServiceName(item.name) === 1
-    ) || service;
-  const extraSessionPriceInr = getEffectiveServicePriceInr(singleSessionService, req.user);
   const addOnServiceName = String(req.body?.addOnServiceName || '').trim();
   const addOnSessionIndexRaw = req.body?.addOnSessionIndex;
   let addOnService = null;
@@ -2585,8 +2650,16 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
     }
   }
   const addOnPriceInr = addOnService ? getEffectiveServicePriceInr(addOnService, req.user) : 0;
-  const totalAmountInr =
-    Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions + Number(addOnPriceInr || 0);
+  const pricing = buildHydrogenPackPricingSummary({
+    user: req.user,
+    userId: req.user.id,
+    baseService: service,
+    packageSessions,
+    extraSessions,
+    addOnAmountInr: addOnPriceInr,
+  });
+  const totalAmountInr = Number(pricing.totalAmountInr || 0);
+  const paymentStatus = totalAmountInr > 0 ? 'unpaid' : 'paid';
   const hydrogenDailyLimitConflict = validateHydrogenDailySessionLimit(req.user.id, normalizedSlots);
   if (hydrogenDailyLimitConflict) {
     return res.status(409).json({
@@ -2609,7 +2682,7 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
       `INSERT INTO bookings (
         user_id, doctor_id, client_name, client_email, client_phone,
         service_name, booking_date, booking_time, assigned_staff, status, payment_status, booking_group_id, notes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
     );
     const countActiveForSlot = db.prepare(
       `SELECT
@@ -2648,6 +2721,7 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
           entry.bookingDate,
           entry.bookingTime,
           'H2 House Of Health',
+          paymentStatus,
           bookingGroupId,
           `Hydrogen package ${packageSessions} + extra ${extraSessions}`,
           getCurrentSqliteTimestamp()
@@ -2688,6 +2762,7 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
           addOnSlot.bookingDate,
           addOnSlot.bookingTime,
           'H2 House Of Health',
+          paymentStatus,
           bookingGroupId,
           `IV add-on for ${service.name} (Session ${addOnSessionIndex + 1})`,
           getCurrentSqliteTimestamp()
@@ -2718,11 +2793,8 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
       message: 'Hydrogen bookings saved successfully.',
       summary: {
         serviceName: service.name,
-        packageSessions,
-        extraSessions,
-        totalSessions,
-        totalAmountInr,
         addOn: addOnSummary,
+        ...(pricing.summary || {}),
       },
       bookings,
     });
@@ -2784,14 +2856,6 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
     normalizedSlots.push({ bookingDate, bookingTime });
   }
 
-  const packagePriceInr = getEffectiveServicePriceInr(service, targetUser);
-  const singleSessionService =
-    SERVICE_CATALOG.find(
-      (item) =>
-        String(item.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
-        getHydrogenSessionCountFromServiceName(item.name) === 1
-    ) || service;
-  const extraSessionPriceInr = getEffectiveServicePriceInr(singleSessionService, targetUser);
   const addOnServiceName = String(req.body?.addOnServiceName || '').trim();
   const addOnSessionIndexRaw = req.body?.addOnSessionIndex;
   let addOnService = null;
@@ -2807,8 +2871,16 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
     }
   }
   const addOnPriceInr = addOnService ? getEffectiveServicePriceInr(addOnService, targetUser) : 0;
-  const totalAmountInr =
-    Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions + Number(addOnPriceInr || 0);
+  const pricing = buildHydrogenPackPricingSummary({
+    user: targetUser,
+    userId: targetUser.id,
+    baseService: service,
+    packageSessions,
+    extraSessions,
+    addOnAmountInr: addOnPriceInr,
+  });
+  const totalAmountInr = Number(pricing.totalAmountInr || 0);
+  const paymentStatus = totalAmountInr > 0 ? 'unpaid' : 'paid';
   const hydrogenDailyLimitConflict = validateHydrogenDailySessionLimit(targetUser.id, normalizedSlots);
   if (hydrogenDailyLimitConflict) {
     return res.status(409).json({
@@ -2822,7 +2894,7 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
       `INSERT INTO bookings (
         user_id, doctor_id, client_name, client_email, client_phone,
         service_name, booking_date, booking_time, assigned_staff, status, payment_status, booking_group_id, notes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid', ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
     );
     const countActiveForSlot = db.prepare(
       `SELECT
@@ -2861,6 +2933,7 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
           entry.bookingDate,
           entry.bookingTime,
           'H2 House Of Health',
+          paymentStatus,
           bookingGroupId,
           `Hydrogen package ${packageSessions} + extra ${extraSessions} (booked by admin)`,
           getCurrentSqliteTimestamp()
@@ -2901,6 +2974,7 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
           addOnSlot.bookingDate,
           addOnSlot.bookingTime,
           'H2 House Of Health',
+          paymentStatus,
           bookingGroupId,
           `IV add-on for ${service.name} (Session ${addOnSessionIndex + 1}) (booked by admin)`,
           getCurrentSqliteTimestamp()
@@ -2931,12 +3005,7 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
       message: 'Hydrogen bookings saved successfully.',
       summary: {
         serviceName: service.name,
-        packageSessions,
-        extraSessions,
-        totalSessions,
-        packagePriceInr,
-        extraSessionPriceInr,
-        totalAmountInr,
+        ...(pricing.summary || {}),
         addOn: addOnSummary,
       },
       bookings,
@@ -3534,6 +3603,7 @@ app.get('/api/bookings/:id/payment-link', requireAuth, (req, res) => {
   });
 });
 
+app.get('/api/bookings/:id/invoice-link', requireAuth, (req, res) => {
 app.get('/api/bookings/:id/payment-link-events', requireAuth, (req, res) => {
   const bookingId = Number(req.params.id);
   if (!Number.isInteger(bookingId)) {
@@ -3544,6 +3614,9 @@ app.get('/api/bookings/:id/payment-link-events', requireAuth, (req, res) => {
     .prepare(
       `SELECT id,
               user_id AS userId,
+              booking_group_id AS bookingGroupId,
+              status,
+              payment_status AS paymentStatus
               payment_status AS paymentStatus,
               paid_at AS paidAt,
               payment_link_emailed_at AS paymentLinkEmailedAt
@@ -3557,6 +3630,18 @@ app.get('/api/bookings/:id/payment-link-events', requireAuth, (req, res) => {
   if (!canAccessBooking(req.user, booking.userId)) {
     return res.status(403).json({ message: 'forbidden' });
   }
+  if (String(booking.paymentStatus || '').toLowerCase() !== 'paid') {
+    return res.status(409).json({ message: 'invoice is available only for paid bookings' });
+  }
+
+  const token = createInvoiceAccessToken({
+    scope: 'booking_invoice',
+    bookingId: booking.id,
+    userId: booking.userId,
+  });
+
+  return res.json({
+    invoiceUrl: `${getRequestOrigin(req)}/invoice/booking?token=${encodeURIComponent(token)}`,
 
   const range = buildDateRangeFilter({
     startDate: req.query?.startDate,
@@ -4115,6 +4200,7 @@ app.get('/api/public/payments/booking', (req, res) => {
   const pricingUser = {
     membershipStatus: bookingOwner?.membershipStatus || 'inactive',
     membershipExpiresAt: bookingOwner?.membershipExpiresAt || null,
+    membershipStartedAt: bookingOwner?.membershipStartedAt || null,
   };
   const summary = booking.bookingGroupId
     ? buildHydrogenGroupPaymentSummary(activeBookings, pricingUser)
@@ -4195,6 +4281,7 @@ app.post('/api/public/payments/create-order', async (req, res) => {
   const pricingUser = {
     membershipStatus: bookingOwner?.membershipStatus || 'inactive',
     membershipExpiresAt: bookingOwner?.membershipExpiresAt || null,
+    membershipStartedAt: bookingOwner?.membershipStartedAt || null,
   };
   const groupBookings = booking.bookingGroupId
     ? db
@@ -4226,7 +4313,38 @@ app.post('/api/public/payments/create-order', async (req, res) => {
         totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
         bookingCount: 1,
       };
-  const amountInPaise = Math.max(100, Math.round(Number(paymentSummary.totalAmountInr || 0) * 100));
+
+  const payableTotalInr = Number(paymentSummary.totalAmountInr || 0);
+  if (payableTotalInr <= 0) {
+    if (booking.bookingGroupId) {
+      db.prepare(
+        `UPDATE bookings
+         SET payment_status = 'paid',
+             paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+             status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
+         WHERE booking_group_id = ?
+           AND status <> 'cancelled'
+           AND payment_status <> 'paid'`
+      ).run(booking.bookingGroupId);
+    } else {
+      db.prepare(
+        `UPDATE bookings
+         SET payment_status = 'paid',
+             paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+             status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
+         WHERE id = ?`
+      ).run(booking.id);
+    }
+
+    return res.json({
+      paid: true,
+      bookingId: booking.id,
+      bookingCount: Number(paymentSummary.bookingCount || 1),
+      summary: paymentSummary,
+    });
+  }
+
+  const amountInPaise = Math.round(payableTotalInr * 100);
 
   try {
     const order = await razorpay.orders.create({
@@ -4516,7 +4634,9 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
 
   const bookingOwner = db
     .prepare(
-      `SELECT membership_status AS membershipStatus, membership_expires_at AS membershipExpiresAt
+      `SELECT membership_status AS membershipStatus,
+              membership_started_at AS membershipStartedAt,
+              membership_expires_at AS membershipExpiresAt
        FROM users
        WHERE id = ?`
     )
@@ -4524,6 +4644,7 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
   const pricingUser = {
     membershipStatus: bookingOwner?.membershipStatus || req.user.membershipStatus || 'inactive',
     membershipExpiresAt: bookingOwner?.membershipExpiresAt || req.user.membershipExpiresAt || null,
+    membershipStartedAt: bookingOwner?.membershipStartedAt || req.user.membershipStartedAt || null,
   };
   const groupBookings = booking.bookingGroupId
     ? db
@@ -4572,7 +4693,38 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
   } catch (error) {
     return res.status(409).json({ message: error?.message || 'Unable to calculate payment total for this booking.' });
   }
-  const amountInPaise = Math.max(100, Math.round(Number(paymentSummary.totalAmountInr || 0) * 100));
+
+  const payableTotalInr = Number(paymentSummary.totalAmountInr || 0);
+  if (payableTotalInr <= 0) {
+    if (booking.bookingGroupId) {
+      db.prepare(
+        `UPDATE bookings
+         SET payment_status = 'paid',
+             paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+             status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
+         WHERE booking_group_id = ?
+           AND status <> 'cancelled'
+           AND payment_status <> 'paid'`
+      ).run(booking.bookingGroupId);
+    } else {
+      db.prepare(
+        `UPDATE bookings
+         SET payment_status = 'paid',
+             paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+             status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
+         WHERE id = ?`
+      ).run(booking.id);
+    }
+
+    return res.json({
+      paid: true,
+      bookingId: booking.id,
+      bookingCount: Number(paymentSummary.bookingCount || 1),
+      summary: paymentSummary,
+    });
+  }
+
+  const amountInPaise = Math.round(payableTotalInr * 100);
 
   try {
     const order = await razorpay.orders.create({
@@ -4627,6 +4779,262 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
     console.error('Razorpay booking order create failed:', getRazorpayOrderErrorMessage(error, 'Unable to create Razorpay order'));
     return res.status(500).json({ message: getRazorpayOrderErrorMessage(error, 'Unable to create Razorpay order') });
   }
+});
+
+app.get('/invoice/booking', (req, res) => {
+  const access = verifyInvoiceAccessToken(req.query?.token);
+  if (!access || access.scope !== 'booking_invoice' || !Number.isInteger(access.bookingId) || !Number.isInteger(access.userId)) {
+    return res.status(400).send('Invalid or expired invoice link');
+  }
+
+  const booking = db
+    .prepare(
+      `SELECT id,
+              user_id AS userId,
+              booking_group_id AS bookingGroupId,
+              service_name AS serviceName,
+              booking_date AS bookingDate,
+              booking_time AS bookingTime,
+              status,
+              payment_status AS paymentStatus,
+              payment_reference AS paymentReference,
+              paid_at AS paidAt,
+              created_at AS createdAt
+       FROM bookings
+       WHERE id = ?`
+    )
+    .get(access.bookingId);
+  if (!booking || Number(booking.userId) !== access.userId) {
+    return res.status(404).send('Invoice not found');
+  }
+  if (String(booking.paymentStatus || '').toLowerCase() !== 'paid') {
+    return res.status(409).send('Invoice is available only for paid bookings');
+  }
+
+  const bookingOwner = getUserById(booking.userId);
+  const pricingUser = {
+    membershipStatus: bookingOwner?.membershipStatus || 'inactive',
+    membershipStartedAt: bookingOwner?.membershipStartedAt || null,
+    membershipExpiresAt: bookingOwner?.membershipExpiresAt || null,
+  };
+
+  const groupBookings = booking.bookingGroupId
+    ? db
+        .prepare(
+          `SELECT id,
+                  user_id AS userId,
+                  booking_group_id AS bookingGroupId,
+                  service_name AS serviceName,
+                  booking_date AS bookingDate,
+                  booking_time AS bookingTime,
+                  status,
+                  payment_status AS paymentStatus
+           FROM bookings
+           WHERE booking_group_id = ?
+           ORDER BY booking_date, booking_time, id`
+        )
+        .all(booking.bookingGroupId)
+    : [booking];
+
+  const activeBookings = groupBookings.filter((entry) => String(entry.status || '').toLowerCase() !== 'cancelled');
+  let summary = null;
+  try {
+    summary = booking.bookingGroupId
+      ? buildHydrogenGroupPaymentSummary(activeBookings, pricingUser)
+      : {
+          serviceName: booking.serviceName,
+          amountInr: getEffectiveServicePriceInr(getServiceByName(booking.serviceName), pricingUser),
+          totalAmountInr: getEffectiveServicePriceInr(getServiceByName(booking.serviceName), pricingUser),
+          bookingCount: 1,
+        };
+  } catch {
+    summary = null;
+  }
+
+  const amountInr = Number(summary?.totalAmountInr ?? summary?.amountInr ?? 0);
+  const invoiceNo = `BK-${booking.id}`;
+  const paidAtLabel = booking.paidAt ? new Date(booking.paidAt).toLocaleString() : '';
+  const bookingDateTimeLabel = `${booking.bookingDate || ''} ${booking.bookingTime || ''}`.trim();
+  const customerName = bookingOwner?.name || '';
+  const customerEmail = bookingOwner?.email || '';
+  const customerMobile = bookingOwner?.mobile || '';
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  return res.send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Invoice ${escapeHtml(invoiceNo)}</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#f7f7fb;color:#111}
+    .wrap{max-width:860px;margin:32px auto;padding:0 16px}
+    .card{background:#fff;border:1px solid #e6e6ef;border-radius:16px;padding:20px}
+    .row{display:flex;gap:16px;flex-wrap:wrap;justify-content:space-between}
+    h1{font-size:20px;margin:0 0 4px}
+    .muted{color:#555;font-size:13px}
+    table{width:100%;border-collapse:collapse;margin-top:14px}
+    th,td{border-bottom:1px solid #eee;padding:10px 6px;text-align:left;font-size:14px}
+    th{font-size:12px;color:#555;text-transform:uppercase;letter-spacing:.04em}
+    .right{text-align:right}
+    .total{font-weight:700;font-size:16px}
+    @media print{body{background:#fff}.wrap{margin:0}.card{border:none}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="row">
+        <div>
+          <h1>H2 House Of Health</h1>
+          <div class="muted">Invoice ${escapeHtml(invoiceNo)}</div>
+          ${paidAtLabel ? `<div class="muted">Paid at: ${escapeHtml(paidAtLabel)}</div>` : ''}
+        </div>
+        <div>
+          <div class="muted"><strong>Customer</strong></div>
+          <div>${escapeHtml(customerName)}</div>
+          <div class="muted">${escapeHtml(customerEmail)}</div>
+          <div class="muted">${escapeHtml(customerMobile)}</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Date & Time</th>
+            <th class="right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>${escapeHtml(summary?.serviceName || booking.serviceName || 'Booking')}</td>
+            <td>${escapeHtml(bookingDateTimeLabel)}</td>
+            <td class="right">Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2" class="right total">Total</td>
+            <td class="right total">Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      ${booking.paymentReference ? `<div class="muted" style="margin-top:10px">Payment ref: ${escapeHtml(String(booking.paymentReference))}</div>` : ''}
+      <div class="muted" style="margin-top:10px">Generated on ${escapeHtml(new Date().toLocaleString())}</div>
+    </div>
+  </div>
+</body>
+</html>`);
+});
+
+app.get('/invoice/membership', (req, res) => {
+  const access = verifyInvoiceAccessToken(req.query?.token);
+  if (!access || access.scope !== 'membership_invoice' || !access.orderId || !Number.isInteger(access.userId)) {
+    return res.status(400).send('Invalid or expired invoice link');
+  }
+
+  const order = db
+    .prepare(
+      `SELECT order_id AS orderId,
+              user_id AS userId,
+              plan_id AS planId,
+              people_count AS peopleCount,
+              amount_paise AS amountPaise,
+              discount_amount_paise AS discountAmountPaise,
+              coupon_code AS couponCode,
+              status,
+              payment_reference AS paymentReference,
+              paid_at AS paidAt,
+              created_at AS createdAt
+       FROM membership_payment_orders
+       WHERE order_id = ?`
+    )
+    .get(access.orderId);
+
+  if (!order || Number(order.userId) !== Number(access.userId)) {
+    return res.status(404).send('Invoice not found');
+  }
+  if (String(order.status || '').toLowerCase() !== 'paid') {
+    return res.status(409).send('Invoice is available only for paid membership orders');
+  }
+
+  const user = getUserById(order.userId);
+  const invoiceNo = `MB-${escapeHtml(order.orderId)}`;
+  const paidAtLabel = order.paidAt ? new Date(order.paidAt).toLocaleString() : '';
+  const amountInr = Math.round(Number(order.amountPaise || 0) / 100);
+  const discountInr = Math.round(Number(order.discountAmountPaise || 0) / 100);
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  return res.send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Membership Invoice ${invoiceNo}</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#f7f7fb;color:#111}
+    .wrap{max-width:860px;margin:32px auto;padding:0 16px}
+    .card{background:#fff;border:1px solid #e6e6ef;border-radius:16px;padding:20px}
+    .row{display:flex;gap:16px;flex-wrap:wrap;justify-content:space-between}
+    h1{font-size:20px;margin:0 0 4px}
+    .muted{color:#555;font-size:13px}
+    table{width:100%;border-collapse:collapse;margin-top:14px}
+    th,td{border-bottom:1px solid #eee;padding:10px 6px;text-align:left;font-size:14px}
+    th{font-size:12px;color:#555;text-transform:uppercase;letter-spacing:.04em}
+    .right{text-align:right}
+    .total{font-weight:700;font-size:16px}
+    @media print{body{background:#fff}.wrap{margin:0}.card{border:none}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="row">
+        <div>
+          <h1>H2 House Of Health</h1>
+          <div class="muted">Membership Invoice ${invoiceNo}</div>
+          ${paidAtLabel ? `<div class="muted">Paid at: ${escapeHtml(paidAtLabel)}</div>` : ''}
+        </div>
+        <div>
+          <div class="muted"><strong>Customer</strong></div>
+          <div>${escapeHtml(user?.name || '')}</div>
+          <div class="muted">${escapeHtml(user?.email || '')}</div>
+          <div class="muted">${escapeHtml(user?.mobile || '')}</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Plan</th>
+            <th>Members</th>
+            <th class="right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>${escapeHtml(String(order.planId || 'Membership'))}</td>
+            <td>${escapeHtml(String(order.peopleCount || 1))}</td>
+            <td class="right">Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}</td>
+          </tr>
+          ${discountInr > 0 ? `<tr><td colspan="2">Discount ${order.couponCode ? `(${escapeHtml(String(order.couponCode))})` : ''}</td><td class="right">- Rs. ${discountInr.toLocaleString('en-IN')}</td></tr>` : ''}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2" class="right total">Total</td>
+            <td class="right total">Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      ${order.paymentReference ? `<div class="muted" style="margin-top:10px">Payment ref: ${escapeHtml(String(order.paymentReference))}</div>` : ''}
+      <div class="muted" style="margin-top:10px">Generated on ${escapeHtml(new Date().toLocaleString())}</div>
+    </div>
+  </div>
+</body>
+</html>`);
 });
 
 app.post('/api/payments/verify', requireAuth, (req, res) => {
@@ -5284,6 +5692,37 @@ function verifyPaymentAccessToken(token) {
   }
 }
 
+function createInvoiceAccessToken(payload) {
+  const scope = String(payload?.scope || '').trim();
+  if (!scope) return '';
+  return jwt.sign(
+    {
+      scope,
+      bookingId: payload?.bookingId != null ? Number(payload.bookingId) : undefined,
+      userId: payload?.userId != null ? Number(payload.userId) : undefined,
+      orderId: payload?.orderId != null ? String(payload.orderId) : undefined,
+    },
+    JWT_SECRET,
+    { expiresIn: '30d' }
+  );
+}
+
+function verifyInvoiceAccessToken(token) {
+  try {
+    const payload = jwt.verify(String(token || ''), JWT_SECRET);
+    const scope = String(payload?.scope || '').trim();
+    if (!scope) return null;
+    return {
+      scope,
+      bookingId: payload?.bookingId != null ? Number(payload.bookingId) : null,
+      userId: payload?.userId != null ? Number(payload.userId) : null,
+      orderId: payload?.orderId != null ? String(payload.orderId) : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
 function getRequestOrigin(req) {
   return `${req.protocol}://${req.get('host')}`;
 }
@@ -5397,6 +5836,8 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
   if (payload.error) return res.status(400).json({ message: payload.error });
 
   const selectedService = getServiceByName(payload.data.serviceName);
+  const effectivePriceInr = selectedService ? Number(getEffectiveServicePriceInr(selectedService, targetUser) || 0) : 0;
+  const computedPaymentStatus = effectivePriceInr > 0 ? 'unpaid' : 'paid';
   if (
     selectedService &&
     isAddOnService(selectedService) &&
@@ -5461,7 +5902,7 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
       payload.data.bookingDate,
       payload.data.bookingTime,
       'H2 House Of Health',
-      selectedService?.membershipOnly ? 'paid' : 'unpaid',
+      computedPaymentStatus,
       payload.data.notes || defaultNotes,
       getCurrentSqliteTimestamp()
     );
@@ -5502,7 +5943,7 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
       membershipExpiresAt: targetUser.membershipExpiresAt || null,
       membershipPeopleCount: targetUser.membershipPeopleCount ?? null,
     },
-    paymentLinkUrl: selectedService?.membershipOnly ? '' : buildBookingPaymentLink(req, booking.id, targetUser.id),
+    paymentLinkUrl: computedPaymentStatus === 'paid' ? '' : buildBookingPaymentLink(req, booking.id, targetUser.id),
   });
 }
 
@@ -5784,11 +6225,72 @@ function createBookingGroupId(prefix = 'group') {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 }
 
+function buildHydrogenPackPricingSummary({ user, userId, baseService, packageSessions, extraSessions, addOnAmountInr = 0 }) {
+  const totalSessions = Math.max(1, Number(packageSessions || 1) + Number(extraSessions || 0));
+  const addOnTotal = Number(addOnAmountInr || 0);
+
+  const singleSessionService =
+    SERVICE_CATALOG.find(
+      (item) =>
+        String(item.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
+        getHydrogenSessionCountFromServiceName(item.name) === 1
+    ) || baseService;
+
+  const membershipBalance = getHydrogenFreeSessionBalance(Number(userId), user);
+  if (membershipBalance.active) {
+    const freeSessionsApplied = Math.min(membershipBalance.remaining, totalSessions);
+    const chargeableHydrogenSessions = Math.max(0, totalSessions - freeSessionsApplied);
+    const memberSessionPriceInr = getEffectiveServicePriceInr(singleSessionService, user);
+    const totalAmountInr = chargeableHydrogenSessions * Number(memberSessionPriceInr || 0) + addOnTotal;
+
+    return {
+      totalAmountInr,
+      summary: {
+        membershipActive: true,
+        freeSessionsApplied,
+        chargeableHydrogenSessions,
+        memberSessionPriceInr: Number(memberSessionPriceInr || 0),
+        packageSessions: Number(packageSessions || 0),
+        extraSessions: Number(extraSessions || 0),
+        totalSessions,
+        packagePriceInr: 0,
+        extraSessionPriceInr: 0,
+        addOnAmountInr: addOnTotal,
+        membershipSessionsRemaining: Math.max(0, membershipBalance.remaining - freeSessionsApplied),
+        totalAmountInr,
+      },
+    };
+  }
+
+  const packagePriceInr = getEffectiveServicePriceInr(baseService, user);
+  const extraSessionPriceInr = getEffectiveServicePriceInr(singleSessionService, user);
+  const totalAmountInr = Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * Number(extraSessions || 0) + addOnTotal;
+
+  return {
+    totalAmountInr,
+    summary: {
+      membershipActive: false,
+      freeSessionsApplied: 0,
+      chargeableHydrogenSessions: totalSessions,
+      memberSessionPriceInr: 0,
+      packageSessions: Number(packageSessions || 0),
+      extraSessions: Number(extraSessions || 0),
+      totalSessions,
+      packagePriceInr: Number(packagePriceInr || 0),
+      extraSessionPriceInr: Number(extraSessionPriceInr || 0),
+      addOnAmountInr: addOnTotal,
+      membershipSessionsRemaining: 0,
+      totalAmountInr,
+    },
+  };
+}
+
 function buildHydrogenGroupPaymentSummary(bookings, user) {
   if (!Array.isArray(bookings) || !bookings.length) {
     throw new Error('No bookings available for payment.');
   }
 
+  const inferredUserId = Number(bookings[0]?.userId);
   const hydrogenBookings = bookings.filter((entry) => {
     const service = getServiceByName(entry.serviceName);
     return String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION';
@@ -5803,15 +6305,7 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
   }
 
   const packageSessions = getHydrogenSessionCountFromServiceName(baseService.name);
-  const singleSessionService =
-    SERVICE_CATALOG.find(
-      (item) =>
-        String(item.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
-        getHydrogenSessionCountFromServiceName(item.name) === 1
-    ) || baseService;
   const extraSessions = Math.max(0, hydrogenBookings.length - packageSessions);
-  const packagePriceInr = getEffectiveServicePriceInr(baseService, user);
-  const extraSessionPriceInr = getEffectiveServicePriceInr(singleSessionService, user);
   const addOnBookings = bookings.filter((entry) => {
     const service = getServiceByName(entry.serviceName);
     return isAddOnService(service);
@@ -5827,18 +6321,25 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
     };
   });
   const addOnAmountInr = addOnItems.reduce((sum, item) => sum + Number(item.amountInr || 0), 0);
-  const totalAmountInr =
-    Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions + Number(addOnAmountInr || 0);
+
+  const pricing = buildHydrogenPackPricingSummary({
+    user,
+    userId: inferredUserId,
+    baseService,
+    packageSessions,
+    extraSessions,
+    addOnAmountInr,
+  });
 
   return {
     serviceName: baseService.name,
     packageSessions,
     extraSessions,
-    packagePriceInr,
-    extraSessionPriceInr,
     addOnItems,
-    totalAmountInr,
+    addOnAmountInr,
     bookingCount: bookings.length,
+    totalAmountInr: pricing.totalAmountInr,
+    ...pricing.summary,
   };
 }
 
@@ -6422,6 +6923,67 @@ function isMembershipActiveForUser(user) {
   const expiresAt = Number.isFinite(normalizedExpiresAt) ? normalizedExpiresAt : null;
   if (!expiresAt) return false;
   return expiresAt > Date.now();
+}
+
+function getMembershipWindow(user) {
+  if (!user) return null;
+  const startedAtMs = user.membershipStartedAt ? new Date(user.membershipStartedAt).getTime() : null;
+  if (!Number.isFinite(startedAtMs) || startedAtMs <= 0) return null;
+  const expiresAtMs = startedAtMs + MEMBERSHIP_VALIDITY_DAYS * 24 * 60 * 60 * 1000;
+  return { startedAtMs, expiresAtMs };
+}
+
+function getHydrogenServiceNames() {
+  return SERVICE_CATALOG
+    .filter((service) => String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION')
+    .map((service) => service.name)
+    .filter(Boolean);
+}
+
+function countPaidHydrogenSessionsDuringMembership(userId, user) {
+  if (!Number.isInteger(Number(userId))) return 0;
+  if (!isMembershipActiveForUser(user)) return 0;
+  const window = getMembershipWindow(user);
+  if (!window) return 0;
+
+  const startedAtIso = new Date(window.startedAtMs).toISOString().slice(0, 10);
+  const expiresAtIso = new Date(window.expiresAtMs).toISOString().slice(0, 10);
+  const serviceNames = getHydrogenServiceNames();
+  if (!serviceNames.length) return 0;
+
+  const placeholders = serviceNames.map(() => '?').join(', ');
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS total
+       FROM bookings
+       WHERE user_id = ?
+         AND status <> 'cancelled'
+         AND COALESCE(payment_status, '') = 'paid'
+         AND service_name IN (${placeholders})
+         AND booking_date >= ?
+         AND booking_date <= ?`
+    )
+    .get(Number(userId), ...serviceNames, startedAtIso, expiresAtIso);
+
+  return Number(row?.total || 0);
+}
+
+function getHydrogenFreeSessionBalance(userId, user, { usedOverride } = {}) {
+  if (!isMembershipActiveForUser(user)) {
+    return {
+      active: false,
+      used: 0,
+      remaining: 0,
+    };
+  }
+  const used =
+    Number.isFinite(Number(usedOverride)) ? Number(usedOverride) : countPaidHydrogenSessionsDuringMembership(userId, user);
+  const remaining = Math.max(0, HYDROGEN_FREE_SESSIONS_PER_USER - Math.max(0, used));
+  return {
+    active: true,
+    used,
+    remaining,
+  };
 }
 
 function getEffectiveServicePriceInr(service, user) {

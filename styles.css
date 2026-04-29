@@ -2225,6 +2225,16 @@ h1, h2, h3 {
   border-bottom: 4px solid rgba(var(--brand-deep-rgb), 0.88);
 }
 
+.admin-tab-nav {
+  position: sticky;
+  top: 0.75rem;
+  z-index: 20;
+}
+
+.admin-tab-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
 .user-tab-btn {
   border: 0;
   border-radius: 0;
@@ -7189,6 +7199,10 @@ table tbody td {
   }
 
   .user-tab-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-tab-grid {
     grid-template-columns: 1fr;
   }
 

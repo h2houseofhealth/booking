@@ -545,6 +545,13 @@ app.use(
   })
 );
 app.use(cookieParser());
+app.use((req, res, next) => {
+  const pathName = String(req.path || '');
+  if (pathName === '/app.js' || pathName === '/index.html' || pathName === '/styles.css') {
+    res.setHeader('Cache-Control', 'no-store');
+  }
+  return next();
+});
 app.use(express.static(path.join(__dirname)));
 app.use('/uploads', express.static(uploadsDir));
 
@@ -1839,8 +1846,9 @@ app.get('/api/membership-orders/:orderId/invoice-link', requireAuth, (req, res) 
     return res.status(403).json({ message: 'forbidden' });
   }
 
-  if (String(order.status || '').toLowerCase() !== 'paid') {
-    return res.status(409).json({ message: 'invoice is available only for paid membership orders' });
+  const normalizedOrderStatus = String(order.status || '').trim().toLowerCase();
+  if (normalizedOrderStatus !== 'paid') {
+    return res.status(409).json({ message: `invoice is available only for paid membership orders (status=${order.status ?? ''})` });
   }
 
   const token = createInvoiceAccessToken({
@@ -3589,9 +3597,9 @@ app.get('/api/bookings/:id/payment-link', requireAuth, (req, res) => {
   if (!canAccessBooking(req.user, booking.userId)) {
     return res.status(403).json({ message: 'forbidden' });
   }
-
+ 
   const service = getServiceByName(booking.serviceName);
-  if (!service || service.membershipOnly || booking.paymentStatus === 'paid') {
+  if (!service || service.membershipOnly || String(booking.paymentStatus || '').trim().toLowerCase() === 'paid') {
     return res.status(409).json({ message: 'payment link is not required for this booking' });
   }
   if (isHoldExpiredBooking(booking)) {
@@ -3600,46 +3608,6 @@ app.get('/api/bookings/:id/payment-link', requireAuth, (req, res) => {
 
   return res.json({
     paymentLinkUrl: buildBookingPaymentLink(req, booking.id, booking.userId),
-  });
-});
-
-app.get('/api/bookings/:id/invoice-link', requireAuth, (req, res) => {
-  const bookingId = Number(req.params.id);
-  if (!Number.isInteger(bookingId)) {
-    return res.status(400).json({ message: 'invalid booking id' });
-  }
-
-  const booking = db
-    .prepare(
-      `SELECT id,
-              user_id AS userId,
-              booking_group_id AS bookingGroupId,
-              status,
-              payment_status AS paymentStatus,
-              paid_at AS paidAt,
-              payment_link_emailed_at AS paymentLinkEmailedAt
-       FROM bookings
-       WHERE id = ?`
-    )
-    .get(bookingId);
-  if (!booking) {
-    return res.status(404).json({ message: 'booking not found' });
-  }
-  if (!canAccessBooking(req.user, booking.userId)) {
-    return res.status(403).json({ message: 'forbidden' });
-  }
-  if (String(booking.paymentStatus || '').toLowerCase() !== 'paid') {
-    return res.status(409).json({ message: 'invoice is available only for paid bookings' });
-  }
-
-  const token = createInvoiceAccessToken({
-    scope: 'booking_invoice',
-    bookingId: booking.id,
-    userId: booking.userId,
-  });
-
-  return res.json({
-    invoiceUrl: `${getRequestOrigin(req)}/invoice/booking?token=${encodeURIComponent(token)}`,
   });
 });
 
@@ -3653,8 +3621,6 @@ app.get('/api/bookings/:id/payment-link-events', requireAuth, (req, res) => {
     .prepare(
       `SELECT id,
               user_id AS userId,
-              booking_group_id AS bookingGroupId,
-              status,
               payment_status AS paymentStatus,
               paid_at AS paidAt,
               payment_link_emailed_at AS paymentLinkEmailedAt
@@ -3690,6 +3656,573 @@ app.get('/api/bookings/:id/payment-link-events', requireAuth, (req, res) => {
        FROM booking_email_events
        WHERE booking_id = ?
          ${range.where ? `AND ${range.where.replace(/^WHERE\s+/i, '')}` : ''}
+       ORDER BY datetime(event_at) ASC, id ASC`
+    )
+    .all(bookingId, ...range.params);
+
+  const paidAtMs = booking.paidAt ? Date.parse(`${String(booking.paidAt).replace(' ', 'T')}Z`) : NaN;
+  let firstDeliveredAt = '';
+  let firstOpenedAt = '';
+  let firstClickedAt = '';
+  let firstBouncedAt = '';
+  let firstDeferredAt = '';
+  let firstSpamReportedAt = '';
+  for (const event of events) {
+    const eventName = normalizePaymentLinkEventName(event?.eventName);
+    const eventAt = String(event?.eventAt || '');
+    if (eventName === 'delivered' && !firstDeliveredAt) firstDeliveredAt = eventAt;
+    if (eventName === 'open' && !firstOpenedAt) firstOpenedAt = eventAt;
+    if (eventName === 'click' && !firstClickedAt) firstClickedAt = eventAt;
+    if (eventName === 'bounce' && !firstBouncedAt) firstBouncedAt = eventAt;
+    if (eventName === 'deferred' && !firstDeferredAt) firstDeferredAt = eventAt;
+    if (eventName === 'spamreport' && !firstSpamReportedAt) firstSpamReportedAt = eventAt;
+  }
+
+  const toMs = (value) => {
+    if (!value) return NaN;
+    const normalized = String(value).includes('T') ? String(value) : `${String(value).replace(' ', 'T')}Z`;
+    return Date.parse(normalized);
+  };
+  const conversionAfter = (value) => {
+    const eventMs = toMs(value);
+    if (!Number.isFinite(paidAtMs) || !Number.isFinite(eventMs) || paidAtMs < eventMs) return null;
+    return Math.max(0, Math.round((paidAtMs - eventMs) / 1000));
+  };
+
+  return res.json({
+    events,
+    analytics: {
+      bookingId,
+      startDate: range.from || null,
+      endDate: range.to || null,
+      paid: String(booking.paymentStatus || '').toLowerCase() === 'paid',
+      paidAt: booking.paidAt || null,
+      requestedAt: booking.paymentLinkEmailedAt || null,
+      firstDeliveredAt: firstDeliveredAt || null,
+      firstOpenedAt: firstOpenedAt || null,
+      firstClickedAt: firstClickedAt || null,
+      firstBouncedAt: firstBouncedAt || null,
+      firstDeferredAt: firstDeferredAt || null,
+      firstSpamReportedAt: firstSpamReportedAt || null,
+      conversionAfterDeliveredSeconds: conversionAfter(firstDeliveredAt),
+      conversionAfterOpenedSeconds: conversionAfter(firstOpenedAt),
+      conversionAfterClickedSeconds: conversionAfter(firstClickedAt),
+    },
+  });
+});
+
+app.get('/api/admin/analytics/payment-link-conversion', requireAuth, requireAdmin, (_req, res) => {
+  const range = buildDateRangeFilter({
+    startDate: _req.query?.startDate,
+    endDate: _req.query?.endDate,
+    sqlColumn: 'payment_link_emailed_at',
+  });
+  if (range.error) {
+    return res.status(400).json({ message: range.error });
+  }
+
+  const rows = db
+    .prepare(
+      `SELECT id,
+              payment_link_emailed_at AS emailedAt,
+              payment_status AS paymentStatus,
+              paid_at AS paidAt
+       FROM bookings
+       WHERE payment_link_emailed_at IS NOT NULL
+         ${range.where ? `AND ${range.where.replace(/^WHERE\s+/i, '')}` : ''}`
+    )
+    .all(...range.params);
+
+  const eventsByBooking = db
+    .prepare(
+      `SELECT booking_id AS bookingId, event_name AS eventName
+       FROM booking_email_events`
+    )
+    .all();
+
+  const bucket = new Map();
+  for (const row of rows) {
+    bucket.set(Number(row.id), {
+      paid: String(row.paymentStatus || '').toLowerCase() === 'paid' && Boolean(row.paidAt),
+      delivered: false,
+      opened: false,
+      clicked: false,
+      bounced: false,
+      deferred: false,
+      spamreport: false,
+    });
+  }
+  for (const event of eventsByBooking) {
+    const bookingId = Number(event.bookingId);
+    const item = bucket.get(bookingId);
+    if (!item) continue;
+    const eventName = normalizePaymentLinkEventName(event.eventName);
+    if (eventName in item) item[eventName] = true;
+  }
+
+  const totals = {
+    startDate: range.from || null,
+    endDate: range.to || null,
+    emailedBookings: bucket.size,
+    delivered: 0,
+    opened: 0,
+    clicked: 0,
+    bounced: 0,
+    deferred: 0,
+    spamreport: 0,
+    convertedPaid: 0,
+    convertedAfterDelivered: 0,
+    convertedAfterOpened: 0,
+    convertedAfterClicked: 0,
+  };
+  const exportRows = [];
+  for (const entry of bucket.values()) {
+    if (entry.delivered) totals.delivered += 1;
+    if (entry.opened) totals.opened += 1;
+    if (entry.clicked) totals.clicked += 1;
+    if (entry.bounced) totals.bounced += 1;
+    if (entry.deferred) totals.deferred += 1;
+    if (entry.spamreport) totals.spamreport += 1;
+    if (entry.paid) totals.convertedPaid += 1;
+    if (entry.paid && entry.delivered) totals.convertedAfterDelivered += 1;
+    if (entry.paid && entry.opened) totals.convertedAfterOpened += 1;
+    if (entry.paid && entry.clicked) totals.convertedAfterClicked += 1;
+  }
+
+  for (const row of rows) {
+    const bookingId = Number(row.id);
+    const event = bucket.get(bookingId) || {};
+    exportRows.push({
+      bookingId,
+      emailedAt: row.emailedAt || '',
+      paidAt: row.paidAt || '',
+      paid: Boolean(event.paid),
+      delivered: Boolean(event.delivered),
+      opened: Boolean(event.opened),
+      clicked: Boolean(event.clicked),
+      bounced: Boolean(event.bounced),
+      deferred: Boolean(event.deferred),
+      spamreport: Boolean(event.spamreport),
+    });
+  }
+
+  return res.json({ analytics: totals, rows: exportRows });
+});
+
+app.post('/api/bookings/:id/send-payment-link-email', requireAuth, async (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = db
+    .prepare(
+      `SELECT b.id,
+              b.user_id AS userId,
+              b.client_name AS clientName,
+              b.client_email AS clientEmail,
+              u.email AS userEmail,
+              b.service_name AS serviceName,
+              b.booking_date AS bookingDate,
+              b.booking_time AS bookingTime,
+              b.status,
+              b.payment_status AS paymentStatus,
+              b.created_at AS createdAt
+       FROM bookings b
+       LEFT JOIN users u ON u.id = b.user_id
+       WHERE b.id = ?`
+    )
+    .get(bookingId);
+
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+
+  if (!canAccessBooking(req.user, booking.userId)) {
+    return res.status(403).json({ message: 'forbidden' });
+  }
+
+  const service = getServiceByName(booking.serviceName);
+  if (!service || service.membershipOnly || booking.paymentStatus === 'paid') {
+    return res.status(409).json({ message: 'payment link is not required for this booking' });
+  }
+  if (booking.status === 'cancelled') {
+    return res.status(409).json({ message: 'cannot send payment link for a cancelled booking' });
+  }
+  if (isHoldExpiredBooking(booking)) {
+    return res.status(409).json({ message: 'This booking hold has expired. Please book another slot.' });
+  }
+
+  const recipientEmail = String(req.body?.email || booking.clientEmail || booking.userEmail || '')
+    .trim()
+    .toLowerCase();
+  if (!isValidEmail(recipientEmail)) {
+    return res.status(400).json({ message: 'valid recipient email is required' });
+  }
+  console.log('Payment link email recipient resolved:', {
+    bookingId,
+    requestedEmail: String(req.body?.email || '').trim().toLowerCase(),
+    bookingClientEmail: String(booking.clientEmail || '').trim().toLowerCase(),
+    userEmail: String(booking.userEmail || '').trim().toLowerCase(),
+    selectedRecipient: recipientEmail,
+  });
+
+  const paymentLinkUrl = buildBookingPaymentLink(req, booking.id, booking.userId);
+  const markEmailDelivery = db.prepare(
+    `UPDATE bookings
+     SET payment_link_recipient_email = ?,
+         payment_link_emailed_at = CASE WHEN ? = 'sent' THEN datetime('now') ELSE payment_link_emailed_at END,
+         payment_link_email_status = ?,
+         payment_link_email_error = ?
+     WHERE id = ?`
+  );
+  const insertBookingEmailEvent = db.prepare(
+    `INSERT INTO booking_email_events (
+      booking_id, event_name, recipient_email, message_id, sg_event_id, dedupe_key, detail, event_at, raw_payload, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+  );
+
+  const emailResult = await sendBookingPaymentLinkEmail({
+    toEmail: recipientEmail,
+    recipientName: booking.clientName || '',
+    serviceName: booking.serviceName || '',
+    bookingDate: booking.bookingDate || '',
+    bookingTime: booking.bookingTime || '',
+    paymentLinkUrl,
+    bookingId,
+    userId: booking.userId,
+  });
+
+  if (!emailResult.ok) {
+    markEmailDelivery.run(
+      recipientEmail,
+      'failed',
+      'failed',
+      String(emailResult.message || 'Unable to send payment link email.').slice(0, 500),
+      bookingId
+    );
+    const eventAt = new Date().toISOString();
+    const messageId = String(emailResult.messageId || '');
+    const detail = String(emailResult.message || 'Unable to send payment link email.').slice(0, 1000);
+    const dedupeKey = buildPaymentLinkEventDedupeKey({
+      bookingId,
+      eventName: 'request_failed',
+      recipient: recipientEmail,
+      messageId,
+      sgEventId: '',
+      eventAt,
+      detail,
+    });
+    insertBookingEmailEvent.run(bookingId, 'request_failed', recipientEmail, messageId, '', dedupeKey, detail, eventAt, null);
+    return res.status(emailResult.statusCode || 500).json({ message: emailResult.message || 'Unable to send payment link email.' });
+  }
+
+  if (Number(emailResult.statusCode || 0) !== 202) {
+    const detail = `Email provider did not confirm 202 acceptance (status: ${Number(emailResult.statusCode || 0) || 'unknown'}).`;
+    markEmailDelivery.run(recipientEmail, 'failed', 'failed', detail, bookingId);
+    const eventAt = new Date().toISOString();
+    const messageId = String(emailResult.messageId || '');
+    const dedupeKey = buildPaymentLinkEventDedupeKey({
+      bookingId,
+      eventName: 'request_failed',
+      recipient: recipientEmail,
+      messageId,
+      sgEventId: '',
+      eventAt,
+      detail,
+    });
+    insertBookingEmailEvent.run(bookingId, 'request_failed', recipientEmail, messageId, '', dedupeKey, detail, eventAt, null);
+    return res.status(502).json({ message: detail });
+  }
+
+  markEmailDelivery.run(recipientEmail, 'sent', 'sent', null, bookingId);
+  const acceptedAt = new Date().toISOString();
+  const acceptedMessageId = String(emailResult.messageId || '');
+  const acceptedDetail = 'Send request accepted by email provider (202).';
+  const acceptedDedupeKey = buildPaymentLinkEventDedupeKey({
+    bookingId,
+    eventName: 'request_accepted',
+    recipient: recipientEmail,
+    messageId: acceptedMessageId,
+    sgEventId: '',
+    eventAt: acceptedAt,
+    detail: acceptedDetail,
+  });
+  insertBookingEmailEvent.run(
+    bookingId,
+    'request_accepted',
+    recipientEmail,
+    acceptedMessageId,
+    '',
+    acceptedDedupeKey,
+    acceptedDetail,
+    acceptedAt,
+    null
+  );
+
+  return res.status(202).json({
+    sent: true,
+    paymentLinkUrl,
+    messageId: String(emailResult.messageId || ''),
+    message:
+      emailResult.delivery === 'console'
+        ? `Payment link generated for ${recipientEmail}. Email service is not configured, so the link was logged on server.`
+        : `Email request accepted for ${recipientEmail}.`,
+  });
+});
+
+app.post('/api/webhooks/sendgrid', async (req, res) => {
+  const verification = await verifySendGridWebhookSignature(req);
+  if (!verification.ok) {
+    return res.status(verification.statusCode || 401).json({ message: verification.message || 'Unauthorized webhook signature.' });
+  }
+
+  const events = Array.isArray(req.body) ? req.body : [];
+  if (!events.length) {
+    return res.status(400).json({ message: 'No SendGrid events provided.' });
+  }
+
+  const updateDelivery = db.prepare(
+    `UPDATE bookings
+     SET payment_link_recipient_email = CASE WHEN ? <> '' THEN ? ELSE payment_link_recipient_email END,
+         payment_link_delivery_status = ?,
+         payment_link_delivery_detail = ?,
+         payment_link_email_event = ?,
+         payment_link_email_event_at = ?,
+         payment_link_email_status = CASE
+           WHEN ? IN ('bounce', 'dropped', 'spamreport') THEN 'failed'
+           WHEN ? IN ('delivered', 'open', 'click') THEN 'sent'
+           ELSE payment_link_email_status
+         END,
+         payment_link_email_error = CASE
+           WHEN ? IN ('bounce', 'dropped', 'spamreport') THEN COALESCE(?, payment_link_email_error)
+           ELSE payment_link_email_error
+         END
+     WHERE id = ?`
+  );
+  const insertEvent = db.prepare(
+    `INSERT OR IGNORE INTO booking_email_events (
+      booking_id, event_name, recipient_email, message_id, sg_event_id, dedupe_key, detail, event_at, raw_payload, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+  );
+
+  let updated = 0;
+  let stored = 0;
+  for (const event of events) {
+    const customArgs = event?.custom_args || event?.unique_args || {};
+    if (String(customArgs?.context || '').trim() !== 'booking_payment_link') continue;
+
+    const bookingId = Number(customArgs?.bookingId);
+    if (!Number.isInteger(bookingId)) continue;
+
+    const eventName = normalizePaymentLinkEventName(event?.event);
+    if (!eventName) continue;
+
+    const recipient = String(event?.email || '').trim().toLowerCase();
+    const messageId = String(event?.sg_message_id || event?.smtp-id || '').trim();
+    const sgEventId = String(event?.sg_event_id || '').trim();
+    const eventAt = Number.isFinite(Number(event?.timestamp))
+      ? new Date(Number(event.timestamp) * 1000).toISOString()
+      : new Date().toISOString();
+    const detailParts = [
+      String(event?.reason || '').trim(),
+      String(event?.response || '').trim(),
+      String(event?.status || '').trim(),
+      String(event?.url || '').trim(),
+    ].filter(Boolean);
+    const detail = detailParts.join(' | ').slice(0, 500) || null;
+    const dedupeKey = buildPaymentLinkEventDedupeKey({
+      bookingId,
+      eventName,
+      recipient,
+      messageId,
+      sgEventId,
+      eventAt,
+      detail,
+    });
+
+    const insertResult = insertEvent.run(
+      bookingId,
+      eventName,
+      recipient,
+      messageId,
+      sgEventId,
+      dedupeKey,
+      detail,
+      eventAt,
+      JSON.stringify(event)
+    );
+    if (Number(insertResult?.changes || 0) > 0) stored += Number(insertResult.changes || 0);
+
+    if (!TRACKED_PAYMENT_LINK_EVENTS.has(eventName)) {
+      continue;
+    }
+
+    const result = updateDelivery.run(
+      recipient,
+      recipient,
+      eventName,
+      detail,
+      eventName,
+      eventAt,
+      eventName,
+      eventName,
+      eventName,
+      detail,
+      bookingId
+    );
+    if (Number(result?.changes || 0) > 0) updated += Number(result.changes || 0);
+
+    if (eventName === 'delivered' || eventName === 'deferred' || eventName === 'bounce') {
+      console.log('Payment link delivery webhook event:', {
+        bookingId,
+        event: eventName,
+        recipient,
+        messageId,
+        detail: detail || '',
+        eventAt,
+      });
+    }
+  }
+
+  return res.json({ ok: true, processed: events.length, updated, stored });
+});
+
+// Backward-compatible endpoint used by older cached frontend builds.
+// We do not have an SMS gateway wired yet, so this returns the link with a clear message
+// instead of failing the request.
+app.post('/api/bookings/:id/send-payment-link-sms', requireAuth, (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = db
+    .prepare(
+      `SELECT id, user_id AS userId, service_name AS serviceName, status, payment_status AS paymentStatus, created_at AS createdAt
+       FROM bookings
+       WHERE id = ?`
+    )
+    .get(bookingId);
+
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+  if (!canAccessBooking(req.user, booking.userId)) {
+    return res.status(403).json({ message: 'forbidden' });
+  }
+
+  const service = getServiceByName(booking.serviceName);
+  if (!service || service.membershipOnly || booking.paymentStatus === 'paid') {
+    return res.status(409).json({ message: 'payment link is not required for this booking' });
+  }
+  if (booking.status === 'cancelled') {
+    return res.status(409).json({ message: 'cannot send payment link for a cancelled booking' });
+  }
+  if (isHoldExpiredBooking(booking)) {
+    return res.status(409).json({ message: 'This booking hold has expired. Please book another slot.' });
+  }
+
+  const phoneNumber = String(req.body?.phoneNumber || '').trim();
+  if (!phoneNumber) {
+    return res.status(400).json({ message: 'phoneNumber is required' });
+  }
+
+  const paymentLinkUrl = buildBookingPaymentLink(req, booking.id, booking.userId);
+  return res.json({
+    sent: false,
+    paymentLinkUrl,
+    message: 'SMS gateway is not configured yet. Share the copied payment link with the customer, or use email delivery.',
+  });
+});
+
+app.get('/api/bookings/:id/invoice-link', requireAuth, (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = db
+    .prepare(
+      `SELECT id,
+              user_id AS userId,
+              payment_status AS paymentStatus
+       FROM bookings
+       WHERE id = ?`
+    )
+    .get(bookingId);
+
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+  if (!canAccessBooking(req.user, booking.userId)) {
+    return res.status(403).json({ message: 'forbidden' });
+  }
+  const normalizedPaymentStatus = String(booking.paymentStatus || '').trim().toLowerCase();
+  if (normalizedPaymentStatus !== 'paid') {
+    return res
+      .status(409)
+      .json({ message: `invoice is available only for paid bookings (paymentStatus=${booking.paymentStatus ?? ''})` });
+  }
+
+  const token = createInvoiceAccessToken({
+    scope: 'booking_invoice',
+    bookingId: booking.id,
+    userId: booking.userId,
+  });
+
+  return res.json({
+    invoiceUrl: `${getRequestOrigin(req)}/invoice/booking?token=${encodeURIComponent(token)}`,
+  });
+});
+
+app.get('/api/bookings/:id/payment-link-events', requireAuth, (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = db
+    .prepare(
+      `SELECT id,
+              user_id AS userId,
+              payment_status AS paymentStatus,
+              paid_at AS paidAt,
+              payment_link_emailed_at AS paymentLinkEmailedAt
+       FROM bookings
+       WHERE id = ?`
+    )
+    .get(bookingId);
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+  if (!canAccessBooking(req.user, booking.userId)) {
+    return res.status(403).json({ message: 'forbidden' });
+  }
+
+  const range = buildDateRangeFilter({
+    startDate: req.query?.startDate,
+    endDate: req.query?.endDate,
+    sqlColumn: 'event_at',
+  });
+  if (range.error) {
+    return res.status(400).json({ message: range.error });
+  }
+
+  const events = db
+    .prepare(
+      `SELECT id,
+              event_name AS eventName,
+              recipient_email AS recipientEmail,
+              message_id AS messageId,
+              sg_event_id AS sgEventId,
+              detail,
+              event_at AS eventAt
+       FROM booking_email_events
+       WHERE booking_id = ?
+         ${range.where ? `AND ${range.where.replace(/^WHERE\\s+/i, '')}` : ''}
        ORDER BY datetime(event_at) ASC, id ASC`
     )
     .all(bookingId, ...range.params);
@@ -4833,7 +5366,7 @@ app.get('/invoice/booking', (req, res) => {
   if (!booking || Number(booking.userId) !== access.userId) {
     return res.status(404).send('Invoice not found');
   }
-  if (String(booking.paymentStatus || '').toLowerCase() !== 'paid') {
+  if (String(booking.paymentStatus || '').trim().toLowerCase() !== 'paid') {
     return res.status(409).send('Invoice is available only for paid bookings');
   }
 
@@ -4891,64 +5424,89 @@ app.get('/invoice/booking', (req, res) => {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Invoice ${escapeHtml(invoiceNo)}</title>
+  <title>Billing Invoice ${escapeHtml(invoiceNo)}</title>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#f7f7fb;color:#111}
-    .wrap{max-width:860px;margin:32px auto;padding:0 16px}
-    .card{background:#fff;border:1px solid #e6e6ef;border-radius:16px;padding:20px}
-    .row{display:flex;gap:16px;flex-wrap:wrap;justify-content:space-between}
-    h1{font-size:20px;margin:0 0 4px}
-    .muted{color:#555;font-size:13px}
-    table{width:100%;border-collapse:collapse;margin-top:14px}
-    th,td{border-bottom:1px solid #eee;padding:10px 6px;text-align:left;font-size:14px}
-    th{font-size:12px;color:#555;text-transform:uppercase;letter-spacing:.04em}
+    :root{--ink:#111;--muted:#444;--line:#e8e8f0}
+    html,body{height:100%}
+    body{
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      margin:0;
+      color:var(--ink);
+      background:#f3f3f7;
+      -webkit-print-color-adjust:exact;
+      print-color-adjust:exact;
+    }
+    .page{
+      width:210mm;
+      min-height:297mm;
+      margin:18px auto;
+      box-sizing:border-box;
+      background:#fff url('/assets/invoice-page.png') no-repeat top center;
+      background-size:cover;
+      padding:46mm 18mm 18mm 18mm;
+      box-shadow:0 10px 32px rgba(0,0,0,.10);
+    }
+    .row{display:flex;gap:16px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
+    .title{font-size:18px;margin:0 0 4px;letter-spacing:.02em}
+    .muted{color:var(--muted);font-size:13px;line-height:1.35}
+    .block{margin-top:10px}
+    .gst{margin-top:6px}
+    .gst-space{display:inline-block;min-width:240px;border-bottom:1px solid #777;transform:translateY(-2px)}
+    table{width:100%;border-collapse:collapse;margin-top:18px}
+    th,td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:left;font-size:14px;vertical-align:top}
+    th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
     .right{text-align:right}
     .total{font-weight:700;font-size:16px}
-    @media print{body{background:#fff}.wrap{margin:0}.card{border:none}}
+    .footer{margin-top:14px}
+    @media print{
+      body{background:#fff}
+      .page{margin:0;box-shadow:none}
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <div class="row">
-        <div>
-          <h1>H2 House Of Health</h1>
-          <div class="muted">Invoice ${escapeHtml(invoiceNo)}</div>
-          ${paidAtLabel ? `<div class="muted">Paid at: ${escapeHtml(paidAtLabel)}</div>` : ''}
-        </div>
-        <div>
-          <div class="muted"><strong>Customer</strong></div>
-          <div>${escapeHtml(customerName)}</div>
-          <div class="muted">${escapeHtml(customerEmail)}</div>
-          <div class="muted">${escapeHtml(customerMobile)}</div>
-        </div>
+  <div class="page">
+    <div class="row">
+      <div>
+        <h1 class="title">Billing Invoice</h1>
+        <div class="muted">Invoice No: ${escapeHtml(invoiceNo)}</div>
+        ${paidAtLabel ? `<div class="muted">Paid at: ${escapeHtml(paidAtLabel)}</div>` : ''}
+        <div class="muted gst"><strong>GSTIN:</strong> <span class="gst-space"></span></div>
       </div>
+      <div>
+        <div class="muted"><strong>Customer</strong></div>
+        <div>${escapeHtml(customerName)}</div>
+        <div class="muted">${escapeHtml(customerEmail)}</div>
+        <div class="muted">${escapeHtml(customerMobile)}</div>
+      </div>
+    </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Service</th>
-            <th>Date & Time</th>
-            <th class="right">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>${escapeHtml(summary?.serviceName || booking.serviceName || 'Booking')}</td>
-            <td>${escapeHtml(bookingDateTimeLabel)}</td>
-            <td class="right">Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}</td>
-          </tr>
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colspan="2" class="right total">Total</td>
-            <td class="right total">Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}</td>
-          </tr>
-        </tfoot>
-      </table>
+    <table>
+      <thead>
+        <tr>
+          <th>Service</th>
+          <th>Date & Time</th>
+          <th class="right">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${escapeHtml(summary?.serviceName || booking.serviceName || 'Booking')}</td>
+          <td>${escapeHtml(bookingDateTimeLabel)}</td>
+          <td class="right">Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="2" class="right total">Total</td>
+          <td class="right total">Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}</td>
+        </tr>
+      </tfoot>
+    </table>
 
-      ${booking.paymentReference ? `<div class="muted" style="margin-top:10px">Payment ref: ${escapeHtml(String(booking.paymentReference))}</div>` : ''}
-      <div class="muted" style="margin-top:10px">Generated on ${escapeHtml(new Date().toLocaleString())}</div>
+    <div class="footer muted">
+      ${booking.paymentReference ? `<div>Payment ref: ${escapeHtml(String(booking.paymentReference))}</div>` : ''}
+      <div>Generated on ${escapeHtml(new Date().toLocaleString())}</div>
     </div>
   </div>
 </body>
@@ -4982,7 +5540,7 @@ app.get('/invoice/membership', (req, res) => {
   if (!order || Number(order.userId) !== Number(access.userId)) {
     return res.status(404).send('Invoice not found');
   }
-  if (String(order.status || '').toLowerCase() !== 'paid') {
+  if (String(order.status || '').trim().toLowerCase() !== 'paid') {
     return res.status(409).send('Invoice is available only for paid membership orders');
   }
 
@@ -5000,63 +5558,87 @@ app.get('/invoice/membership', (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Membership Invoice ${invoiceNo}</title>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#f7f7fb;color:#111}
-    .wrap{max-width:860px;margin:32px auto;padding:0 16px}
-    .card{background:#fff;border:1px solid #e6e6ef;border-radius:16px;padding:20px}
-    .row{display:flex;gap:16px;flex-wrap:wrap;justify-content:space-between}
-    h1{font-size:20px;margin:0 0 4px}
-    .muted{color:#555;font-size:13px}
-    table{width:100%;border-collapse:collapse;margin-top:14px}
-    th,td{border-bottom:1px solid #eee;padding:10px 6px;text-align:left;font-size:14px}
-    th{font-size:12px;color:#555;text-transform:uppercase;letter-spacing:.04em}
+    :root{--ink:#111;--muted:#444;--line:#e8e8f0}
+    html,body{height:100%}
+    body{
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      margin:0;
+      color:var(--ink);
+      background:#f3f3f7;
+      -webkit-print-color-adjust:exact;
+      print-color-adjust:exact;
+    }
+    .page{
+      width:210mm;
+      min-height:297mm;
+      margin:18px auto;
+      box-sizing:border-box;
+      background:#fff url('/assets/invoice-page.png') no-repeat top center;
+      background-size:cover;
+      padding:46mm 18mm 18mm 18mm;
+      box-shadow:0 10px 32px rgba(0,0,0,.10);
+    }
+    .row{display:flex;gap:16px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
+    .title{font-size:18px;margin:0 0 4px;letter-spacing:.02em}
+    .muted{color:var(--muted);font-size:13px;line-height:1.35}
+    .gst{margin-top:6px}
+    .gst-space{display:inline-block;min-width:240px;border-bottom:1px solid #777;transform:translateY(-2px)}
+    table{width:100%;border-collapse:collapse;margin-top:18px}
+    th,td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:left;font-size:14px;vertical-align:top}
+    th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
     .right{text-align:right}
     .total{font-weight:700;font-size:16px}
-    @media print{body{background:#fff}.wrap{margin:0}.card{border:none}}
+    .footer{margin-top:14px}
+    @media print{
+      body{background:#fff}
+      .page{margin:0;box-shadow:none}
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <div class="row">
-        <div>
-          <h1>H2 House Of Health</h1>
-          <div class="muted">Membership Invoice ${invoiceNo}</div>
-          ${paidAtLabel ? `<div class="muted">Paid at: ${escapeHtml(paidAtLabel)}</div>` : ''}
-        </div>
-        <div>
-          <div class="muted"><strong>Customer</strong></div>
-          <div>${escapeHtml(user?.name || '')}</div>
-          <div class="muted">${escapeHtml(user?.email || '')}</div>
-          <div class="muted">${escapeHtml(user?.mobile || '')}</div>
-        </div>
+  <div class="page">
+    <div class="row">
+      <div>
+        <h1 class="title">Membership Invoice</h1>
+        <div class="muted">Invoice No: ${invoiceNo}</div>
+        ${paidAtLabel ? `<div class="muted">Paid at: ${escapeHtml(paidAtLabel)}</div>` : ''}
+        <div class="muted gst"><strong>GSTIN:</strong> <span class="gst-space"></span></div>
       </div>
+      <div>
+        <div class="muted"><strong>Customer</strong></div>
+        <div>${escapeHtml(user?.name || '')}</div>
+        <div class="muted">${escapeHtml(user?.email || '')}</div>
+        <div class="muted">${escapeHtml(user?.mobile || '')}</div>
+      </div>
+    </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Plan</th>
-            <th>Members</th>
-            <th class="right">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>${escapeHtml(String(order.planId || 'Membership'))}</td>
-            <td>${escapeHtml(String(order.peopleCount || 1))}</td>
-            <td class="right">Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}</td>
-          </tr>
-          ${discountInr > 0 ? `<tr><td colspan="2">Discount ${order.couponCode ? `(${escapeHtml(String(order.couponCode))})` : ''}</td><td class="right">- Rs. ${discountInr.toLocaleString('en-IN')}</td></tr>` : ''}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colspan="2" class="right total">Total</td>
-            <td class="right total">Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}</td>
-          </tr>
-        </tfoot>
-      </table>
+    <table>
+      <thead>
+        <tr>
+          <th>Plan</th>
+          <th>Members</th>
+          <th class="right">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${escapeHtml(String(order.planId || 'Membership'))}</td>
+          <td>${escapeHtml(String(order.peopleCount || 1))}</td>
+          <td class="right">Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}</td>
+        </tr>
+        ${discountInr > 0 ? `<tr><td colspan="2">Discount ${order.couponCode ? `(${escapeHtml(String(order.couponCode))})` : ''}</td><td class="right">- Rs. ${discountInr.toLocaleString('en-IN')}</td></tr>` : ''}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="2" class="right total">Total</td>
+          <td class="right total">Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}</td>
+        </tr>
+      </tfoot>
+    </table>
 
-      ${order.paymentReference ? `<div class="muted" style="margin-top:10px">Payment ref: ${escapeHtml(String(order.paymentReference))}</div>` : ''}
-      <div class="muted" style="margin-top:10px">Generated on ${escapeHtml(new Date().toLocaleString())}</div>
+    <div class="footer muted">
+      ${order.paymentReference ? `<div>Payment ref: ${escapeHtml(String(order.paymentReference))}</div>` : ''}
+      <div>Generated on ${escapeHtml(new Date().toLocaleString())}</div>
     </div>
   </div>
 </body>
@@ -5277,6 +5859,73 @@ app.patch('/api/bookings/:id/status', requireAuth, (req, res) => {
     db.prepare('UPDATE bookings SET status = ? WHERE id = ?').run(status, bookingId);
   }
   res.status(204).send();
+});
+
+app.patch('/api/bookings/:id/mark-paid-cash', requireAuth, requireAdmin, (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = db
+    .prepare(
+      `SELECT id,
+              user_id AS userId,
+              booking_group_id AS bookingGroupId,
+              status,
+              payment_status AS paymentStatus
+       FROM bookings
+       WHERE id = ?`
+    )
+    .get(bookingId);
+
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+
+  const bookingStatus = String(booking.status || '').trim().toLowerCase();
+  if (bookingStatus === 'cancelled') {
+    return res.status(409).json({ message: 'cannot accept cash for a cancelled booking' });
+  }
+
+  const targetGroupId = String(booking.bookingGroupId || '').trim();
+  if (targetGroupId) {
+    db.prepare(
+      `UPDATE bookings
+       SET payment_status = 'paid',
+           paid_at = datetime('now'),
+           payment_reference = 'cash',
+           status = CASE
+             WHEN status IN ('cancelled','completed') THEN status
+             ELSE 'confirmed'
+           END
+       WHERE booking_group_id = ?
+         AND status <> 'cancelled'`
+    ).run(targetGroupId);
+  } else {
+    db.prepare(
+      `UPDATE bookings
+       SET payment_status = 'paid',
+           paid_at = datetime('now'),
+           payment_reference = 'cash',
+           status = CASE
+             WHEN status IN ('cancelled','completed') THEN status
+             ELSE 'confirmed'
+           END
+       WHERE id = ?`
+    ).run(bookingId);
+  }
+
+  const token = createInvoiceAccessToken({
+    scope: 'booking_invoice',
+    bookingId: booking.id,
+    userId: booking.userId,
+  });
+
+  return res.json({
+    paid: true,
+    invoiceUrl: `${getRequestOrigin(req)}/invoice/booking?token=${encodeURIComponent(token)}`,
+  });
 });
 
 app.post('/api/bookings/:id/pay', requireAuth, (req, res) => {

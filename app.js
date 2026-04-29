@@ -1,4 +1,27 @@
-﻿const API_URL = "";
+﻿const API_URL = (() => {
+  const configuredWindowValue =
+    typeof window !== 'undefined' ? String(window.__API_URL__ || '').trim() : '';
+  const configuredMetaValue =
+    typeof document !== 'undefined'
+      ? String(document.querySelector('meta[name="api-base-url"]')?.content || '').trim()
+      : '';
+  return configuredWindowValue || configuredMetaValue || '';
+})();
+
+function buildApiUrl(url = '') {
+  const normalized = String(url || '').trim();
+  if (!normalized) return API_URL || window.location.origin;
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  const apiBase = API_URL || window.location.origin;
+  return `${apiBase}${normalized}`;
+}
+
+function withApiCredentials(options = {}) {
+  return {
+    credentials: 'include',
+    ...options,
+  };
+}
 const state = {
   user: null,
   bookings: [],
@@ -620,7 +643,7 @@ function attachEvents() {
   elements.noticeDialogCloseBtn?.addEventListener('click', closeNoticeDialog);
 
   elements.logoutBtn?.addEventListener('click', async () => {
-    const response = await fetch(`${API_URL}/api/auth/logout`, { method: 'POST' });
+    const response = await fetch(buildApiUrl('/api/auth/logout'), withApiCredentials({ method: 'POST' }));
     if (!response.ok) {
       let message = 'Logout failed.';
       try {
@@ -1839,10 +1862,9 @@ async function loadServiceAvailability() {
   if (state.user?.role === 'admin' && isAdminCustomerFormReady()) {
     params.set('customerEmail', state.adminCustomerForm.email);
   }
-  const apiBase = API_URL || window.location.origin;
-  const url = `${apiBase}/api/services/availability?${params.toString()}`;
+  const url = `${buildApiUrl('/api/services/availability')}?${params.toString()}`;
 
-  fetch(url)
+  fetch(url, withApiCredentials())
     .then((res) => res.json())
     .then((data) => {
       if (requestId !== availabilityRequestId) return;
@@ -2873,11 +2895,11 @@ function openPaymentLinkFallbackShare(paymentLink = '', phoneNumber = '', reason
 
 async function sendPaymentLinkViaEmail(bookingId, email, paymentLink = '', phoneNumber = '') {
   try {
-    const response = await fetch(`${API_URL}/api/bookings/${bookingId}/send-payment-link-email`, {
+    const response = await fetch(buildApiUrl(`/api/bookings/${bookingId}/send-payment-link-email`), withApiCredentials({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phoneNumber }),
-    });
+    }));
 
     let result = null;
     const contentType = response.headers.get('content-type') || '';
@@ -9370,7 +9392,7 @@ function showNotice({ title = 'Notice', body = '', type = '' } = {}) {
 }
 
 function openPortalDocument(url) {
-  const targetUrl = url.startsWith('http') ? url : `${API_URL}${url}`;
+  const targetUrl = buildApiUrl(url);
   const popup = window.open(targetUrl, '_blank');
   if (!popup) {
     console.warn('Popup was blocked. Please allow popups in your browser settings.');
@@ -9560,8 +9582,7 @@ async function openBookingInvoice(bookingId) {
   if (!Number.isInteger(id)) return;
   let response = null;
   try {
-    const apiBase = API_URL || window.location.origin;
-    response = await fetch(`${apiBase}/api/bookings/${encodeURIComponent(id)}/invoice-link`, { credentials: 'include' });
+    response = await fetch(buildApiUrl(`/api/bookings/${encodeURIComponent(id)}/invoice-link`), withApiCredentials());
   } catch (error) {
     throw new Error(error?.message || 'Network error while generating invoice link.');
   }
@@ -9597,8 +9618,10 @@ async function openMembershipInvoice(orderId) {
   if (!normalizedOrderId) return;
   let response = null;
   try {
-    const apiBase = API_URL || window.location.origin;
-    response = await fetch(`${apiBase}/api/membership-orders/${encodeURIComponent(normalizedOrderId)}/invoice-link`, { credentials: 'include' });
+    response = await fetch(
+      buildApiUrl(`/api/membership-orders/${encodeURIComponent(normalizedOrderId)}/invoice-link`),
+      withApiCredentials()
+    );
   } catch (error) {
     throw new Error(error?.message || 'Network error while generating invoice link.');
   }
@@ -9714,10 +9737,8 @@ function formatBookingCreatedAtIndia(value) {
 }
 
 async function api(url, options = {}) {
-  const targetUrl = url.startsWith('http') ? url : `${API_URL}${url}`;
-  const response = await fetch(targetUrl, {
-    ...options,
-  });
+  const targetUrl = buildApiUrl(url);
+  const response = await fetch(targetUrl, withApiCredentials(options));
 
   if (response.status === 204) {
     return null;

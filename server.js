@@ -27,6 +27,12 @@ const IV_REBOOK_COOLDOWN_DAYS = 14;
 const OTP_TTL_MINUTES = 10;
 const BOOKING_HOLD_MINUTES = 10;
 const BOOKING_HOLD_CUTOFF_SQL = `datetime('now', '-${BOOKING_HOLD_MINUTES} minutes')`;
+const FRONTEND_ORIGINS = String(process.env.FRONTEND_ORIGINS || process.env.FRONTEND_ORIGIN || '')
+  .split(',')
+  .map((value) => normalizeEnvValue(value))
+  .filter(Boolean);
+const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
+const ALLOWED_CORS_ORIGINS = Array.from(new Set([...DEFAULT_ALLOWED_ORIGINS, ...FRONTEND_ORIGINS]));
 const ADMIN_DISCOUNT_GATE_PASSWORD = normalizeEnvValue(process.env.ADMIN_DISCOUNT_GATE_PASSWORD || 'H2-FOUNDERS-2026');
 const RAZORPAY_KEY_ID = normalizeEnvValue(process.env.RAZORPAY_KEY_ID);
 const RAZORPAY_KEY_SECRET = normalizeEnvValue(process.env.RAZORPAY_KEY_SECRET);
@@ -314,11 +320,26 @@ const MEMBERSHIP_VALIDITY_DAYS = Number(MEMBERSHIP_PLANS.find((plan) => plan.id 
 const HYDROGEN_FREE_SESSIONS_PER_USER = 16;
 
 const app = express();
+const connection = require("./config/db");
 const cors = require("cors");
-app.use(cors({
-  origin: "*",
-  credentials: false,
-}));
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    if (ALLOWED_CORS_ORIGINS.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`CORS origin not allowed: ${origin}`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const uploadsDir = path.resolve(process.env.UPLOADS_DIR || path.join(__dirname, 'uploads'));
 const dbPath = path.join(dataDir, 'booking.db');
@@ -544,6 +565,19 @@ app.use(
     },
   })
 );
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    console.error('Invalid JSON received:', req.method, req.originalUrl || req.url);
+    return res.status(400).json({ message: 'Invalid JSON body.' });
+  }
+  return next(err);
+});
+app.get("/users", (req, res) => {
+  connection.query("SELECT * FROM users", (err, results) => {
+    if (err) return res.status(500).send(err);
+    res.json(results);
+  });
+});
 app.use(cookieParser());
 app.use((req, res, next) => {
   const pathName = String(req.path || '');
@@ -944,7 +978,7 @@ app.post('/api/auth/password/reset', (req, res) => {
 });
 
 app.post('/api/auth/logout', (_req, res) => {
-  res.clearCookie(TOKEN_COOKIE);
+  res.clearCookie(TOKEN_COOKIE, getAuthCookieOptions());
   res.status(204).send();
 });
 
@@ -7447,11 +7481,19 @@ function setAuthCookie(res, user) {
   );
 
   res.cookie(TOKEN_COOKIE, token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: false,
+    ...getAuthCookieOptions(),
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
+}
+
+function getAuthCookieOptions() {
+  const useCrossSiteCookie = IS_PRODUCTION && FRONTEND_ORIGINS.length > 0;
+  return {
+    httpOnly: true,
+    sameSite: useCrossSiteCookie ? 'none' : 'lax',
+    secure: IS_PRODUCTION,
+    path: '/',
+  };
 }
 
 function requireAuth(req, res, next) {

@@ -2738,9 +2738,6 @@ async function showAdminPaymentLinkDialog(bookingId, customerEmail, customerPhon
   }
 
   copyTextToClipboard(paymentLink);
-  if (!phoneNumber) {
-    showNotice({ title: 'Payment link', body: [paymentLink, '', 'No registered mobile number found.', 'Link copied.'] });
-  }
   if (!emailAddress) {
     showNotice({ title: 'Payment link', body: [paymentLink, '', 'No customer email found.', 'Link copied.'] });
     return;

@@ -3604,7 +3604,6 @@ app.get('/api/bookings/:id/payment-link', requireAuth, (req, res) => {
 });
 
 app.get('/api/bookings/:id/invoice-link', requireAuth, (req, res) => {
-app.get('/api/bookings/:id/payment-link-events', requireAuth, (req, res) => {
   const bookingId = Number(req.params.id);
   if (!Number.isInteger(bookingId)) {
     return res.status(400).json({ message: 'invalid booking id' });
@@ -3616,7 +3615,6 @@ app.get('/api/bookings/:id/payment-link-events', requireAuth, (req, res) => {
               user_id AS userId,
               booking_group_id AS bookingGroupId,
               status,
-              payment_status AS paymentStatus
               payment_status AS paymentStatus,
               paid_at AS paidAt,
               payment_link_emailed_at AS paymentLinkEmailedAt
@@ -3642,6 +3640,34 @@ app.get('/api/bookings/:id/payment-link-events', requireAuth, (req, res) => {
 
   return res.json({
     invoiceUrl: `${getRequestOrigin(req)}/invoice/booking?token=${encodeURIComponent(token)}`,
+  });
+});
+
+app.get('/api/bookings/:id/payment-link-events', requireAuth, (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = db
+    .prepare(
+      `SELECT id,
+              user_id AS userId,
+              booking_group_id AS bookingGroupId,
+              status,
+              payment_status AS paymentStatus,
+              paid_at AS paidAt,
+              payment_link_emailed_at AS paymentLinkEmailedAt
+       FROM bookings
+       WHERE id = ?`
+    )
+    .get(bookingId);
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+  if (!canAccessBooking(req.user, booking.userId)) {
+    return res.status(403).json({ message: 'forbidden' });
+  }
 
   const range = buildDateRangeFilter({
     startDate: req.query?.startDate,

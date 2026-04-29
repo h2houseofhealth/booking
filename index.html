@@ -7,10 +7,14 @@
     <link rel="icon" type="image/png" href="assets/brand/H2_icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Playfair+Display:wght@500;700&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="styles.css?v=20260427-5" />
 
   </head>
+
   <body class="auth-mode">
     <div class="background-shape shape-a"></div>
     <div class="background-shape shape-b"></div>
@@ -108,34 +112,76 @@
             </button>
           </div>
 
-          <div class="member-choice-hero hero-inner hero">
-            <div class="member-choice-hero-copy hero-content left">
+          <div class="member-choice-hero hero-inner">
+            <div class="member-choice-hero-copy member-choice-hero-text hero-content">
               <p class="auth-kicker">Redefine wellness. Rejuvenate life.</p>
-              <h2 class="member-choice-title hero-title">Choose How You Want To <span class="member-choice-title-em">Continue</span></h2>
-              <p class="membership-copy hero-text">
+              <h2 class="member-choice-title">Choose How You Want To <span class="member-choice-title-em">Continue</span></h2>
+              <p class="membership-copy">
                 Choose whether you want to activate membership first, enter with member benefits, or continue with non-member access.
               </p>
 
               <div class="member-choice-benefits" aria-label="Membership highlights">
-                <p><span class="member-choice-check" aria-hidden="true">✓</span> Book hydrogen, therapies &amp; shots in one place.</p>
-                <p><span class="member-choice-check" aria-hidden="true">✓</span> Member pricing and exclusive hydrogen session access.</p>
-                <p><span class="member-choice-check" aria-hidden="true">✓</span> Change or cancel your plan anytime.</p>
+                <p>
+                  <span class="member-choice-check" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="M12 2.75c2.08 3.02 5.54 6.8 5.54 10.42A5.54 5.54 0 1 1 6.46 13.17C6.46 9.55 9.92 5.77 12 2.75Z" />
+                      <path d="M12 9.25c1.29 1.54 2.33 3.09 2.33 4.32A2.33 2.33 0 1 1 9.67 13.57c0-1.23 1.04-2.78 2.33-4.32Z" />
+                    </svg>
+                  </span>
+                  Book hydrogen, therapies &amp; shots in one place.
+                </p>
+                <p>
+                  <span class="member-choice-check" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="M4 12.5 8 15l4-6 4 6 4-2.5-1.7 8H5.7L4 12.5Z" />
+                      <path d="M8 20h8" />
+                    </svg>
+                  </span>
+                  Member pricing and exclusive hydrogen session access.
+                </p>
+                <p>
+                  <span class="member-choice-check" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="M7 3.5v3" />
+                      <path d="M17 3.5v3" />
+                      <path d="M4 8.5h16" />
+                      <rect x="4" y="5.5" width="16" height="15" rx="3" />
+                      <path d="m8 13 2 2 5-5" />
+                    </svg>
+                  </span>
+                  Change or cancel your plan anytime.
+                </p>
               </div>
 
               <div class="member-choice-primary-row">
                 <button id="joinAsMemberBtn" class="btn btn-primary" type="button">Explore All Plans</button>
               </div>
+              <div class="member-choice-trust" aria-label="Member trust">
+                <div class="member-choice-avatars" aria-hidden="true">
+                  <span>S</span>
+                  <span>A</span>
+                  <span>M</span>
+                  <span>R</span>
+                </div>
+                <div class="member-choice-trust-copy">
+                  <strong>★★★★★</strong>
+                  <p>Trusted by 2,000+ wellness seekers</p>
+                </div>
+              </div>
             </div>
 
-            <div class="member-choice-hero-media hero-image right">
-              <figure class="member-choice-photo-card">
+            <div class="member-choice-hero-media member-choice-hero-visual hero-image">
+              <figure class="member-choice-photo-card member-choice-hero-photo">
                 <img
-                  class="hero-img"
                   src="assets/membership_choice_hero.png"
                   alt="Clinician performing a treatment session"
                   loading="lazy"
                   onerror="this.onerror=null;this.src='assets/service-experience.jpg';"
                 />
+                <figcaption class="member-choice-photo-badge">
+                  <strong>Premium Care</strong>
+                  <span>Advanced Therapies</span>
+                </figcaption>
               </figure>
             </div>
           </div>
@@ -197,7 +243,7 @@
                   <p>See the difference between member and non-member benefits side by side.</p>
                   <a href="#membershipSection">View Full Comparison →</a>
                   <div class="member-choice-matrix-decor" aria-hidden="true">
-                    <img src="assets/pot_image_cropped.svg" alt="" />
+                    <img src="assets/pot_image_cropped.png" alt="" />
                   </div>
                 </aside>
                 <div class="member-choice-matrix-table-wrap table">
@@ -281,31 +327,6 @@
                     </div>
                   </div>
                 </div>
-
-                <div class="member-choice-final-cta" aria-label="Wellness highlights and primary action">
-                  <div class="member-choice-final-cta-points">
-                    <div class="member-choice-final-cta-point">
-                      <span aria-hidden="true">✦</span>
-                      <div><strong>Premium Care</strong><small>You Can Trust</small></div>
-                    </div>
-                    <div class="member-choice-final-cta-point">
-                      <span aria-hidden="true">◎</span>
-                      <div><strong>Science Backed</strong><small>Therapies</small></div>
-                    </div>
-                    <div class="member-choice-final-cta-point">
-                      <span aria-hidden="true">✧</span>
-                      <div><strong>Personalized</strong><small>Wellness</small></div>
-                    </div>
-                    <div class="member-choice-final-cta-point">
-                      <span aria-hidden="true">♡</span>
-                      <div><strong>Results That</strong><small>Last</small></div>
-                    </div>
-                  </div>
-                  <button class="member-choice-final-cta-btn" type="button" data-member-choice-join>
-                    Explore All Plans
-                    <span aria-hidden="true">→</span>
-                  </button>
-                </div>
               </div>
             </div>
           </div>
@@ -341,32 +362,57 @@
         </div>
         <section id="membershipDashboard" class="membership-dashboard">
           <div class="membership-dashboard-head">
-            <div>
-              <span class="membership-dashboard-kicker">Welcome back</span>
+            <div class="dashboard-left">
+              <span class="membership-dashboard-kicker">WELCOME BACK</span>
               <h3 id="membershipWelcomeName">Member</h3>
               <p id="membershipDashboardStatus" class="membership-copy"></p>
             </div>
-            <div class="membership-quick-actions">
+            <div class="dashboard-actions membership-quick-actions">
               <button id="membershipTakeMembershipBtn" class="btn btn-secondary" type="button" hidden>Take Membership</button>
               <button id="membershipQuickBookBtn" class="btn btn-primary" type="button">Book Hydrogen Session</button>
               <button id="membershipQuickHistoryBtn" class="btn btn-secondary" type="button">View History</button>
             </div>
+            <img
+              class="dashboard-hero-img"
+              src="assets/dashboard_membership_hero.jpeg"
+              alt="Hydrogen therapy dashboard hero"
+            />
           </div>
           <div class="membership-stat-grid">
             <button class="membership-stat-card" type="button">
-              <span class="stat-icon" aria-hidden="true">&#9679;</span>
+              <span class="stat-icon stat-icon-session" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M12 2.75c2.08 3.02 5.54 6.8 5.54 10.42A5.54 5.54 0 1 1 6.46 13.17C6.46 9.55 9.92 5.77 12 2.75Z" />
+                  <path d="M12 9.25c1.29 1.54 2.33 3.09 2.33 4.32A2.33 2.33 0 1 1 9.67 13.57c0-1.23 1.04-2.78 2.33-4.32Z" />
+                </svg>
+              </span>
               <span id="membershipStatSessionsLabel" class="stat-label">Hydrogen Sessions</span>
               <strong id="membershipStatSessions">0</strong>
               <small id="membershipStatSessionsMeta">Included</small>
             </button>
             <button class="membership-stat-card" type="button">
-              <span class="stat-icon" aria-hidden="true">&#9675;</span>
+              <span class="stat-icon stat-icon-members" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                  <path d="M16.5 10a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+                  <path d="M3.5 18.5a4.5 4.5 0 0 1 9 0" />
+                  <path d="M13 18.5a3.75 3.75 0 0 1 7.5 0" />
+                </svg>
+              </span>
               <span id="membershipStatMembersLabel" class="stat-label">Members</span>
               <strong id="membershipStatMembers">0</strong>
               <small id="membershipStatMembersMeta">Covered</small>
             </button>
             <button class="membership-stat-card" type="button">
-              <span class="stat-icon" aria-hidden="true">&#9203;</span>
+              <span class="stat-icon stat-icon-valid" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M7 3.5v3" />
+                  <path d="M17 3.5v3" />
+                  <path d="M4 8.5h16" />
+                  <rect x="4" y="5.5" width="16" height="15" rx="3" />
+                  <path d="m8 13 2 2 5-5" />
+                </svg>
+              </span>
               <span id="membershipStatValidLabel" class="stat-label">Valid Till</span>
               <strong id="membershipStatValid">-</strong>
               <small id="membershipStatValidMeta">Plan end</small>
@@ -378,8 +424,18 @@
                 <h4 id="membershipUsageTitle">Hydrogen Session Usage</h4>
                 <span id="membershipUsageLabel">0 of 0 used</span>
               </div>
-              <div class="membership-progress-bar">
-                <span id="membershipUsageBar"></span>
+              <div class="progress-flex">
+                <div class="progress-ring" id="progressRing">
+                  <span id="progressText">0%</span>
+                </div>
+                <div class="progress-info">
+                  <strong id="membershipUsageCount">0 of 0</strong>
+                  <p class="progress-sub">Sessions used</p>
+                  <div class="progress-mini">
+                    <span id="remainingSessions">0</span>
+                    <small>remaining</small>
+                  </div>
+                </div>
               </div>
               <p id="membershipUsageNote" class="membership-copy"></p>
             </div>
@@ -401,6 +457,17 @@
               <div id="membershipCalendarDetails" class="membership-calendar-details"></div>
             </div>
             <div class="membership-highlight-card">
+              <div class="membership-highlight-visual" aria-hidden="true">
+                <span class="membership-highlight-icon">
+                  <svg viewBox="0 0 64 64" fill="none">
+                    <path d="M16 10v8" />
+                    <path d="M48 10v8" />
+                    <rect x="10" y="14" width="44" height="38" rx="10" />
+                    <path d="M10 24h44" />
+                    <path d="m24 36 6 6 12-14" />
+                  </svg>
+                </span>
+              </div>
               <span class="membership-highlight-kicker">Upcoming</span>
               <h4 id="membershipNextSessionTitle">No hydrogen sessions scheduled</h4>
               <p id="membershipNextSessionMeta" class="membership-copy"></p>
@@ -1104,17 +1171,6 @@
       </form>
     </dialog>
 
-    <dialog id="noticeDialog" class="notice-dialog">
-      <div class="notice-shell">
-        <div class="dialog-head">
-          <h2 id="noticeDialogTitle">Notice</h2>
-          <button id="noticeDialogCloseBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
-        </div>
-        <pre id="noticeDialogBody" class="notice-body"></pre>
-        <div class="dialog-actions">
-          <button id="noticeDialogOkBtn" class="btn btn-primary" type="button">OK</button>
-        </div>
-      </div>
     <dialog id="bookingEmailTimelineDialog" class="booking-dialog">
       <form method="dialog">
         <div class="dialog-head">

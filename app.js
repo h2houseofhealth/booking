@@ -18,6 +18,9 @@ const state = {
   pendingPreAuthChoice: '',
   showAuthCard: false,
   activeUserTab: 'services',
+  adminActiveTab: 'bookings',
+  adminPendingBookingSearch: '',
+  adminAllBookingSearch: '',
   returnUserTabAfterEdit: '',
   membership: {
     plans: [],
@@ -146,7 +149,8 @@ const IV_REBOOK_COOLDOWN_DAYS = 14;
 const MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER = 3;
 const BOOKING_HOLD_MINUTES = 10;
 const HYDROGEN_FREE_SESSIONS_PER_USER = 16;
-const ADMIN_USER_CARD_DEFAULT_LIMIT = 4;
+const ADMIN_USER_CARD_DEFAULT_LIMIT = 10;
+const ADMIN_USER_CARD_LARGE_DATASET_THRESHOLD = 300;
 
 const elements = {
   authCard: document.getElementById('authCard'),
@@ -193,6 +197,14 @@ const elements = {
   adminStatTotal: document.getElementById('adminStatTotal'),
   adminHistoryCard: document.getElementById('adminHistoryCard'),
   historyCount: document.getElementById('historyCount'),
+  adminTabNav: document.getElementById('adminTabNav'),
+  adminTabBookings: document.getElementById('adminTabBookings'),
+  adminTabUserBookings: document.getElementById('adminTabUserBookings'),
+  adminTabHistory: document.getElementById('adminTabHistory'),
+  adminTabSessions: document.getElementById('adminTabSessions'),
+  adminTabCalendar: document.getElementById('adminTabCalendar'),
+  adminTabMemberships: document.getElementById('adminTabMemberships'),
+  adminTabCoupons: document.getElementById('adminTabCoupons'),
   adminPaymentLinkAnalytics: document.getElementById('adminPaymentLinkAnalytics'),
   adminPaymentLinkFunnel: document.getElementById('adminPaymentLinkFunnel'),
   adminEmailAnalyticsStartDate: document.getElementById('adminEmailAnalyticsStartDate'),
@@ -396,6 +408,17 @@ const elements = {
   adminHistoryToggleBtnWrap: document.getElementById('adminHistoryToggleBtnWrap'),
   adminHistorySection: document.getElementById('adminHistorySection'),
   adminTableTitle: document.getElementById('adminTableTitle'),
+  adminUserBookingsSection: document.getElementById('adminUserBookingsSection'),
+  adminPendingBookingSearch: document.getElementById('adminPendingBookingSearch'),
+  adminPendingBookingTableBody: document.getElementById('adminPendingBookingTableBody'),
+  adminPendingEmptyState: document.getElementById('adminPendingEmptyState'),
+  adminAllBookingsSection: document.getElementById('adminAllBookingsSection'),
+  adminAllBookingSearch: document.getElementById('adminAllBookingSearch'),
+  adminAllBookingTableBody: document.getElementById('adminAllBookingTableBody'),
+  adminAllBookingEmptyState: document.getElementById('adminAllBookingEmptyState'),
+  adminUserSessionsSection: document.getElementById('adminUserSessionsSection'),
+  adminMembershipSection: document.getElementById('adminMembershipSection'),
+  adminCouponsSection: document.getElementById('adminCouponsSection'),
 
   adminSessionSearch: document.getElementById('adminSessionSearch'),
   adminMembershipSearch: document.getElementById('adminMembershipSearch'),
@@ -1186,13 +1209,18 @@ function attachEvents() {
   });
 
   elements.adminHistoryToggleBtn?.addEventListener('click', () => {
-    state.adminHistoryVisible = !state.adminHistoryVisible;
+    state.adminActiveTab = 'bookings';
     render();
-    if (state.adminHistoryVisible) {
-      requestAnimationFrame(() => {
-        elements.adminHistorySection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    }
+  });
+
+  elements.adminPendingBookingSearch?.addEventListener('input', (event) => {
+    state.adminPendingBookingSearch = String(event.target.value || '').trim().toLowerCase();
+    render();
+  });
+
+  elements.adminAllBookingSearch?.addEventListener('input', (event) => {
+    state.adminAllBookingSearch = String(event.target.value || '').trim().toLowerCase();
+    render();
   });
 
 
@@ -1252,21 +1280,42 @@ function attachEvents() {
   });
 
   elements.adminStatTotal?.addEventListener('click', () => {
-    state.adminHistoryVisible = false;
+    state.adminActiveTab = 'bookings';
     render();
-    requestAnimationFrame(() => {
-      elements.adminHistorySection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
   });
 
   elements.adminHistoryCard?.addEventListener('click', () => {
-    state.adminHistoryVisible = !state.adminHistoryVisible;
+    state.adminActiveTab = 'userbookings';
     render();
-    if (state.adminHistoryVisible) {
-      requestAnimationFrame(() => {
-        elements.adminHistorySection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    }
+  });
+
+  elements.adminTabBookings?.addEventListener('click', () => {
+    state.adminActiveTab = 'bookings';
+    render();
+  });
+  elements.adminTabUserBookings?.addEventListener('click', () => {
+    state.adminActiveTab = 'userbookings';
+    render();
+  });
+  elements.adminTabHistory?.addEventListener('click', () => {
+    state.adminActiveTab = 'history';
+    render();
+  });
+  elements.adminTabSessions?.addEventListener('click', () => {
+    state.adminActiveTab = 'sessions';
+    render();
+  });
+  elements.adminTabCalendar?.addEventListener('click', () => {
+    state.adminActiveTab = 'calendar';
+    render();
+  });
+  elements.adminTabMemberships?.addEventListener('click', () => {
+    state.adminActiveTab = 'memberships';
+    render();
+  });
+  elements.adminTabCoupons?.addEventListener('click', () => {
+    state.adminActiveTab = 'coupons';
+    render();
   });
 
   document.addEventListener('click', (event) => {
@@ -2816,6 +2865,29 @@ async function changeStatus(id, status) {
   render();
 }
 
+async function markBookingPaidInCash(bookingId) {
+  const id = Number(bookingId);
+  if (!Number.isInteger(id)) return;
+  const confirmed = confirm('Mark this booking as PAID IN CASH and accept (confirm) the slot?');
+  if (!confirmed) return;
+
+  const result = await api(`/api/bookings/${id}/mark-paid-cash`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+
+  await loadDashboardData();
+  render();
+
+  const invoiceUrl = String(result?.invoiceUrl || '').trim();
+  if (invoiceUrl) {
+    openPortalDocument(invoiceUrl);
+  } else {
+    showNotice({ title: 'Cash accepted', body: 'Booking marked as paid in cash and confirmed.' });
+  }
+}
+
 async function copyBookingPaymentLink(id) {
   const result = await api(`/api/bookings/${id}/payment-link`);
   copyTextToClipboard(result.paymentLinkUrl || '');
@@ -3880,7 +3952,8 @@ function getFilteredAdminUsers() {
   });
 
   if (!query) {
-    return sortedUsers.slice(0, ADMIN_USER_CARD_DEFAULT_LIMIT);
+    const limit = users.length > ADMIN_USER_CARD_LARGE_DATASET_THRESHOLD ? ADMIN_USER_CARD_DEFAULT_LIMIT : sortedUsers.length;
+    return sortedUsers.slice(0, limit);
   }
 
   return sortedUsers.filter((user) => {
@@ -3927,7 +4000,10 @@ function getTodayAdminBookings(bookings = state.bookings) {
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const dd = String(today.getDate()).padStart(2, '0');
   const todayKey = `${yyyy}-${mm}-${dd}`;
-  return getAdminDashboardVisibleBookings(bookings).filter((booking) => String(booking?.bookingDate || '') === todayKey);
+  return (Array.isArray(bookings) ? bookings : [])
+    .filter((booking) => String(booking?.bookingDate || '') === todayKey)
+    .filter((booking) => String(booking?.status || '').trim().toLowerCase() !== 'cancelled')
+    .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
 }
 
 function isAdminDashboardBookingVisible(booking) {
@@ -3940,6 +4016,57 @@ function isAdminDashboardBookingVisible(booking) {
 
 function getAdminDashboardVisibleBookings(bookings = state.bookings) {
   return (Array.isArray(bookings) ? bookings : []).filter(isAdminDashboardBookingVisible);
+}
+
+function getAdminHistoryBookings(bookings = state.bookings) {
+  const normalized = Array.isArray(bookings) ? bookings : [];
+  return normalized
+    .filter((booking) => String(booking?.status || '').trim().toLowerCase() !== 'cancelled')
+    .sort((a, b) => {
+      const aCreated = a?.createdAt ? new Date(a.createdAt).getTime() : Number.NaN;
+      const bCreated = b?.createdAt ? new Date(b.createdAt).getTime() : Number.NaN;
+      const aTs = Number.isFinite(aCreated) ? aCreated : getBookingStartTime(a);
+      const bTs = Number.isFinite(bCreated) ? bCreated : getBookingStartTime(b);
+      return (Number(bTs) || 0) - (Number(aTs) || 0);
+    });
+}
+
+function getAdminPaymentPendingBookings(bookings = state.bookings) {
+  const normalized = Array.isArray(bookings) ? bookings : [];
+  return normalized
+    .filter((booking) => String(booking?.status || '').trim().toLowerCase() !== 'cancelled')
+    .filter((booking) => String(booking?.paymentStatus || 'unpaid').trim().toLowerCase() !== 'paid')
+    .sort((a, b) => {
+      const aCreated = a?.createdAt ? new Date(a.createdAt).getTime() : Number.NaN;
+      const bCreated = b?.createdAt ? new Date(b.createdAt).getTime() : Number.NaN;
+      const aTs = Number.isFinite(aCreated) ? aCreated : getBookingStartTime(a);
+      const bTs = Number.isFinite(bCreated) ? bCreated : getBookingStartTime(b);
+      return (Number(bTs) || 0) - (Number(aTs) || 0);
+    });
+}
+
+function getFilteredAdminPaymentPendingBookings(bookings = state.bookings) {
+  const query = String(state.adminPendingBookingSearch || '').trim().toLowerCase();
+  const pending = getAdminPaymentPendingBookings(bookings);
+  if (!query) return pending.length > 300 ? pending.slice(0, 10) : pending;
+  return pending.filter((booking) => {
+    const haystack = [booking?.clientName, booking?.clientEmail, booking?.clientMobile, booking?.serviceName]
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
+function getFilteredAdminAllBookings(bookings = state.bookings) {
+  const query = String(state.adminAllBookingSearch || '').trim().toLowerCase();
+  const history = getAdminHistoryBookings(bookings);
+  if (!query) return history.length > 300 ? history.slice(0, 10) : history;
+  return history.filter((booking) => {
+    const haystack = [booking?.clientName, booking?.clientEmail, booking?.clientMobile, booking?.serviceName]
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(query);
+  });
 }
 
 function render() {
@@ -4028,33 +4155,44 @@ function render() {
   renderCartCouponPreview();
 
   if (isAdmin) {
+    const activeAdminTab = state.adminActiveTab || 'bookings';
     const todayBookings = getTodayAdminBookings(state.bookings);
-    const visibleAdminBookings = getAdminDashboardVisibleBookings(state.bookings);
     renderAdminUserCards();
-    
-    // Determine what to show in the table
-    let adminFiltered;
-    let tableTitle = "Today's Bookings";
-    if (state.adminHistoryVisible) {
-      // Show paid and non-pending bookings when history is open
-      adminFiltered = visibleAdminBookings;
-      tableTitle = "History of All Bookings";
-    } else {
-      // Show today's bookings
-      adminFiltered = todayBookings;
-    }
-    
-    // Update title and button visibility
-    if (elements.adminTableTitle) {
-      elements.adminTableTitle.textContent = tableTitle;
-    }
-    if (elements.adminHistoryToggleBtnWrap) {
-      elements.adminHistoryToggleBtnWrap.hidden = !state.adminHistoryVisible;
+
+    if (elements.adminTabNav) elements.adminTabNav.hidden = false;
+    elements.adminTabBookings?.classList.toggle('is-active', activeAdminTab === 'bookings');
+    elements.adminTabUserBookings?.classList.toggle('is-active', activeAdminTab === 'userbookings');
+    elements.adminTabHistory?.classList.toggle('is-active', activeAdminTab === 'history');
+    elements.adminTabSessions?.classList.toggle('is-active', activeAdminTab === 'sessions');
+    elements.adminTabCalendar?.classList.toggle('is-active', activeAdminTab === 'calendar');
+    elements.adminTabMemberships?.classList.toggle('is-active', activeAdminTab === 'memberships');
+    elements.adminTabCoupons?.classList.toggle('is-active', activeAdminTab === 'coupons');
+
+    if (elements.adminHistoryToggleBtnWrap) elements.adminHistoryToggleBtnWrap.hidden = true;
+    if (elements.adminHistorySection) elements.adminHistorySection.hidden = activeAdminTab !== 'bookings';
+    if (elements.adminUserBookingsSection) elements.adminUserBookingsSection.hidden = activeAdminTab !== 'userbookings';
+    if (elements.adminAllBookingsSection) elements.adminAllBookingsSection.hidden = activeAdminTab !== 'history';
+    if (elements.adminUserSessionsSection) elements.adminUserSessionsSection.hidden = activeAdminTab !== 'sessions';
+    if (elements.adminCalendarSection) elements.adminCalendarSection.hidden = activeAdminTab !== 'calendar';
+    if (elements.adminMembershipSection) elements.adminMembershipSection.hidden = activeAdminTab !== 'memberships';
+    if (elements.adminCouponsSection) elements.adminCouponsSection.hidden = activeAdminTab !== 'coupons';
+    if (elements.servicesSection) elements.servicesSection.hidden = activeAdminTab !== 'bookings';
+    if (elements.bookingFiltersSection) elements.bookingFiltersSection.hidden = activeAdminTab !== 'bookings';
+
+    if (activeAdminTab === 'bookings') {
+      if (elements.adminTableTitle) elements.adminTableTitle.textContent = "Today's Bookings";
+      syncAdminEmailAnalyticsFilterInputs();
+      renderAdminPaymentLinkAnalytics();
+      renderAdminRows(todayBookings);
     }
 
-    syncAdminEmailAnalyticsFilterInputs();
-    renderAdminPaymentLinkAnalytics();
-    renderAdminRows(adminFiltered);
+    if (activeAdminTab === 'userbookings') {
+      renderAdminHistoryRows(getFilteredAdminPaymentPendingBookings(state.bookings));
+    }
+
+    if (activeAdminTab === 'history') {
+      renderAdminAllBookingRows(getFilteredAdminAllBookings(state.bookings));
+    }
     renderAdminCalendar();
     renderAdminUserSessionDialog();
     renderAdminMembershipOrders();
@@ -7044,22 +7182,19 @@ function renderStats(bookings) {
   if (!elements.totalCount) {
     return;
   }
-  const source = state.user?.role === 'admin' ? getTodayAdminBookings(bookings) : bookings;
-  const total = source.length;
-  const allBookingsCount =
-    state.user?.role === 'admin'
-      ? getAdminDashboardVisibleBookings(bookings).length
-      : Array.isArray(bookings)
-        ? bookings.length
-        : 0;
-
-  elements.totalCount.textContent = String(total);
-  if (elements.historyCount) elements.historyCount.textContent = String(allBookingsCount);
-
-  // Apply visual feedback for active state
-  if (state.user?.role === 'admin') {
-    elements.adminHistoryCard?.classList.toggle('is-active', state.adminHistoryVisible);
+  const isAdmin = state.user?.role === 'admin';
+  if (isAdmin) {
+    const todayCount = getTodayAdminBookings(bookings).length;
+    const pendingCount = getAdminPaymentPendingBookings(bookings).length;
+    elements.totalCount.textContent = String(todayCount);
+    if (elements.historyCount) elements.historyCount.textContent = String(pendingCount);
+    elements.adminStatTotal?.classList.toggle('is-active', (state.adminActiveTab || 'bookings') === 'bookings');
+    elements.adminHistoryCard?.classList.toggle('is-active', (state.adminActiveTab || 'bookings') === 'userbookings');
+    return;
   }
+
+  const total = Array.isArray(bookings) ? bookings.length : 0;
+  elements.totalCount.textContent = String(total);
 }
 
 function getAdminUserBookings(userId) {
@@ -9116,6 +9251,166 @@ function openPortalDocument(url) {
     if (navigate) {
       window.location.href = targetUrl;
     }
+  }
+}
+
+function renderAdminHistoryRows(bookings) {
+  if (!elements.adminPendingBookingTableBody || !elements.adminPendingEmptyState) return;
+
+  elements.adminPendingBookingTableBody.innerHTML = '';
+
+  if (bookings.length === 0) {
+    elements.adminPendingEmptyState.hidden = false;
+    return;
+  }
+
+  elements.adminPendingEmptyState.hidden = true;
+
+  for (const booking of bookings) {
+    const derivedStatus = getDerivedBookingStatus(booking);
+    const tr = document.createElement('tr');
+    tr.appendChild(multilineCell(`${booking.clientName}\n${booking.clientMobile || '-'}`));
+    tr.appendChild(cell(booking.serviceName));
+    tr.appendChild(multilineCell(formatAdminBookingDateTime(booking.bookingDate, booking.bookingTime)));
+    tr.appendChild(cell(formatBookingCreatedAtIndia(booking.createdAt)));
+    tr.appendChild(statusCell(derivedStatus));
+    tr.appendChild(paymentCell(booking.paymentStatus || 'unpaid'));
+
+    const emailStatus = String(booking.paymentLinkEmailStatus || '').trim().toLowerCase();
+    const emailRecipient = String(booking.paymentLinkRecipientEmail || '').trim();
+    const emailSentAt = booking.paymentLinkEmailedAt ? formatDateOnly(booking.paymentLinkEmailedAt) : '';
+    const emailError = String(booking.paymentLinkEmailError || '').trim();
+    const deliveryStatus = String(booking.paymentLinkDeliveryStatus || '').trim().toLowerCase();
+    const deliveryDetail = String(booking.paymentLinkDeliveryDetail || '').trim();
+    const deliveryEventAt = booking.paymentLinkEmailEventAt ? formatDateOnly(booking.paymentLinkEmailEventAt) : '';
+    let emailCellText = 'Not sent';
+    if (emailStatus === 'sent') {
+      const finalLabel = deliveryStatus ? `SENT • ${deliveryStatus.toUpperCase()}` : 'SENT';
+      emailCellText =
+        `${finalLabel}` +
+        `${emailRecipient ? `\n${emailRecipient}` : ''}` +
+        `${emailSentAt ? `\nRequested: ${emailSentAt}` : ''}` +
+        `${deliveryEventAt ? `\nEvent: ${deliveryEventAt}` : ''}` +
+        `${deliveryDetail ? `\n${deliveryDetail}` : ''}`;
+    } else if (emailStatus === 'failed') {
+      const failDetail = deliveryStatus && !emailError ? deliveryStatus : emailError;
+      emailCellText =
+        `FAILED` +
+        `${emailRecipient ? `\n${emailRecipient}` : ''}` +
+        `${failDetail ? `\n${failDetail}` : ''}` +
+        `${deliveryEventAt ? `\nEvent: ${deliveryEventAt}` : ''}` +
+        `${deliveryDetail && deliveryDetail !== failDetail ? `\n${deliveryDetail}` : ''}`;
+    } else if (emailRecipient) {
+      emailCellText = `Pending\n${emailRecipient}`;
+    }
+    tr.appendChild(multilineCell(emailCellText));
+
+    const actionCell = document.createElement('td');
+    const actions = document.createElement('div');
+    actions.className = 'action-row';
+
+    const bookingPaid = String(booking.paymentStatus || 'unpaid').toLowerCase() === 'paid';
+    const bookingCancelled = String(booking.status || '').toLowerCase() === 'cancelled';
+
+    if (!bookingCancelled) {
+      if (!bookingPaid) {
+        actions.append(createActionButton('Paid in Cash', () => markBookingPaidInCash(booking.id)));
+        actions.append(createActionButton('Copy Payment Link', () => copyBookingPaymentLink(booking.id)));
+      } else if (String(booking.status || '').toLowerCase() !== 'confirmed') {
+        actions.append(createActionButton('Accept', () => changeStatus(booking.id, 'confirmed')));
+      }
+    }
+
+    if (bookingPaid) {
+      actions.append(createActionButton('Invoice', () => openBookingInvoice(booking.id)));
+    }
+
+    actions.append(createActionButton('Notes', () => openBookingNotesDialog(booking.id)));
+    actions.append(createActionButton('Email Timeline', () => openBookingEmailTimelineDialog(booking)));
+
+    actionCell.appendChild(actions);
+    tr.appendChild(actionCell);
+    elements.adminPendingBookingTableBody.appendChild(tr);
+  }
+}
+
+function renderAdminAllBookingRows(bookings) {
+  if (!elements.adminAllBookingTableBody || !elements.adminAllBookingEmptyState) return;
+
+  elements.adminAllBookingTableBody.innerHTML = '';
+
+  if (bookings.length === 0) {
+    elements.adminAllBookingEmptyState.hidden = false;
+    return;
+  }
+
+  elements.adminAllBookingEmptyState.hidden = true;
+
+  for (const booking of bookings) {
+    const derivedStatus = getDerivedBookingStatus(booking);
+    const tr = document.createElement('tr');
+    tr.appendChild(multilineCell(`${booking.clientName}\n${booking.clientMobile || '-'}`));
+    tr.appendChild(cell(booking.serviceName));
+    tr.appendChild(multilineCell(formatAdminBookingDateTime(booking.bookingDate, booking.bookingTime)));
+    tr.appendChild(cell(formatBookingCreatedAtIndia(booking.createdAt)));
+    tr.appendChild(statusCell(derivedStatus));
+    tr.appendChild(paymentCell(booking.paymentStatus || 'unpaid'));
+
+    const emailStatus = String(booking.paymentLinkEmailStatus || '').trim().toLowerCase();
+    const emailRecipient = String(booking.paymentLinkRecipientEmail || '').trim();
+    const emailSentAt = booking.paymentLinkEmailedAt ? formatDateOnly(booking.paymentLinkEmailedAt) : '';
+    const emailError = String(booking.paymentLinkEmailError || '').trim();
+    const deliveryStatus = String(booking.paymentLinkDeliveryStatus || '').trim().toLowerCase();
+    const deliveryDetail = String(booking.paymentLinkDeliveryDetail || '').trim();
+    const deliveryEventAt = booking.paymentLinkEmailEventAt ? formatDateOnly(booking.paymentLinkEmailEventAt) : '';
+    let emailCellText = 'Not sent';
+    if (emailStatus === 'sent') {
+      const finalLabel = deliveryStatus ? `SENT • ${deliveryStatus.toUpperCase()}` : 'SENT';
+      emailCellText =
+        `${finalLabel}` +
+        `${emailRecipient ? `\n${emailRecipient}` : ''}` +
+        `${emailSentAt ? `\nRequested: ${emailSentAt}` : ''}` +
+        `${deliveryEventAt ? `\nEvent: ${deliveryEventAt}` : ''}` +
+        `${deliveryDetail ? `\n${deliveryDetail}` : ''}`;
+    } else if (emailStatus === 'failed') {
+      const failDetail = deliveryStatus && !emailError ? deliveryStatus : emailError;
+      emailCellText =
+        `FAILED` +
+        `${emailRecipient ? `\n${emailRecipient}` : ''}` +
+        `${failDetail ? `\n${failDetail}` : ''}` +
+        `${deliveryEventAt ? `\nEvent: ${deliveryEventAt}` : ''}` +
+        `${deliveryDetail && deliveryDetail !== failDetail ? `\n${deliveryDetail}` : ''}`;
+    } else if (emailRecipient) {
+      emailCellText = `Pending\n${emailRecipient}`;
+    }
+    tr.appendChild(multilineCell(emailCellText));
+
+    const actionCell = document.createElement('td');
+    const actions = document.createElement('div');
+    actions.className = 'action-row';
+
+    const bookingPaid = String(booking.paymentStatus || 'unpaid').toLowerCase() === 'paid';
+    const bookingCancelled = String(booking.status || '').toLowerCase() === 'cancelled';
+
+    if (!bookingCancelled) {
+      if (!bookingPaid) {
+        actions.append(createActionButton('Paid in Cash', () => markBookingPaidInCash(booking.id)));
+        actions.append(createActionButton('Copy Payment Link', () => copyBookingPaymentLink(booking.id)));
+      } else if (String(booking.status || '').toLowerCase() !== 'confirmed') {
+        actions.append(createActionButton('Accept', () => changeStatus(booking.id, 'confirmed')));
+      }
+    }
+
+    if (bookingPaid) {
+      actions.append(createActionButton('Invoice', () => openBookingInvoice(booking.id)));
+    }
+
+    actions.append(createActionButton('Notes', () => openBookingNotesDialog(booking.id)));
+    actions.append(createActionButton('Email Timeline', () => openBookingEmailTimelineDialog(booking)));
+
+    actionCell.appendChild(actions);
+    tr.appendChild(actionCell);
+    elements.adminAllBookingTableBody.appendChild(tr);
   }
 }
 

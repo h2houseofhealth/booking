@@ -2781,7 +2781,7 @@ h1, h2, h3 {
 
 .admin-section-toolbar {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: end;
   gap: 1rem;
   margin-bottom: 0.9rem;
@@ -2790,13 +2790,30 @@ h1, h2, h3 {
 
 .admin-section-toolbar .membership-copy {
   margin: 0;
-  max-width: 54ch;
+  flex: 1 1 320px;
+  max-width: none;
+}
+
+.admin-section-toolbar--filters .membership-copy {
+  flex: 1 0 100%;
 }
 
 .admin-inline-search {
-  min-width: min(420px, 100%);
+  min-width: min(220px, 100%);
   display: grid;
   gap: 0.35rem;
+}
+
+.admin-inline-search--date {
+  min-width: min(200px, 100%);
+}
+
+.admin-inline-search--search {
+  min-width: min(420px, 100%);
+}
+
+.admin-section-toolbar .btn {
+  align-self: end;
 }
 
 .admin-inline-search span {
@@ -2828,10 +2845,19 @@ h1, h2, h3 {
   font-size: 0.82rem;
   color: rgba(var(--ink-rgb), 0.76);
   font-weight: 600;
+  min-width: 0;
+}
+
+.admin-calendar-controls input,
+.admin-calendar-controls select {
+  width: 100%;
+  min-width: 0;
 }
 
 .admin-calendar-controls button {
   align-self: end;
+  justify-self: stretch;
+  width: 100%;
 }
 
 .admin-calendar-shell {

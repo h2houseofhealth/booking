@@ -350,7 +350,7 @@
           <button id="adminTabBookings" class="user-tab-btn" type="button">Bookings</button>
           <button id="adminTabUserBookings" class="user-tab-btn" type="button">User Bookings</button>
           <button id="adminTabHistory" class="user-tab-btn" type="button">History</button>
-          <button id="adminTabSessions" class="user-tab-btn" type="button">User Sessions</button>
+          <button id="adminTabSessions" class="user-tab-btn" type="button">Session Tracking</button>
           <button id="adminTabCalendar" class="user-tab-btn" type="button">Calendar</button>
           <button id="adminTabMemberships" class="user-tab-btn" type="button">Memberships</button>
           <button id="adminTabCoupons" class="user-tab-btn" type="button">Coupons</button>
@@ -540,7 +540,7 @@
             <div class="admin-customer-form">
               <label>
                 Customer Name
-                <input id="adminCustomerName" type="text" placeholder="Enter caller name" />
+                <input id="adminCustomerName" type="text" placeholder="Enter caller name" maxlength="20" />
               </label>
               <label>
                 Email
@@ -577,34 +577,6 @@
         </div>
       </section>
 
-      <section id="bookingFiltersSection" class="panel app-only admin-only" aria-label="Filter bookings" hidden>
-        <div class="filters">
-          <div class="search-wrapper">
-            <label>
-              Search
-              <input id="searchInput" type="text" placeholder="Client, service" />
-            </label>
-            <button id="searchBtn" class="btn btn-primary search-btn" type="button" title="Search bookings">Search</button>
-          </div>
-          <label>
-            Status
-            <select id="statusFilter">
-              <option value="all">All</option>
-              <option value="pending">Pending</option>
-              <option value="booked">Booked</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </label>
-          <label>
-            Date
-            <input id="dateFilter" type="date" />
-          </label>
-          <button id="resetFiltersBtn" class="btn btn-secondary" type="button">Reset</button>
-        </div>
-      </section>
-
       <section id="adminCalendarSection" class="panel app-only admin-only" aria-label="Admin calendar" hidden>
         <div class="panel-head admin-calendar-head">
           <div>
@@ -614,6 +586,18 @@
           <button id="adminCalendarRefreshBtn" class="btn btn-secondary" type="button">Refresh Slots</button>
         </div>
         <div class="admin-calendar-controls">
+          <label>
+            Customer Name
+            <input id="adminCalendarCustomerName" type="text" placeholder="Enter caller name" maxlength="20" />
+          </label>
+          <label>
+            Email
+            <input id="adminCalendarCustomerEmail" type="email" placeholder="Enter customer email" />
+          </label>
+          <label>
+            Contact Number
+            <input id="adminCalendarCustomerPhone" type="tel" placeholder="Enter contact number" />
+          </label>
           <label>
             Jump to Date
             <input id="adminCalendarDate" type="date" />
@@ -800,7 +784,7 @@
 
       <section id="adminUserSessionsSection" class="panel app-only admin-only admin-user-session-panel" aria-label="Admin bookings" hidden>
         <div class="panel-head">
-          <h2>User Sessions</h2>
+          <h2>Session Tracking</h2>
         </div>
         <div class="admin-section-toolbar">
           <p class="membership-copy">Search any user and open their session details from the cards below.</p>
@@ -859,9 +843,18 @@
         <div class="panel-head">
           <h2>Payment Pending Bookings</h2>
         </div>
-        <div class="admin-section-toolbar">
+        <div class="admin-section-toolbar admin-section-toolbar--filters">
           <p class="membership-copy">Bookings awaiting payment. Use “Paid in Cash” if customer paid offline.</p>
-          <label class="admin-inline-search">
+          <label class="admin-inline-search admin-inline-search--date">
+            <span>From</span>
+            <input id="adminPendingBookingStartDate" type="date" />
+          </label>
+          <label class="admin-inline-search admin-inline-search--date">
+            <span>To</span>
+            <input id="adminPendingBookingEndDate" type="date" />
+          </label>
+          <button id="adminPendingBookingDateResetBtn" class="btn btn-secondary" type="button">Clear</button>
+          <label class="admin-inline-search admin-inline-search--search">
             <span>Search</span>
             <input id="adminPendingBookingSearch" type="text" placeholder="Search by name, email, phone number, service" />
           </label>
@@ -890,9 +883,18 @@
         <div class="panel-head">
           <h2>History of All Bookings</h2>
         </div>
-        <div class="admin-section-toolbar">
+        <div class="admin-section-toolbar admin-section-toolbar--filters">
           <p class="membership-copy">All bookings across users. Use search to quickly find a user by name, phone, or email.</p>
-          <label class="admin-inline-search">
+          <label class="admin-inline-search admin-inline-search--date">
+            <span>From</span>
+            <input id="adminAllBookingStartDate" type="date" />
+          </label>
+          <label class="admin-inline-search admin-inline-search--date">
+            <span>To</span>
+            <input id="adminAllBookingEndDate" type="date" />
+          </label>
+          <button id="adminAllBookingDateResetBtn" class="btn btn-secondary" type="button">Clear</button>
+          <label class="admin-inline-search admin-inline-search--search">
             <span>Search</span>
             <input id="adminAllBookingSearch" type="text" placeholder="Search by name, email, phone number, service" />
           </label>
@@ -1137,7 +1139,7 @@
       <div class="admin-user-dialog">
         <div class="dialog-head">
           <div>
-            <h2 id="adminUserSessionTitle">User Sessions</h2>
+            <h2 id="adminUserSessionTitle">Session Tracking</h2>
             <p id="adminUserSessionMeta" class="membership-copy"></p>
           </div>
           <button id="adminUserSessionCloseBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
@@ -1293,6 +1295,6 @@
     </dialog>
 
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-    <script src="app.js?v=17"></script>
+    <script src="app.js?v=18"></script>
   </body>
 </html>

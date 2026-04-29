@@ -21,6 +21,14 @@ const state = {
   adminActiveTab: 'bookings',
   adminPendingBookingSearch: '',
   adminAllBookingSearch: '',
+  adminPendingBookingDateFilters: {
+    startDate: '',
+    endDate: '',
+  },
+  adminAllBookingDateFilters: {
+    startDate: '',
+    endDate: '',
+  },
   returnUserTabAfterEdit: '',
   membership: {
     plans: [],
@@ -250,6 +258,9 @@ const elements = {
   adminCustomerName: document.getElementById('adminCustomerName'),
   adminCustomerEmail: document.getElementById('adminCustomerEmail'),
   adminCustomerPhone: document.getElementById('adminCustomerPhone'),
+  adminCalendarCustomerName: document.getElementById('adminCalendarCustomerName'),
+  adminCalendarCustomerEmail: document.getElementById('adminCalendarCustomerEmail'),
+  adminCalendarCustomerPhone: document.getElementById('adminCalendarCustomerPhone'),
   adminClientMeta: document.getElementById('adminClientMeta'),
   adminCustomerMessage: document.getElementById('adminCustomerMessage'),
   membershipPlans: document.getElementById('membershipPlans'),
@@ -410,10 +421,16 @@ const elements = {
   adminHistorySection: document.getElementById('adminHistorySection'),
   adminTableTitle: document.getElementById('adminTableTitle'),
   adminUserBookingsSection: document.getElementById('adminUserBookingsSection'),
+  adminPendingBookingStartDate: document.getElementById('adminPendingBookingStartDate'),
+  adminPendingBookingEndDate: document.getElementById('adminPendingBookingEndDate'),
+  adminPendingBookingDateResetBtn: document.getElementById('adminPendingBookingDateResetBtn'),
   adminPendingBookingSearch: document.getElementById('adminPendingBookingSearch'),
   adminPendingBookingTableBody: document.getElementById('adminPendingBookingTableBody'),
   adminPendingEmptyState: document.getElementById('adminPendingEmptyState'),
   adminAllBookingsSection: document.getElementById('adminAllBookingsSection'),
+  adminAllBookingStartDate: document.getElementById('adminAllBookingStartDate'),
+  adminAllBookingEndDate: document.getElementById('adminAllBookingEndDate'),
+  adminAllBookingDateResetBtn: document.getElementById('adminAllBookingDateResetBtn'),
   adminAllBookingSearch: document.getElementById('adminAllBookingSearch'),
   adminAllBookingTableBody: document.getElementById('adminAllBookingTableBody'),
   adminAllBookingEmptyState: document.getElementById('adminAllBookingEmptyState'),
@@ -699,7 +716,13 @@ function attachEvents() {
     const target = event?.target;
     if (!target) return;
     const rawValue = String(target.value || '').trim();
-    const value = field === 'phone' ? normalizeTenDigitMobile(rawValue) : rawValue;
+    const value =
+      field === 'phone'
+        ? normalizeTenDigitMobile(rawValue)
+        : field === 'name'
+          ? rawValue.slice(0, 20)
+          : rawValue;
+    if (field === 'name' && target.value !== value) target.value = value;
     if (field === 'phone' && target.value !== value) target.value = value;
     state.adminCustomerForm[field] = value;
     if (state.user?.role === 'admin') {
@@ -714,6 +737,9 @@ function attachEvents() {
   elements.adminCustomerName?.addEventListener('input', updateAdminCustomerField('name'));
   elements.adminCustomerPhone?.addEventListener('input', updateAdminCustomerField('phone'));
   elements.adminCustomerEmail?.addEventListener('input', updateAdminCustomerField('email'));
+  elements.adminCalendarCustomerName?.addEventListener('input', updateAdminCustomerField('name'));
+  elements.adminCalendarCustomerPhone?.addEventListener('input', updateAdminCustomerField('phone'));
+  elements.adminCalendarCustomerEmail?.addEventListener('input', updateAdminCustomerField('email'));
   elements.adminCustomerName?.addEventListener('change', async () => {
     await refreshAdminCustomerContext().catch(() => {});
   });
@@ -723,11 +749,21 @@ function attachEvents() {
   elements.adminCustomerPhone?.addEventListener('change', async () => {
     await refreshAdminCustomerContext().catch(() => {});
   });
+  elements.adminCalendarCustomerName?.addEventListener('change', async () => {
+    await refreshAdminCustomerContext().catch(() => {});
+  });
+  elements.adminCalendarCustomerEmail?.addEventListener('change', async () => {
+    await refreshAdminCustomerContext().catch(() => {});
+  });
+  elements.adminCalendarCustomerPhone?.addEventListener('change', async () => {
+    await refreshAdminCustomerContext().catch(() => {});
+  });
 
   elements.profileBtn?.addEventListener('click', openProfileDialog);
   enforceTenDigitMobileInput(elements.profileMobile);
   enforceTenDigitMobileInput(elements.adminDiscountPhone);
   enforceTenDigitMobileInput(elements.adminCustomerPhone);
+  enforceTenDigitMobileInput(elements.adminCalendarCustomerPhone);
   enforceTenDigitMobileInput(elements.membershipAddPersonContact);
   elements.membershipMembersGrid?.addEventListener('input', (event) => {
     const target = event?.target;
@@ -1219,8 +1255,36 @@ function attachEvents() {
     render();
   });
 
+  const onAdminPendingBookingDateFilterChange = () => {
+    state.adminPendingBookingDateFilters.startDate = String(elements.adminPendingBookingStartDate?.value || '').trim();
+    state.adminPendingBookingDateFilters.endDate = String(elements.adminPendingBookingEndDate?.value || '').trim();
+    render();
+  };
+  elements.adminPendingBookingStartDate?.addEventListener('change', onAdminPendingBookingDateFilterChange);
+  elements.adminPendingBookingEndDate?.addEventListener('change', onAdminPendingBookingDateFilterChange);
+  elements.adminPendingBookingDateResetBtn?.addEventListener('click', () => {
+    state.adminPendingBookingDateFilters = { startDate: '', endDate: '' };
+    if (elements.adminPendingBookingStartDate) elements.adminPendingBookingStartDate.value = '';
+    if (elements.adminPendingBookingEndDate) elements.adminPendingBookingEndDate.value = '';
+    render();
+  });
+
   elements.adminAllBookingSearch?.addEventListener('input', (event) => {
     state.adminAllBookingSearch = String(event.target.value || '').trim().toLowerCase();
+    render();
+  });
+
+  const onAdminAllBookingDateFilterChange = () => {
+    state.adminAllBookingDateFilters.startDate = String(elements.adminAllBookingStartDate?.value || '').trim();
+    state.adminAllBookingDateFilters.endDate = String(elements.adminAllBookingEndDate?.value || '').trim();
+    render();
+  };
+  elements.adminAllBookingStartDate?.addEventListener('change', onAdminAllBookingDateFilterChange);
+  elements.adminAllBookingEndDate?.addEventListener('change', onAdminAllBookingDateFilterChange);
+  elements.adminAllBookingDateResetBtn?.addEventListener('click', () => {
+    state.adminAllBookingDateFilters = { startDate: '', endDate: '' };
+    if (elements.adminAllBookingStartDate) elements.adminAllBookingStartDate.value = '';
+    if (elements.adminAllBookingEndDate) elements.adminAllBookingEndDate.value = '';
     render();
   });
 
@@ -1281,8 +1345,11 @@ function attachEvents() {
   });
 
   elements.adminStatTotal?.addEventListener('click', () => {
-    state.adminActiveTab = 'bookings';
+    state.adminActiveTab = 'today';
     render();
+    requestAnimationFrame(() => {
+      elements.adminHistorySection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   });
 
   elements.adminHistoryCard?.addEventListener('click', () => {
@@ -2095,6 +2162,10 @@ function renderAdminCalendar() {
   const selectedServiceName = getAdminCalendarSelectedServiceName();
   state.adminCalendarServiceName = selectedServiceName;
 
+  if (elements.adminCalendarCustomerName) elements.adminCalendarCustomerName.value = state.adminCustomerForm.name || '';
+  if (elements.adminCalendarCustomerEmail) elements.adminCalendarCustomerEmail.value = state.adminCustomerForm.email || '';
+  if (elements.adminCalendarCustomerPhone) elements.adminCalendarCustomerPhone.value = state.adminCustomerForm.phone || '';
+
   elements.adminCalendarDate.min = getTodayIsoDate();
   elements.adminCalendarDate.max = getMaxBookingIsoDate();
   elements.adminCalendarDate.value = selectedDate;
@@ -2864,6 +2935,14 @@ async function changeStatus(id, status) {
   });
   await loadDashboardData();
   render();
+}
+
+async function markBookingCompleted(bookingId) {
+  const id = Number(bookingId);
+  if (!Number.isInteger(id)) return;
+  const confirmed = confirm('Mark this booking as COMPLETED?');
+  if (!confirmed) return;
+  await changeStatus(id, 'completed');
 }
 
 async function markBookingPaidInCash(bookingId) {
@@ -4009,7 +4088,7 @@ function getTodayAdminBookings(bookings = state.bookings) {
 
 function isAdminDashboardBookingVisible(booking) {
   const status = String(booking?.status || '').trim().toLowerCase();
-  const paymentStatus = String(booking?.paymentStatus || 'unpaid').trim().toLowerCase();
+  const paymentStatus = normalizePaymentStatusKey(booking?.paymentStatus);
   if (status === 'pending') return false;
   if (paymentStatus === 'unpaid') return false;
   return true;
@@ -4046,9 +4125,31 @@ function getAdminPaymentPendingBookings(bookings = state.bookings) {
     });
 }
 
+function isIsoDateWithinRange(dateKey, startDateKey, endDateKey) {
+  const date = String(dateKey || '').trim();
+  let start = String(startDateKey || '').trim();
+  let end = String(endDateKey || '').trim();
+  if (start && end && start > end) {
+    const swap = start;
+    start = end;
+    end = swap;
+  }
+  if (!start && !end) return true;
+  if (!date) return false;
+  if (start && date < start) return false;
+  if (end && date > end) return false;
+  return true;
+}
+
 function getFilteredAdminPaymentPendingBookings(bookings = state.bookings) {
   const query = String(state.adminPendingBookingSearch || '').trim().toLowerCase();
-  const pending = getAdminPaymentPendingBookings(bookings);
+  const pending = getAdminPaymentPendingBookings(bookings).filter((booking) =>
+    isIsoDateWithinRange(
+      booking?.bookingDate,
+      state.adminPendingBookingDateFilters?.startDate,
+      state.adminPendingBookingDateFilters?.endDate
+    )
+  );
   if (!query) return pending.length > 300 ? pending.slice(0, 10) : pending;
   return pending.filter((booking) => {
     const haystack = [booking?.clientName, booking?.clientEmail, booking?.clientMobile, booking?.serviceName]
@@ -4060,7 +4161,15 @@ function getFilteredAdminPaymentPendingBookings(bookings = state.bookings) {
 
 function getFilteredAdminAllBookings(bookings = state.bookings) {
   const query = String(state.adminAllBookingSearch || '').trim().toLowerCase();
-  const history = getAdminHistoryBookings(bookings);
+  const history = getAdminHistoryBookings(bookings)
+    .filter((booking) => normalizePaymentStatusKey(booking?.paymentStatus) === 'paid')
+    .filter((booking) =>
+      isIsoDateWithinRange(
+        booking?.bookingDate,
+        state.adminAllBookingDateFilters?.startDate,
+        state.adminAllBookingDateFilters?.endDate
+      )
+    );
   if (!query) return history.length > 300 ? history.slice(0, 10) : history;
   return history.filter((booking) => {
     const haystack = [booking?.clientName, booking?.clientEmail, booking?.clientMobile, booking?.serviceName]
@@ -4161,7 +4270,7 @@ function render() {
     renderAdminUserCards();
 
     if (elements.adminTabNav) elements.adminTabNav.hidden = false;
-    elements.adminTabBookings?.classList.toggle('is-active', activeAdminTab === 'bookings');
+    elements.adminTabBookings?.classList.toggle('is-active', activeAdminTab === 'bookings' || activeAdminTab === 'today');
     elements.adminTabUserBookings?.classList.toggle('is-active', activeAdminTab === 'userbookings');
     elements.adminTabHistory?.classList.toggle('is-active', activeAdminTab === 'history');
     elements.adminTabSessions?.classList.toggle('is-active', activeAdminTab === 'sessions');
@@ -4170,7 +4279,7 @@ function render() {
     elements.adminTabCoupons?.classList.toggle('is-active', activeAdminTab === 'coupons');
 
     if (elements.adminHistoryToggleBtnWrap) elements.adminHistoryToggleBtnWrap.hidden = true;
-    if (elements.adminHistorySection) elements.adminHistorySection.hidden = activeAdminTab !== 'bookings';
+    if (elements.adminHistorySection) elements.adminHistorySection.hidden = !(activeAdminTab === 'bookings' || activeAdminTab === 'today');
     if (elements.adminUserBookingsSection) elements.adminUserBookingsSection.hidden = activeAdminTab !== 'userbookings';
     if (elements.adminAllBookingsSection) elements.adminAllBookingsSection.hidden = activeAdminTab !== 'history';
     if (elements.adminUserSessionsSection) elements.adminUserSessionsSection.hidden = activeAdminTab !== 'sessions';
@@ -4180,7 +4289,7 @@ function render() {
     if (elements.servicesSection) elements.servicesSection.hidden = activeAdminTab !== 'bookings';
     if (elements.bookingFiltersSection) elements.bookingFiltersSection.hidden = activeAdminTab !== 'bookings';
 
-    if (activeAdminTab === 'bookings') {
+    if (activeAdminTab === 'bookings' || activeAdminTab === 'today') {
       if (elements.adminTableTitle) elements.adminTableTitle.textContent = "Today's Bookings";
       syncAdminEmailAnalyticsFilterInputs();
       renderAdminPaymentLinkAnalytics();
@@ -7194,7 +7303,8 @@ function renderStats(bookings) {
     const pendingCount = getAdminPaymentPendingBookings(bookings).length;
     elements.totalCount.textContent = String(todayCount);
     if (elements.historyCount) elements.historyCount.textContent = String(pendingCount);
-    elements.adminStatTotal?.classList.toggle('is-active', (state.adminActiveTab || 'bookings') === 'bookings');
+    const activeAdminTab = state.adminActiveTab || 'bookings';
+    elements.adminStatTotal?.classList.toggle('is-active', activeAdminTab === 'bookings' || activeAdminTab === 'today');
     elements.adminHistoryCard?.classList.toggle('is-active', (state.adminActiveTab || 'bookings') === 'userbookings');
     return;
   }
@@ -7346,7 +7456,7 @@ function renderAdminUserSessionDialog() {
   );
 
   if (!selectedUser) {
-    elements.adminUserSessionTitle.textContent = 'User Sessions';
+    elements.adminUserSessionTitle.textContent = 'Session Tracking';
     elements.adminUserSessionMeta.textContent = '';
     elements.adminUserSessionKpis.innerHTML = '';
     elements.adminUserSessionList.innerHTML = '';
@@ -7355,7 +7465,7 @@ function renderAdminUserSessionDialog() {
   }
 
   const summary = buildAdminUserSessionSummary(selectedUser);
-  elements.adminUserSessionTitle.textContent = selectedUser.name || 'User Sessions';
+  elements.adminUserSessionTitle.textContent = selectedUser.name || 'Session Tracking';
   elements.adminUserSessionMeta.textContent = [selectedUser.email, selectedUser.mobile ? `ID ${selectedUser.id} • ${selectedUser.mobile}` : `ID ${selectedUser.id}`]
     .filter(Boolean)
     .join(' • ');
@@ -7398,8 +7508,8 @@ function renderAdminUserSessionDialog() {
         </div>
         <div class="admin-user-session-badges">
           <span class="status-chip status-${escapeHtml(derivedStatus)}">${escapeHtml(derivedStatus)}</span>
-          <span class="status-chip payment-${escapeHtml(String(booking?.paymentStatus || 'unpaid').toLowerCase())}">${escapeHtml(
-            String(booking?.paymentStatus || 'unpaid')
+          <span class="status-chip payment-${escapeHtml(normalizePaymentStatusKey(booking?.paymentStatus))}">${escapeHtml(
+            formatPaymentStatusLabel(booking?.paymentStatus)
           )}</span>
         </div>
       `;
@@ -8151,7 +8261,6 @@ function renderAdminRows(bookings) {
 
     actions.append(
       createActionButton('Confirm', () => changeStatus(booking.id, 'confirmed')),
-      createActionButton('Complete', () => changeStatus(booking.id, 'completed')),
       createActionButton('Cancel', () => changeStatus(booking.id, 'cancelled'))
     );
     actions.append(createActionButton('Notes', () => openBookingNotesDialog(booking.id)));
@@ -9149,10 +9258,26 @@ function summarizeGroupStatus(bookings) {
   return statuses[0] || 'pending';
 }
 
+function normalizePaymentStatusKey(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return 'unpaid';
+  if (normalized === 'paid') return 'paid';
+  if (normalized === 'payment_pending') return 'unpaid';
+  if (normalized === 'payment pending') return 'unpaid';
+  if (normalized === 'unpaid') return 'unpaid';
+  return normalized;
+}
+
+function formatPaymentStatusLabel(value) {
+  const normalized = normalizePaymentStatusKey(value);
+  if (normalized === 'paid') return 'Paid';
+  if (normalized === 'unpaid') return 'Unpaid';
+  return String(value || normalized || '').trim() || 'Unpaid';
+}
+
 function summarizeGroupPaymentStatus(bookings) {
-  const paymentStatuses = bookings.map((booking) => String(booking.paymentStatus || 'unpaid').toLowerCase());
+  const paymentStatuses = bookings.map((booking) => normalizePaymentStatusKey(booking.paymentStatus));
   if (paymentStatuses.every((status) => status === 'paid')) return 'paid';
-  if (paymentStatuses.some((status) => status === 'payment_pending')) return 'payment_pending';
   return 'unpaid';
 }
 
@@ -9164,7 +9289,8 @@ function statusCell(status) {
 
 function paymentCell(paymentStatus) {
   const td = document.createElement('td');
-  td.innerHTML = `<span class="status-chip payment-${paymentStatus}">${paymentStatus}</span>`;
+  const normalized = normalizePaymentStatusKey(paymentStatus);
+  td.innerHTML = `<span class="status-chip payment-${normalized}">${escapeHtml(formatPaymentStatusLabel(paymentStatus))}</span>`;
   return td;
 }
 
@@ -9317,14 +9443,17 @@ function renderAdminHistoryRows(bookings) {
 
     const bookingPaid = String(booking.paymentStatus || 'unpaid').toLowerCase() === 'paid';
     const bookingCancelled = String(booking.status || '').toLowerCase() === 'cancelled';
+    const bookingCompleted = String(booking.status || '').toLowerCase() === 'completed';
+    const bookingConfirmed = String(booking.status || '').toLowerCase() === 'confirmed';
 
     if (!bookingCancelled) {
       if (!bookingPaid) {
         actions.append(createActionButton('Paid in Cash', () => markBookingPaidInCash(booking.id)));
         actions.append(createActionButton('Copy Payment Link', () => copyBookingPaymentLink(booking.id)));
-      } else if (String(booking.status || '').toLowerCase() !== 'confirmed') {
+      } else if (!bookingConfirmed && !bookingCompleted) {
         actions.append(createActionButton('Accept', () => changeStatus(booking.id, 'confirmed')));
       }
+
     }
 
     if (bookingPaid) {
@@ -9397,18 +9526,24 @@ function renderAdminAllBookingRows(bookings) {
 
     const bookingPaid = String(booking.paymentStatus || 'unpaid').toLowerCase() === 'paid';
     const bookingCancelled = String(booking.status || '').toLowerCase() === 'cancelled';
+    const bookingCompleted = String(booking.status || '').toLowerCase() === 'completed';
+    const bookingConfirmed = String(booking.status || '').toLowerCase() === 'confirmed';
 
     if (!bookingCancelled) {
       if (!bookingPaid) {
         actions.append(createActionButton('Paid in Cash', () => markBookingPaidInCash(booking.id)));
         actions.append(createActionButton('Copy Payment Link', () => copyBookingPaymentLink(booking.id)));
-      } else if (String(booking.status || '').toLowerCase() !== 'confirmed') {
+      } else if (!bookingConfirmed && !bookingCompleted) {
         actions.append(createActionButton('Accept', () => changeStatus(booking.id, 'confirmed')));
       }
     }
 
     if (bookingPaid) {
       actions.append(createActionButton('Invoice', () => openBookingInvoice(booking.id)));
+    }
+
+    if (bookingPaid && bookingConfirmed && !bookingCompleted && !bookingCancelled) {
+      actions.append(createActionButton('Complete', () => markBookingCompleted(booking.id)));
     }
 
     actions.append(createActionButton('Notes', () => openBookingNotesDialog(booking.id)));

@@ -271,6 +271,7 @@ const elements = {
   membershipStatValidMeta: document.getElementById('membershipStatValidMeta'),
   membershipUsageTitle: document.getElementById('membershipUsageTitle'),
   membershipUsageLabel: document.getElementById('membershipUsageLabel'),
+  membershipUsageCount: document.getElementById('membershipUsageCount'),
   membershipUsageBar: document.getElementById('membershipUsageBar'),
   membershipUsageNote: document.getElementById('membershipUsageNote'),
   membershipCalendarMonth: document.getElementById('membershipCalendarMonth'),
@@ -2450,7 +2451,7 @@ function updateBookingSummary() {
   
   const summaryLines = [];
   summaryLines.push(
-    `<div><span>${escapeHtml(getServiceDisplayName(selectedService))}${isHydrogenFree ? ` <small>(Free â€¢ ${hydrogenFreeRemaining} left)</small>` : ''}</span><span>Rs. ${basePrice.toLocaleString('en-IN')}</span></div>`
+    `<div><span>${escapeHtml(getServiceDisplayName(selectedService))}${isHydrogenFree ? ` <small>(Free • ${hydrogenFreeRemaining} left)</small>` : ''}</span><span>Rs. ${basePrice.toLocaleString('en-IN')}</span></div>`
   );
   
   if (selectedAddOn) {
@@ -4249,7 +4250,7 @@ function renderServicePanelContext() {
     const membershipStatus = String(resolvedCustomer?.membershipStatus || 'inactive');
     const membershipSummary =
       membershipStatus === 'active'
-        ? `Active${resolvedCustomer?.membershipPeopleCount ? ` â€¢ ${resolvedCustomer.membershipPeopleCount} member${resolvedCustomer.membershipPeopleCount > 1 ? 's' : ''}` : ''}`
+        ? `Active${resolvedCustomer?.membershipPeopleCount ? ` • ${resolvedCustomer.membershipPeopleCount} member${resolvedCustomer.membershipPeopleCount > 1 ? 's' : ''}` : ''}`
         : 'Inactive';
     const activeDiscount = Number(resolvedCustomer?.discountPercent || 0);
     elements.adminClientMeta.hidden = false;
@@ -4364,7 +4365,7 @@ function renderProfileMembershipBadge() {
     return;
   }
   const expiresAt = getEffectiveMembershipExpiryDate(state.user?.membershipStartedAt, state.user?.membershipExpiresAt);
-  elements.userMembershipBadge.textContent = 'â˜… Member';
+  elements.userMembershipBadge.textContent = '★ Member';
   elements.userMembershipBadge.title =
     expiresAt && !Number.isNaN(expiresAt.getTime()) ? `Membership active until ${expiresAt.toLocaleDateString()}` : 'Membership active';
 }
@@ -4653,7 +4654,7 @@ function createServiceDetailItem(service, options = {}) {
   } else if (isMembershipOnly && hasMemberAccess) {
     priceDisplay.textContent = 'Included';
   } else {
-    priceDisplay.textContent = `â‚¹${effectivePrice.toLocaleString('en-IN')}`;
+    priceDisplay.textContent = `₹${effectivePrice.toLocaleString('en-IN')}`;
   }
   priceSection.appendChild(priceDisplay);
 
@@ -4662,7 +4663,7 @@ function createServiceDetailItem(service, options = {}) {
   if (sessionCount > 1) {
     const sessionBadge = document.createElement('span');
     sessionBadge.className = 'service-sessions';
-    sessionBadge.textContent = `${sessionCount}Ã—`;
+    sessionBadge.textContent = `${sessionCount}×`;
     priceSection.appendChild(sessionBadge);
   }
 
@@ -4970,8 +4971,8 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
         ? selectedServiceHasMemberAccess
           ? 'Included in Membership'
           : 'Members only'
-        : `â‚¹${selectedServicePrice.toLocaleString('en-IN')}`;
-  const stickyPriceClass = /â‚¹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
+        : `₹${selectedServicePrice.toLocaleString('en-IN')}`;
+  const stickyPriceClass = /₹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
 
   const stickyWrap = document.createElement('div');
   stickyWrap.className = 'service-sticky-book';
@@ -5094,7 +5095,7 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
       ? hasMemberAccess
         ? 'Included in Membership'
         : 'Members only'
-      : `â‚¹${price.toLocaleString('en-IN')}`;
+      : `₹${price.toLocaleString('en-IN')}`;
     summary.innerHTML = `
       <strong>${escapeHtml(service.name)}</strong>
       <span>${escapeHtml(priceText)}</span>
@@ -5197,8 +5198,8 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
     ? selectedServiceHasMemberAccess
       ? 'Included in Membership'
       : 'Members only'
-    : `â‚¹${selectedServicePrice.toLocaleString('en-IN')}`;
-  const stickyPriceClass = /â‚¹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
+    : `₹${selectedServicePrice.toLocaleString('en-IN')}`;
+  const stickyPriceClass = /₹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
 
   const stickyWrap = document.createElement('div');
   stickyWrap.className = 'service-sticky-book';
@@ -6088,7 +6089,7 @@ function getHydrogenPlanOptions(services) {
         const holdNote = document.createElement('span');
         holdNote.className = 'slot-hold-note';
         const holdMinutes = Number(state.bookingHoldMinutes || BOOKING_HOLD_MINUTES) || BOOKING_HOLD_MINUTES;
-        holdNote.textContent = `On hold: ${holdCount} â€¢ try again in ${holdMinutes} min`;
+        holdNote.textContent = `On hold: ${holdCount} • try again in ${holdMinutes} min`;
         slotMetaWrap.appendChild(holdNote);
       }
       slotRow.appendChild(slotTime);
@@ -6234,7 +6235,7 @@ function renderMembershipCalendarDetails(dateKey, bookings) {
         return `
         <div class="membership-calendar-detail-item">
           <strong>${escapeHtml(booking.serviceName || 'Hydrogen Session')}</strong>
-          <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))} â€¢ ${escapeHtml(derivedStatus)}</span>
+          <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))} • ${escapeHtml(derivedStatus)}</span>
         </div>
       `;
       }
@@ -6346,8 +6347,8 @@ function renderMembership() {
   }
   if (elements.membershipDashboardStatus) {
     elements.membershipDashboardStatus.textContent = active
-      ? `${activePlanName}${effectiveExpiry ? ` â€¢ valid till ${effectiveExpiry.toLocaleDateString()}` : ''}`
-      : 'Non-member account â€¢ standard pricing and pay-per-visit access';
+      ? `${activePlanName}${effectiveExpiry ? ` • valid till ${effectiveExpiry.toLocaleDateString()}` : ''}`
+      : 'Non-member account • standard pricing and pay-per-visit access';
   }
 
   const allBookings = (state.bookings || []).filter(
@@ -6375,7 +6376,7 @@ function renderMembership() {
     elements.membershipStatMembersMeta.textContent = active ? 'Covered' : 'Total';
   }
   if (elements.membershipStatValid) {
-    elements.membershipStatValid.textContent = active ? (effectiveExpiry ? effectiveExpiry.toLocaleDateString() : '-') : 'â‚¹9,500';
+    elements.membershipStatValid.textContent = active ? (effectiveExpiry ? effectiveExpiry.toLocaleDateString() : '-') : '\u20B9 9,500';
   }
   if (elements.membershipStatValidLabel) {
     elements.membershipStatValidLabel.textContent = active ? 'Valid Till' : 'Non-member Price';
@@ -6408,13 +6409,18 @@ function renderMembership() {
       ? (totalSessions ? `${usedSessions} of ${totalSessions} used` : '0 of 0 used')
       : `${upcomingBookings.length} upcoming`;
   }
+  if (elements.membershipUsageCount) {
+    elements.membershipUsageCount.textContent = active
+      ? `${usedSessions} of ${totalSessions}`
+      : `${allBookings.length} total`;
+  }
   if (elements.membershipUsageBar) {
     elements.membershipUsageBar.style.width = `${active ? usagePercent : Math.min(100, Math.max(12, upcomingBookings.length * 12))}%`;
   }
   if (elements.membershipUsageNote) {
     elements.membershipUsageNote.textContent = active
-      ? `${remainingSessions} hydrogen sessions remaining (per member)${missedSessions > 0 ? ` â€¢ Missed hydrogen sessions: ${missedSessions}` : ''}`
-      : `You have ${allBookings.length} total booking${allBookings.length === 1 ? '' : 's'}${upcomingBookings.length ? ` â€¢ ${upcomingBookings.length} upcoming` : ''}. Upgrade to membership to unlock 16 included hydrogen sessions.`;
+      ? `${remainingSessions} hydrogen sessions remaining (per member)${missedSessions > 0 ? ` • Missed hydrogen sessions: ${missedSessions}` : ''}`
+      : `You have ${allBookings.length} total booking${allBookings.length === 1 ? '' : 's'}${upcomingBookings.length ? ` • ${upcomingBookings.length} upcoming` : ''}. Upgrade to membership to unlock 16 included hydrogen sessions.`;
   }
 
   const upcoming = active
@@ -6455,11 +6461,11 @@ function renderMembership() {
       const validityLine =
         startedAt && !Number.isNaN(startedAt.getTime())
           ? `Validity starts from ${startedAt.toLocaleDateString()}` +
-            (expiresAt && !Number.isNaN(expiresAt.getTime()) ? ` â€¢ ends on ${expiresAt.toLocaleDateString()}` : '')
+            (expiresAt && !Number.isNaN(expiresAt.getTime()) ? ` • ends on ${expiresAt.toLocaleDateString()}` : '')
           : '';
       elements.membershipPeopleMeta.textContent = `${members.length} of ${currentPeopleCount} member${
         currentPeopleCount === 1 ? '' : 's'
-      } added${validityLine ? ` â€¢ ${validityLine}` : ''}`;
+      } added${validityLine ? ` • ${validityLine}` : ''}`;
 
       elements.membershipPeopleList.innerHTML = '';
       if (!members.length) {
@@ -6535,7 +6541,7 @@ function renderMembership() {
       <div class="membership-card-body">
         <div class="membership-card-price-block">
           <p class="membership-price">Rs. ${estimatedAmountInr.toLocaleString('en-IN')}</p>
-          <p class="membership-price-caption">1-year access â€¢ ${escapeHtml(plan.validityDays)} days</p>
+          <p class="membership-price-caption">1-year access • ${escapeHtml(plan.validityDays)} days</p>
         </div>
         <p class="membership-includes-label">Includes:</p>
         <ul class="membership-feature-list">
@@ -6664,7 +6670,7 @@ function openMembershipCheckoutDialog(plan, additionalPeople) {
   }
 
   if (elements.membershipDialogTitle) {
-    elements.membershipDialogTitle.textContent = `Membership Details â€¢ ${plan.name}`;
+    elements.membershipDialogTitle.textContent = `Membership Details • ${plan.name}`;
   }
   renderMembershipCheckoutSummary();
   renderMembershipCouponPreview();
@@ -6820,7 +6826,7 @@ function openMembershipAddPersonUpgradeCheckoutDialog() {
   }
 
   if (elements.membershipDialogTitle) {
-    elements.membershipDialogTitle.textContent = `Membership Details â€¢ ${addPersonPlan.name}`;
+    elements.membershipDialogTitle.textContent = `Membership Details • ${addPersonPlan.name}`;
   }
   renderMembershipCheckoutSummary();
   renderMembershipCouponPreview();
@@ -6938,7 +6944,7 @@ function renderMembershipCheckoutSummary() {
   const startedAt = startedAtValue ? new Date(startedAtValue) : null;
   const addPersonValidityNote =
     planId === 'h2_add_person' && startedAt && !Number.isNaN(startedAt.getTime())
-      ? ` â€¢ Validity starts from ${startedAt.toLocaleDateString()}`
+      ? ` • Validity starts from ${startedAt.toLocaleDateString()}`
       : '';
 
   if (preview) {
@@ -6946,13 +6952,13 @@ function renderMembershipCheckoutSummary() {
     const discount = Number(preview.discountAmountInr || 0);
     const payable = Number(preview.payableAmountInr || Math.max(0, original - discount));
     elements.membershipPlanSummary.textContent =
-      `Members: ${targetPeopleCount} â€¢ Estimated: Rs. ${original.toLocaleString('en-IN')}` +
-      ` â€¢ Coupon: -Rs. ${discount.toLocaleString('en-IN')}` +
-      ` â€¢ Payable: Rs. ${payable.toLocaleString('en-IN')}${addPersonValidityNote}`;
+      `Members: ${targetPeopleCount} • Estimated: Rs. ${original.toLocaleString('en-IN')}` +
+      ` • Coupon: -Rs. ${discount.toLocaleString('en-IN')}` +
+      ` • Payable: Rs. ${payable.toLocaleString('en-IN')}${addPersonValidityNote}`;
     return;
   }
 
-  elements.membershipPlanSummary.textContent = `Members: ${targetPeopleCount} â€¢ Estimated Amount: Rs. ${estimatedAmountInr.toLocaleString(
+  elements.membershipPlanSummary.textContent = `Members: ${targetPeopleCount} • Estimated Amount: Rs. ${estimatedAmountInr.toLocaleString(
     'en-IN'
   )}${addPersonValidityNote}`;
 }
@@ -7350,9 +7356,9 @@ function renderAdminUserSessionDialog() {
 
   const summary = buildAdminUserSessionSummary(selectedUser);
   elements.adminUserSessionTitle.textContent = selectedUser.name || 'User Sessions';
-  elements.adminUserSessionMeta.textContent = [selectedUser.email, selectedUser.mobile ? `ID ${selectedUser.id} â€¢ ${selectedUser.mobile}` : `ID ${selectedUser.id}`]
+  elements.adminUserSessionMeta.textContent = [selectedUser.email, selectedUser.mobile ? `ID ${selectedUser.id} • ${selectedUser.mobile}` : `ID ${selectedUser.id}`]
     .filter(Boolean)
-    .join(' â€¢ ');
+    .join(' • ');
 
   const kpis = [
     { title: 'Total Sessions', value: summary.total, tone: 'total' },
@@ -7388,7 +7394,7 @@ function renderAdminUserSessionDialog() {
       row.innerHTML = `
         <div>
           <h4>${escapeHtml(booking?.serviceName || 'Session')}</h4>
-          <p>${escapeHtml(formatAdminBookingDateTime(booking?.bookingDate, booking?.bookingTime).replace(/\n/g, ' â€¢ '))}</p>
+          <p>${escapeHtml(formatAdminBookingDateTime(booking?.bookingDate, booking?.bookingTime).replace(/\n/g, ' • '))}</p>
         </div>
         <div class="admin-user-session-badges">
           <span class="status-chip status-${escapeHtml(derivedStatus)}">${escapeHtml(derivedStatus)}</span>
@@ -8207,7 +8213,7 @@ function openMembershipDetailsModal(order) {
       <div class="admin-membership-modal-head">
         <div>
           <h3>${escapeHtml(getMembershipPlanDisplayName(order.planId))}</h3>
-          <p>${escapeHtml(order.userEmail || '-')} â€¢ ${escapeHtml(order.userMobile || '-')}</p>
+          <p>${escapeHtml(order.userEmail || '-')} • ${escapeHtml(order.userMobile || '-')}</p>
         </div>
         <span class="status-chip payment-${escapeHtml(String(order.status || 'created').toLowerCase())}">${escapeHtml(
           String(order.status || 'created')
@@ -8449,7 +8455,7 @@ function renderAdminDiscountUsers() {
       const phone = user.mobile || 'no-phone';
       info.innerHTML = `
         <strong>${escapeHtml(user.name || 'User')}</strong>
-        <span>${escapeHtml(email)} â€¢ ${escapeHtml(phone)}</span>
+        <span>${escapeHtml(email)} • ${escapeHtml(phone)}</span>
         <span>${escapeHtml(statusLabel)}</span>
       `;
       left.append(checkbox, info);
@@ -8699,10 +8705,10 @@ function renderAdminCoupons() {
       item.discountType === 'flat'
         ? `Rs. ${Number(item.discountValue || 0).toLocaleString('en-IN')} off`
         : `${Number(item.discountValue || 0)}% off`;
-    const maxRedemptions = item.maxRedemptions == null ? 'âˆž' : String(item.maxRedemptions);
+    const maxRedemptions = item.maxRedemptions == null ? '∞' : String(item.maxRedemptions);
     const expiresText = item.expiresAt ? formatDateOnly(item.expiresAt) : 'No expiry';
     const recipientLabel = item.recipientEmail
-      ? `${item.recipientName ? `${item.recipientName} â€¢ ` : ''}${item.recipientEmail}`
+      ? `${item.recipientName ? `${item.recipientName} • ` : ''}${item.recipientEmail}`
       : 'No recipient';
     const emailStatus = item.emailStatus ? item.emailStatus.toUpperCase() : 'N/A';
     const emailedAtText = item.emailedAt ? formatDateOnly(item.emailedAt) : '-';
@@ -8712,7 +8718,7 @@ function renderAdminCoupons() {
         <p>${escapeHtml(discountLabel)}</p>
         ${item.description ? `<p>${escapeHtml(item.description)}</p>` : ''}
         <p>Recipient: ${escapeHtml(recipientLabel)}</p>
-        <p>Email: ${escapeHtml(emailStatus)} â€¢ Last sent: ${escapeHtml(emailedAtText)}</p>
+        <p>Email: ${escapeHtml(emailStatus)} • Last sent: ${escapeHtml(emailedAtText)}</p>
         ${item.emailStatus === 'failed' && item.emailError ? `<p>${escapeHtml(item.emailError)}</p>` : ''}
         <p>Uses: ${escapeHtml(String(item.totalRedemptions || 0))}/${escapeHtml(maxRedemptions)}</p>
         <p>Expires: ${escapeHtml(expiresText)}</p>
@@ -9783,7 +9789,7 @@ function renderMyBookingsSessionTracking() {
         const lines = dayBookings.slice(0, 3).map((booking) => `
           <div class="mybookings-calendar-detail-item">
             <strong>${escapeHtml(booking.serviceName || 'Hydrogen Session')}</strong>
-            <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))} â€¢ ${escapeHtml(getDerivedBookingStatus(booking))}</span>
+            <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))} • ${escapeHtml(getDerivedBookingStatus(booking))}</span>
           </div>
         `).join('');
         const moreCount = dayBookings.length - 3;
@@ -9794,6 +9800,22 @@ function renderMyBookingsSessionTracking() {
           ${moreLine}
         `;
       }
+    }
+    function updateProgressRing(used, total) {
+      const percent = total === 0 ? 0 : Math.round((used / total) * 100);
+
+      const circle = document.getElementById("progressRing");
+      const text = document.getElementById("progressText");
+      const remaining = document.getElementById("remainingSessions");
+
+      if (!circle) return;
+
+      circle.style.background = `conic-gradient(
+        var(--primary) ${percent * 3.6}deg,
+        #eee 0deg
+      )`;
+      text.textContent = percent + "%";
+      remaining.textContent = total - used;
     }
   }
 }

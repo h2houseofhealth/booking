@@ -5861,6 +5861,73 @@ app.patch('/api/bookings/:id/status', requireAuth, (req, res) => {
   res.status(204).send();
 });
 
+app.patch('/api/bookings/:id/mark-paid-cash', requireAuth, requireAdmin, (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = db
+    .prepare(
+      `SELECT id,
+              user_id AS userId,
+              booking_group_id AS bookingGroupId,
+              status,
+              payment_status AS paymentStatus
+       FROM bookings
+       WHERE id = ?`
+    )
+    .get(bookingId);
+
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+
+  const bookingStatus = String(booking.status || '').trim().toLowerCase();
+  if (bookingStatus === 'cancelled') {
+    return res.status(409).json({ message: 'cannot accept cash for a cancelled booking' });
+  }
+
+  const targetGroupId = String(booking.bookingGroupId || '').trim();
+  if (targetGroupId) {
+    db.prepare(
+      `UPDATE bookings
+       SET payment_status = 'paid',
+           paid_at = datetime('now'),
+           payment_reference = 'cash',
+           status = CASE
+             WHEN status IN ('cancelled','completed') THEN status
+             ELSE 'confirmed'
+           END
+       WHERE booking_group_id = ?
+         AND status <> 'cancelled'`
+    ).run(targetGroupId);
+  } else {
+    db.prepare(
+      `UPDATE bookings
+       SET payment_status = 'paid',
+           paid_at = datetime('now'),
+           payment_reference = 'cash',
+           status = CASE
+             WHEN status IN ('cancelled','completed') THEN status
+             ELSE 'confirmed'
+           END
+       WHERE id = ?`
+    ).run(bookingId);
+  }
+
+  const token = createInvoiceAccessToken({
+    scope: 'booking_invoice',
+    bookingId: booking.id,
+    userId: booking.userId,
+  });
+
+  return res.json({
+    paid: true,
+    invoiceUrl: `${getRequestOrigin(req)}/invoice/booking?token=${encodeURIComponent(token)}`,
+  });
+});
+
 app.post('/api/bookings/:id/pay', requireAuth, (req, res) => {
   return res.status(410).json({ message: 'Use /api/payments/create-order and /api/payments/verify for Razorpay.' });
 });

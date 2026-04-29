@@ -319,9 +319,21 @@
           <p id="totalCount">0</p>
         </button>
         <button id="adminHistoryCard" class="stat-card" type="button">
-          <h2>History of All Bookings</h2>
+          <h2>User Bookings (Payment Pending)</h2>
           <p id="historyCount">0</p>
         </button>
+      </section>
+
+      <section id="adminTabNav" class="panel app-only admin-only user-tab-nav admin-tab-nav" aria-label="Admin navigation" hidden>
+        <div class="user-tab-grid admin-tab-grid">
+          <button id="adminTabBookings" class="user-tab-btn" type="button">Bookings</button>
+          <button id="adminTabUserBookings" class="user-tab-btn" type="button">User Bookings</button>
+          <button id="adminTabHistory" class="user-tab-btn" type="button">History</button>
+          <button id="adminTabSessions" class="user-tab-btn" type="button">User Sessions</button>
+          <button id="adminTabCalendar" class="user-tab-btn" type="button">Calendar</button>
+          <button id="adminTabMemberships" class="user-tab-btn" type="button">Memberships</button>
+          <button id="adminTabCoupons" class="user-tab-btn" type="button">Coupons</button>
+        </div>
       </section>
 
       <section id="userTabNav" class="panel app-only user-only user-tab-nav" aria-label="User navigation" hidden>
@@ -719,7 +731,7 @@
         </div>
       </section>
 
-      <section class="panel app-only admin-only admin-user-session-panel" aria-label="Admin bookings" hidden>
+      <section id="adminUserSessionsSection" class="panel app-only admin-only admin-user-session-panel" aria-label="Admin bookings" hidden>
         <div class="panel-head">
           <h2>User Sessions</h2>
         </div>
@@ -776,7 +788,69 @@
         </div>
       </section>
 
-      <section class="panel app-only admin-only admin-membership-panel" aria-label="Membership purchases" hidden>
+      <section id="adminUserBookingsSection" class="panel app-only admin-only" aria-label="Payment pending bookings" hidden>
+        <div class="panel-head">
+          <h2>Payment Pending Bookings</h2>
+        </div>
+        <div class="admin-section-toolbar">
+          <p class="membership-copy">Bookings awaiting payment. Use “Paid in Cash” if customer paid offline.</p>
+          <label class="admin-inline-search">
+            <span>Search</span>
+            <input id="adminPendingBookingSearch" type="text" placeholder="Search by name, email, phone number, service" />
+          </label>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Patient</th>
+                <th>Service</th>
+                <th>Date & Time</th>
+                <th>Booked At</th>
+                <th>Status</th>
+                <th>Payment</th>
+                <th>Payment Link Email</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminPendingBookingTableBody"></tbody>
+          </table>
+          <p id="adminPendingEmptyState" class="empty-state">No payment pending bookings found.</p>
+        </div>
+      </section>
+
+      <section id="adminAllBookingsSection" class="panel app-only admin-only" aria-label="Booking history" hidden>
+        <div class="panel-head">
+          <h2>History of All Bookings</h2>
+        </div>
+        <div class="admin-section-toolbar">
+          <p class="membership-copy">All bookings across users. Use search to quickly find a user by name, phone, or email.</p>
+          <label class="admin-inline-search">
+            <span>Search</span>
+            <input id="adminAllBookingSearch" type="text" placeholder="Search by name, email, phone number, service" />
+          </label>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Patient</th>
+                <th>Service</th>
+                <th>Date & Time</th>
+                <th>Booked At</th>
+                <th>Status</th>
+                <th>Payment</th>
+                <th>Payment Link Email</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminAllBookingTableBody"></tbody>
+          </table>
+          <p id="adminAllBookingEmptyState" class="empty-state">No bookings found.</p>
+        </div>
+      </section>
+
+      <section id="adminMembershipSection" class="panel app-only admin-only admin-membership-panel" aria-label="Membership purchases" hidden>
         <div class="panel-head">
           <h2>Paid Memberships</h2>
         </div>
@@ -791,7 +865,7 @@
         <p id="adminMembershipEmptyState" class="empty-state">No paid memberships found.</p>
       </section>
 
-      <section class="panel app-only admin-only" aria-label="Coupons" hidden>
+      <section id="adminCouponsSection" class="panel app-only admin-only" aria-label="Coupons" hidden>
         <div class="panel-head">
           <h2>Coupons</h2>
         </div>

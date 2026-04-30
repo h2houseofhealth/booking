@@ -139,18 +139,32 @@ function enforceTenDigitMobileInput(input) {
   });
 }
 
+function normalizeSlotStartTime(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  if (SLOT_OPTIONS.some((slot) => slot.value === normalized)) return normalized;
+
+  const legacyMatch = normalized.match(/^(\d{2}):30$/);
+  if (legacyMatch) {
+    const candidate = `${legacyMatch[1]}:00`;
+    if (SLOT_OPTIONS.some((slot) => slot.value === candidate)) return candidate;
+  }
+
+  return normalized;
+}
+
 const SLOT_OPTIONS = [
-  { value: '09:30', label: '9:30 AM - 10:30 AM' },
-  { value: '10:30', label: '10:30 AM - 11:30 AM' },
-  { value: '11:30', label: '11:30 AM - 12:30 PM' },
-  { value: '12:30', label: '12:30 PM - 1:30 PM' },
-  { value: '13:30', label: '1:30 PM - 2:30 PM' },
-  { value: '14:30', label: '2:30 PM - 3:30 PM' },
-  { value: '15:30', label: '3:30 PM - 4:30 PM' },
-  { value: '16:30', label: '4:30 PM - 5:30 PM' },
-  { value: '17:30', label: '5:30 PM - 6:30 PM' },
-  { value: '18:30', label: '6:30 PM - 7:30 PM' },
-  { value: '19:30', label: '7:30 PM - 8:30 PM' },
+  { value: '09:00', label: '9:00 AM - 10:00 AM' },
+  { value: '10:00', label: '10:00 AM - 11:00 AM' },
+  { value: '11:00', label: '11:00 AM - 12:00 PM' },
+  { value: '12:00', label: '12:00 PM - 1:00 PM' },
+  { value: '13:00', label: '1:00 PM - 2:00 PM' },
+  { value: '14:00', label: '2:00 PM - 3:00 PM' },
+  { value: '15:00', label: '3:00 PM - 4:00 PM' },
+  { value: '16:00', label: '4:00 PM - 5:00 PM' },
+  { value: '17:00', label: '5:00 PM - 6:00 PM' },
+  { value: '18:00', label: '6:00 PM - 7:00 PM' },
+  { value: '19:00', label: '7:00 PM - 8:00 PM' },
 ];
 const BOOKING_WINDOW_DAYS = 60;
 const IV_REBOOK_COOLDOWN_DAYS = 14;
@@ -159,6 +173,7 @@ const BOOKING_HOLD_MINUTES = 10;
 const HYDROGEN_FREE_SESSIONS_PER_USER = 16;
 const ADMIN_USER_CARD_DEFAULT_LIMIT = 10;
 const ADMIN_USER_CARD_LARGE_DATASET_THRESHOLD = 300;
+const AUTH_OTP_RESEND_COOLDOWN_MS = 30_000;
 
 const elements = {
   authCard: document.getElementById('authCard'),
@@ -172,8 +187,12 @@ const elements = {
   authRole: document.getElementById('authRole'),
   authEmail: document.getElementById('authEmail'),
   authPassword: document.getElementById('authPassword'),
+  authPasswordToggleBtn: document.getElementById('authPasswordToggleBtn'),
   authOtpWrap: document.getElementById('authOtpWrap'),
   authOtp: document.getElementById('authOtp'),
+  authOtpActions: document.getElementById('authOtpActions'),
+  authResendOtpBtn: document.getElementById('authResendOtpBtn'),
+  authResendOtpHint: document.getElementById('authResendOtpHint'),
   authSubmitBtn: document.getElementById('authSubmitBtn'),
   authError: document.getElementById('authError'),
   authBackToChoicesBtn: document.getElementById('authBackToChoicesBtn'),
@@ -478,9 +497,13 @@ const elements = {
 let isRegisterMode = false;
 let isForgotPasswordMode = false;
 let signupStage = 'details';
+let pendingSignupName = '';
 let pendingSignupEmail = '';
 let forgotPasswordStage = 'email';
 let pendingForgotEmail = '';
+let signupOtpResendAvailableAt = 0;
+let forgotOtpResendAvailableAt = 0;
+let authOtpResendTicker = 0;
 let profilePreviewObjectUrl = '';
 let availabilityRequestId = 0;
 let adminCustomerRefreshTimer = 0;
@@ -507,8 +530,11 @@ function openAuthFromLanding(choice = '') {
   isForgotPasswordMode = false;
   signupStage = 'details';
   forgotPasswordStage = 'email';
+  pendingSignupName = '';
   pendingSignupEmail = '';
   pendingForgotEmail = '';
+  signupOtpResendAvailableAt = 0;
+  forgotOtpResendAvailableAt = 0;
   elements.authOtp.value = '';
   elements.authPassword.value = '';
   renderAuthMode();
@@ -557,9 +583,12 @@ function attachEvents() {
     isRegisterMode = !isRegisterMode;
     isForgotPasswordMode = false;
     signupStage = 'details';
+    pendingSignupName = '';
     pendingSignupEmail = '';
     forgotPasswordStage = 'email';
     pendingForgotEmail = '';
+    signupOtpResendAvailableAt = 0;
+    forgotOtpResendAvailableAt = 0;
     elements.authOtp.value = '';
     elements.authForm.reset();
     renderAuthMode();
@@ -572,8 +601,11 @@ function attachEvents() {
     isForgotPasswordMode = false;
     signupStage = 'details';
     forgotPasswordStage = 'email';
+    pendingSignupName = '';
     pendingSignupEmail = '';
     pendingForgotEmail = '';
+    signupOtpResendAvailableAt = 0;
+    forgotOtpResendAvailableAt = 0;
     elements.authForm.reset();
     elements.authError.textContent = '';
     renderAuthMode();
@@ -588,6 +620,7 @@ function attachEvents() {
       isForgotPasswordMode = false;
       forgotPasswordStage = 'email';
       pendingForgotEmail = '';
+      forgotOtpResendAvailableAt = 0;
       elements.authOtp.value = '';
       elements.authPassword.value = '';
       renderAuthMode();
@@ -598,6 +631,7 @@ function attachEvents() {
     isForgotPasswordMode = true;
     forgotPasswordStage = 'email';
     pendingForgotEmail = '';
+    forgotOtpResendAvailableAt = 0;
     elements.authOtp.value = '';
     elements.authPassword.value = '';
     renderAuthMode();
@@ -606,6 +640,14 @@ function attachEvents() {
   elements.authForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     await submitAuth();
+  });
+
+  elements.authPasswordToggleBtn?.addEventListener('click', () => {
+    toggleAuthPasswordVisibility();
+  });
+
+  elements.authResendOtpBtn?.addEventListener('click', async () => {
+    await resendAuthOtp();
   });
 
   function closeNoticeDialog() {
@@ -701,9 +743,12 @@ function attachEvents() {
     state.slotAutoShiftedNotice = '';
     isForgotPasswordMode = false;
     signupStage = 'details';
+    pendingSignupName = '';
     pendingSignupEmail = '';
     forgotPasswordStage = 'email';
     pendingForgotEmail = '';
+    signupOtpResendAvailableAt = 0;
+    forgotOtpResendAvailableAt = 0;
     elements.authOtp.value = '';
     if (elements.dialog.open) elements.dialog.close();
     if (elements.profileDialog.open) elements.profileDialog.close();
@@ -1417,7 +1462,7 @@ function renderAuthMode(preserveMessage = false) {
   const isForgotOtpStep = !isRegisterMode && isForgotPasswordMode && forgotPasswordStage === 'otp';
   const isForgotPasswordStep = !isRegisterMode && isForgotPasswordMode && forgotPasswordStage === 'password';
   const isLoginStep = !isRegisterMode && !isForgotPasswordMode;
-  const authPasswordWrap = elements.authPassword.parentElement;
+  const authPasswordWrap = elements.authPassword?.closest?.('label') || elements.authPassword.parentElement;
 
   elements.authNameWrap.hidden = !isSignupDetailsStep;
   elements.authRoleWrap.hidden = true;
@@ -1465,6 +1510,142 @@ function renderAuthMode(preserveMessage = false) {
   elements.authSwitchBtn.textContent = isRegisterMode ? 'Sign in' : 'Register';
   elements.forgotPasswordBtn.textContent = isForgotPasswordMode ? 'Back to sign in' : 'Forgot password?';
   elements.forgotPasswordBtn.hidden = isRegisterMode;
+
+  updateAuthOtpResendUI();
+}
+
+function stopAuthOtpResendTicker() {
+  if (!authOtpResendTicker) return;
+  clearInterval(authOtpResendTicker);
+  authOtpResendTicker = 0;
+}
+
+function updateAuthOtpResendUI() {
+  if (!elements.authOtpActions || !elements.authResendOtpBtn || !elements.authResendOtpHint) return;
+
+  const isSignupOtpStep = isRegisterMode && signupStage === 'otp';
+  const isForgotOtpStep = !isRegisterMode && isForgotPasswordMode && forgotPasswordStage === 'otp';
+  const shouldShow = isSignupOtpStep || isForgotOtpStep;
+
+  elements.authOtpActions.hidden = !shouldShow;
+  if (!shouldShow) {
+    elements.authResendOtpHint.hidden = true;
+    elements.authResendOtpHint.textContent = '';
+    stopAuthOtpResendTicker();
+    return;
+  }
+
+  if (!authOtpResendTicker) {
+    authOtpResendTicker = window.setInterval(() => {
+      updateAuthOtpResendUI();
+    }, 250);
+  }
+
+  const availableAt = isSignupOtpStep ? signupOtpResendAvailableAt : forgotOtpResendAvailableAt;
+  const remainingMs = availableAt - Date.now();
+  const remainingSeconds = Math.ceil(Math.max(0, remainingMs) / 1000);
+  const canResend = remainingSeconds <= 0;
+
+  elements.authResendOtpBtn.disabled = !canResend;
+  if (canResend) {
+    elements.authResendOtpHint.hidden = true;
+    elements.authResendOtpHint.textContent = '';
+    return;
+  }
+
+  elements.authResendOtpHint.hidden = false;
+  elements.authResendOtpHint.textContent = `Resend available in ${remainingSeconds}s`;
+}
+
+function applyAuthOtpResendCooldown({ isSignup, retryAfterSeconds } = {}) {
+  const seconds = Number.isFinite(Number(retryAfterSeconds)) && Number(retryAfterSeconds) > 0 ? Number(retryAfterSeconds) : AUTH_OTP_RESEND_COOLDOWN_MS / 1000;
+  const nextAvailableAt = Date.now() + seconds * 1000;
+  if (isSignup) {
+    signupOtpResendAvailableAt = nextAvailableAt;
+  } else {
+    forgotOtpResendAvailableAt = nextAvailableAt;
+  }
+  updateAuthOtpResendUI();
+}
+
+function toggleAuthPasswordVisibility() {
+  const input = elements.authPassword;
+  const toggleBtn = elements.authPasswordToggleBtn;
+  if (!input || !toggleBtn) return;
+
+  const selectionStart = input.selectionStart;
+  const selectionEnd = input.selectionEnd;
+  const shouldShow = input.type === 'password';
+  input.type = shouldShow ? 'text' : 'password';
+  const isVisible = input.type === 'text';
+  const actionLabel = isVisible ? 'Hide password' : 'Show password';
+
+  toggleBtn.setAttribute('aria-pressed', isVisible ? 'true' : 'false');
+  toggleBtn.setAttribute('aria-label', actionLabel);
+
+  const toggleText = toggleBtn.querySelector('.password-toggle-text');
+  if (toggleText) toggleText.textContent = actionLabel;
+
+  if (typeof selectionStart === 'number' && typeof selectionEnd === 'number') {
+    try {
+      input.setSelectionRange(selectionStart, selectionEnd);
+    } catch {
+      // ignore selection restore errors
+    }
+  }
+
+  input.focus();
+}
+
+async function resendAuthOtp() {
+  if (!elements.authResendOtpBtn) return;
+
+  const isSignupOtpStep = isRegisterMode && signupStage === 'otp';
+  const isForgotOtpStep = !isRegisterMode && isForgotPasswordMode && forgotPasswordStage === 'otp';
+  if (!isSignupOtpStep && !isForgotOtpStep) return;
+
+  const availableAt = isSignupOtpStep ? signupOtpResendAvailableAt : forgotOtpResendAvailableAt;
+  if (availableAt && Date.now() < availableAt) return;
+
+  elements.authResendOtpBtn.disabled = true;
+
+  try {
+    if (isSignupOtpStep) {
+      const email = pendingSignupEmail || elements.authEmail.value.trim();
+      const name = pendingSignupName || elements.authName.value.trim() || 'User';
+      const result = await api('/api/auth/register/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email }),
+      });
+      pendingSignupEmail = email;
+      pendingSignupName = name;
+      elements.authError.textContent = result.message || 'Signup OTP resent.';
+      applyAuthOtpResendCooldown({ isSignup: true });
+      renderAuthMode(true);
+      return;
+    }
+
+    const email = pendingForgotEmail || elements.authEmail.value.trim();
+    const result = await api('/api/auth/password/forgot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    pendingForgotEmail = email;
+    elements.authError.textContent = result.message || 'Reset OTP resent.';
+    applyAuthOtpResendCooldown({ isSignup: false });
+    renderAuthMode(true);
+  } catch (error) {
+    const retryAfterSeconds = error?.data?.retryAfterSeconds;
+    if (retryAfterSeconds) {
+      applyAuthOtpResendCooldown({ isSignup: Boolean(isSignupOtpStep), retryAfterSeconds });
+    }
+    elements.authError.textContent = error.message || 'Failed to resend OTP.';
+    updateAuthOtpResendUI();
+  } finally {
+    updateAuthOtpResendUI();
+  }
 }
 
 async function submitAuth() {
@@ -1510,6 +1691,7 @@ async function submitAuth() {
 
         pendingForgotEmail = email;
         forgotPasswordStage = 'otp';
+        applyAuthOtpResendCooldown({ isSignup: false });
         elements.authOtp.value = '';
         elements.authError.textContent = result.message || 'Password reset OTP sent.';
         renderAuthMode(true);
@@ -1547,6 +1729,7 @@ async function submitAuth() {
       isForgotPasswordMode = false;
       forgotPasswordStage = 'email';
       pendingForgotEmail = '';
+      forgotOtpResendAvailableAt = 0;
       elements.authOtp.value = '';
       elements.authPassword.value = '';
       elements.authError.textContent = result.message || 'Password reset successful. Please login.';
@@ -1568,8 +1751,10 @@ async function submitAuth() {
         body: JSON.stringify({ name, email }),
       });
 
+      pendingSignupName = name;
       pendingSignupEmail = email;
       signupStage = 'otp';
+      applyAuthOtpResendCooldown({ isSignup: true });
       elements.authOtp.value = '';
       elements.authError.textContent = result.message || 'Signup OTP sent.';
       renderAuthMode(true);
@@ -1610,7 +1795,9 @@ async function submitAuth() {
     state.showAuthCard = false;
     state.activeUserTab = 'services';
     signupStage = 'details';
+    pendingSignupName = '';
     pendingSignupEmail = '';
+    signupOtpResendAvailableAt = 0;
     elements.authForm.reset();
     await loadProfile();
     await loadDashboardData();
@@ -2112,6 +2299,13 @@ async function loadAdminCalendarAvailability({ silent = false } = {}) {
   }
 }
 
+async function refreshAdminCalendarCacheForDate(dateKey) {
+  if (state.user?.role !== 'admin') return;
+  const normalizedDate = String(dateKey || '').trim();
+  if (!normalizedDate) return;
+  await fetchAdminCalendarAvailabilityForDate(normalizedDate, { force: true });
+}
+
 function getAdminCalendarDayData(dateKey) {
   return state.adminCalendarDayCache?.[getAdminCalendarCacheKey(dateKey)] || null;
 }
@@ -2330,14 +2524,16 @@ function getHydrogenSlotsForSubmit(requiredSlots) {
 
 function populateAvailableTimeOptions(selectElement, serviceName, bookingDate, currentReservedSlot = null, preferredTime = '') {
   if (!selectElement) return;
-  const selectedValue = String(selectElement.value || preferredTime || currentReservedSlot?.bookingTime || '').trim();
+  const selectedValue = normalizeSlotStartTime(
+    String(selectElement.value || preferredTime || currentReservedSlot?.bookingTime || '').trim()
+  );
   selectElement.innerHTML = '';
 
   const serviceAvailability = state.slotAvailability[String(serviceName || '')] || {};
   const serviceHolds = state.slotHoldCounts[String(serviceName || '')] || {};
   const capacity = Number(state.slotCapacityByService[String(serviceName || '')] || 1);
   const reservedDate = String(currentReservedSlot?.bookingDate || '').trim();
-  const reservedTime = String(currentReservedSlot?.bookingTime || '').trim();
+  const reservedTime = normalizeSlotStartTime(String(currentReservedSlot?.bookingTime || '').trim());
   const holdMinutes = Number(state.bookingHoldMinutes || BOOKING_HOLD_MINUTES) || BOOKING_HOLD_MINUTES;
 
   for (const optionData of SLOT_OPTIONS) {
@@ -2752,7 +2948,10 @@ async function upsertBooking() {
     });
 
     await loadDashboardData();
-    
+    if (isAdmin && (state.adminActiveTab || '') === 'calendar') {
+      await refreshAdminCalendarCacheForDate(payload.bookingDate);
+    }
+     
     // For new bookings, handle post-save flow
     if (isNewBooking) {
       const bookingId = result?.booking?.id || result?.bookings?.[0]?.id;
@@ -2928,12 +3127,17 @@ async function sendPaymentLinkViaEmail(bookingId, email, paymentLink = '', phone
 }
 
 async function changeStatus(id, status) {
+  const bookingBefore = (Array.isArray(state.bookings) ? state.bookings : []).find((booking) => Number(booking?.id) === Number(id));
+  const bookingDate = String(bookingBefore?.bookingDate || '').trim();
   await api(`/api/bookings/${id}/status`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status }),
   });
   await loadDashboardData();
+  if (state.user?.role === 'admin' && (state.adminActiveTab || '') === 'calendar' && bookingDate) {
+    await refreshAdminCalendarCacheForDate(bookingDate);
+  }
   render();
 }
 
@@ -9667,7 +9871,7 @@ function formatBookingDateLabel(dateISO) {
 }
 
 function formatBookingTimeLabel(time24) {
-  const normalized = String(time24 || '').trim();
+  const normalized = normalizeSlotStartTime(String(time24 || '').trim());
   if (!normalized) return '-';
   const slot = SLOT_OPTIONS.find((item) => item.value === normalized);
   if (slot?.label) return slot.label;
@@ -9735,7 +9939,10 @@ async function api(url, options = {}) {
 
   if (!response.ok) {
     const message = data?.message || 'Request failed';
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    error.data = data;
+    throw error;
   }
 
   return data;

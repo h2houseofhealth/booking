@@ -19,12 +19,18 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev_super_secret_change_me';
 const IS_PRODUCTION = normalizeEnvValue(process.env.NODE_ENV).toLowerCase() === 'production';
 const ALLOW_DEV_OTP_FALLBACK = !IS_PRODUCTION && normalizeEnvValue(process.env.ALLOW_DEV_OTP_FALLBACK || 'true').toLowerCase() !== 'false';
 const TOKEN_COOKIE = 'booking_portal_token';
-const ALLOWED_SLOT_START_TIMES = ['09:30', '10:30', '11:30', '12:30', '13:30', '14:30', '15:30', '16:30', '17:30', '18:30', '19:30'];
+const ALLOWED_SLOT_START_TIMES = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+const LEGACY_ALLOWED_SLOT_START_TIMES = ['09:30', '10:30', '11:30', '12:30', '13:30', '14:30', '15:30', '16:30', '17:30', '18:30', '19:30'];
 const MAX_BOOKINGS_PER_SLOT_HYDROGEN = 1;
 const MAX_BOOKINGS_PER_SLOT_IV = 1;
 const MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER = 3;
 const IV_REBOOK_COOLDOWN_DAYS = 14;
 const OTP_TTL_MINUTES = 10;
+const OTP_RESEND_COOLDOWN_SECONDS = (() => {
+  const candidate = Number(process.env.OTP_RESEND_COOLDOWN_SECONDS || 30);
+  if (!Number.isFinite(candidate)) return 30;
+  return Math.min(Math.max(Math.floor(candidate), 5), 300);
+})();
 const BOOKING_HOLD_MINUTES = 10;
 const BOOKING_HOLD_CUTOFF_SQL = `datetime('now', '-${BOOKING_HOLD_MINUTES} minutes')`;
 const ADMIN_DISCOUNT_GATE_PASSWORD = normalizeEnvValue(process.env.ADMIN_DISCOUNT_GATE_PASSWORD || 'H2-FOUNDERS-2026');
@@ -66,6 +72,19 @@ const SES_API_SECRET_ACCESS_KEY = (
   ''
 ).trim();
 const SES_API_SESSION_TOKEN = normalizeEnvValue(process.env.SES_API_SESSION_TOKEN || process.env.AWS_SESSION_TOKEN || '');
+
+function normalizeSlotStartTime(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  if (ALLOWED_SLOT_START_TIMES.includes(normalized)) return normalized;
+
+  if (LEGACY_ALLOWED_SLOT_START_TIMES.includes(normalized)) {
+    const match = normalized.match(/^(\d{2}):30$/);
+    if (match) return `${match[1]}:00`;
+  }
+
+  return '';
+}
 
 if (SENDGRID_API_KEY) {
   sgMail.setApiKey(SENDGRID_API_KEY);
@@ -594,6 +613,21 @@ app.post('/api/auth/register/start', async (req, res) => {
     return res.status(409).json({ message: 'email already registered' });
   }
 
+  const pendingCooldown = db
+    .prepare("SELECT strftime('%s', created_at) AS createdAtEpoch FROM pending_registrations WHERE email = ?")
+    .get(email);
+  const pendingCreatedAtMs = Number(pendingCooldown?.createdAtEpoch || 0) * 1000;
+  if (pendingCreatedAtMs > 0) {
+    const elapsedMs = Date.now() - pendingCreatedAtMs;
+    if (elapsedMs >= 0 && elapsedMs < OTP_RESEND_COOLDOWN_SECONDS * 1000) {
+      const retryAfterSeconds = Math.ceil((OTP_RESEND_COOLDOWN_SECONDS * 1000 - elapsedMs) / 1000);
+      return res.status(429).json({
+        message: `Please wait ${retryAfterSeconds}s before requesting another signup OTP.`,
+        retryAfterSeconds,
+      });
+    }
+  }
+
   const otp = generateOtp();
   const otpHash = hashOtp(otp);
   const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000).toISOString();
@@ -832,6 +866,21 @@ app.post('/api/auth/password/forgot', async (req, res) => {
   const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (!user) {
     return res.status(404).json({ message: 'User not found.' });
+  }
+
+  const resetCooldown = db
+    .prepare("SELECT strftime('%s', created_at) AS createdAtEpoch FROM pending_password_resets WHERE email = ?")
+    .get(email);
+  const resetCreatedAtMs = Number(resetCooldown?.createdAtEpoch || 0) * 1000;
+  if (resetCreatedAtMs > 0) {
+    const elapsedMs = Date.now() - resetCreatedAtMs;
+    if (elapsedMs >= 0 && elapsedMs < OTP_RESEND_COOLDOWN_SECONDS * 1000) {
+      const retryAfterSeconds = Math.ceil((OTP_RESEND_COOLDOWN_SECONDS * 1000 - elapsedMs) / 1000);
+      return res.status(429).json({
+        message: `Please wait ${retryAfterSeconds}s before requesting another reset OTP.`,
+        retryAfterSeconds,
+      });
+    }
   }
 
   const otp = generateOtp();
@@ -1236,10 +1285,10 @@ app.get('/api/services/availability', requireAuth, (req, res) => {
 
     for (const row of rows) {
       const serviceName = String(row.serviceName || '');
-      const bookingTime = String(row.bookingTime || '');
-      if (!availability[serviceName] || !ALLOWED_SLOT_START_TIMES.includes(bookingTime)) continue;
-      availability[serviceName][bookingTime] = Number(row.total || 0);
-      holds[serviceName][bookingTime] = Number(row.holdTotal || 0);
+      const bookingTime = normalizeSlotStartTime(row.bookingTime);
+      if (!availability[serviceName] || !bookingTime) continue;
+      availability[serviceName][bookingTime] = Number(availability[serviceName][bookingTime] || 0) + Number(row.total || 0);
+      holds[serviceName][bookingTime] = Number(holds[serviceName][bookingTime] || 0) + Number(row.holdTotal || 0);
     }
   }
 
@@ -2394,7 +2443,8 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
   const normalizedSlots = [];
   for (const slot of slots) {
     const bookingDate = String(slot?.bookingDate || '').trim();
-    const bookingTime = String(slot?.bookingTime || '').trim();
+    const bookingTimeRaw = String(slot?.bookingTime || '').trim();
+    const bookingTime = normalizeSlotStartTime(bookingTimeRaw);
     const selectedDate = new Date(`${bookingDate}T00:00:00`);
     if (Number.isNaN(selectedDate.getTime())) {
       return res.status(400).json({ message: `Invalid bookingDate: ${bookingDate}` });
@@ -2404,8 +2454,8 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
     if (selectedDate < today) {
       return res.status(400).json({ message: 'bookingDate cannot be in the past' });
     }
-    if (!ALLOWED_SLOT_START_TIMES.includes(bookingTime)) {
-      return res.status(400).json({ message: `Invalid bookingTime: ${bookingTime}` });
+    if (!bookingTime) {
+      return res.status(400).json({ message: `Invalid bookingTime: ${bookingTimeRaw}` });
     }
     if (isBookingSlotInPast(bookingDate, bookingTime)) {
       return res.status(400).json({ message: `bookingTime cannot be in the past for ${bookingDate}` });
@@ -2624,7 +2674,8 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
   const normalizedSlots = [];
   for (const slot of slots) {
     const bookingDate = String(slot?.bookingDate || '').trim();
-    const bookingTime = String(slot?.bookingTime || '').trim();
+    const bookingTimeRaw = String(slot?.bookingTime || '').trim();
+    const bookingTime = normalizeSlotStartTime(bookingTimeRaw);
     const selectedDate = new Date(`${bookingDate}T00:00:00`);
     if (Number.isNaN(selectedDate.getTime())) {
       return res.status(400).json({ message: `Invalid bookingDate: ${bookingDate}` });
@@ -2634,8 +2685,8 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
     if (selectedDate < today) {
       return res.status(400).json({ message: 'bookingDate cannot be in the past' });
     }
-    if (!ALLOWED_SLOT_START_TIMES.includes(bookingTime)) {
-      return res.status(400).json({ message: `Invalid bookingTime: ${bookingTime}` });
+    if (!bookingTime) {
+      return res.status(400).json({ message: `Invalid bookingTime: ${bookingTimeRaw}` });
     }
     if (isBookingSlotInPast(bookingDate, bookingTime)) {
       return res.status(400).json({ message: `bookingTime cannot be in the past for ${bookingDate}` });
@@ -2845,7 +2896,8 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
   const normalizedSlots = [];
   for (const slot of slots) {
     const bookingDate = String(slot?.bookingDate || '').trim();
-    const bookingTime = String(slot?.bookingTime || '').trim();
+    const bookingTimeRaw = String(slot?.bookingTime || '').trim();
+    const bookingTime = normalizeSlotStartTime(bookingTimeRaw);
     const selectedDate = new Date(`${bookingDate}T00:00:00`);
     if (Number.isNaN(selectedDate.getTime())) {
       return res.status(400).json({ message: `Invalid bookingDate: ${bookingDate}` });
@@ -2855,8 +2907,8 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
     if (selectedDate < today) {
       return res.status(400).json({ message: 'bookingDate cannot be in the past' });
     }
-    if (!ALLOWED_SLOT_START_TIMES.includes(bookingTime)) {
-      return res.status(400).json({ message: `Invalid bookingTime: ${bookingTime}` });
+    if (!bookingTime) {
+      return res.status(400).json({ message: `Invalid bookingTime: ${bookingTimeRaw}` });
     }
     if (isBookingSlotInPast(bookingDate, bookingTime)) {
       return res.status(400).json({ message: `bookingTime cannot be in the past for ${bookingDate}` });
@@ -3111,7 +3163,8 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
   const normalizedSlots = [];
   for (const slot of slots) {
     const bookingDate = String(slot?.bookingDate || '').trim();
-    const bookingTime = String(slot?.bookingTime || '').trim();
+    const bookingTimeRaw = String(slot?.bookingTime || '').trim();
+    const bookingTime = normalizeSlotStartTime(bookingTimeRaw);
     const selectedDate = new Date(`${bookingDate}T00:00:00`);
     if (Number.isNaN(selectedDate.getTime())) {
       return res.status(400).json({ message: `Invalid bookingDate: ${bookingDate}` });
@@ -3121,8 +3174,8 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
     if (selectedDate < today) {
       return res.status(400).json({ message: 'bookingDate cannot be in the past' });
     }
-    if (!ALLOWED_SLOT_START_TIMES.includes(bookingTime)) {
-      return res.status(400).json({ message: `Invalid bookingTime: ${bookingTime}` });
+    if (!bookingTime) {
+      return res.status(400).json({ message: `Invalid bookingTime: ${bookingTimeRaw}` });
     }
     if (isBookingSlotInPast(bookingDate, bookingTime)) {
       return res.status(400).json({ message: `bookingTime cannot be in the past for ${bookingDate}` });
@@ -7522,11 +7575,12 @@ function validateBookingPayload(body, user) {
     return { error: 'bookingDate cannot be in the past' };
   }
 
-  if (!ALLOWED_SLOT_START_TIMES.includes(bookingTime)) {
-    return { error: 'bookingTime must be one of the allowed 1.5-hour slots' };
+  const normalizedBookingTime = normalizeSlotStartTime(bookingTime);
+  if (!normalizedBookingTime) {
+    return { error: 'bookingTime must be one of the allowed 1-hour slots' };
   }
 
-  if (isBookingSlotInPast(bookingDate, bookingTime)) {
+  if (isBookingSlotInPast(bookingDate, normalizedBookingTime)) {
     return { error: 'bookingTime cannot be in the past for the selected date' };
   }
 
@@ -7534,7 +7588,7 @@ function validateBookingPayload(body, user) {
     data: {
       serviceName,
       bookingDate,
-      bookingTime,
+      bookingTime: normalizedBookingTime,
       notes,
     },
   };

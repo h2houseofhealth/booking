@@ -25,10 +25,7 @@
 
     <main class="portal">
       <header class="portal-header">
-        <div class="brand-lockup">
-          <h1 class="sr-only">H2 House of Health Patient Booking Portal</h1>
-          <img class="brand-logo-wordmark" src="assets/h2-logo-wordmark.svg" alt="H2 House of Health" />
-        </div>
+        <h1 class="sr-only">H2 House of Health Patient Booking Portal</h1>
         <div class="top-actions" id="appArea" hidden>
           <button id="profileBtn" class="profile-btn" type="button">
             <span id="profileAvatar" class="profile-avatar"></span>
@@ -73,12 +70,27 @@
           </label>
           <label>
             Password
-            <input id="authPassword" type="password" autocomplete="current-password" required />
+            <div class="auth-password-field">
+              <input id="authPassword" type="password" autocomplete="current-password" required />
+              <button
+                type="button"
+                id="authPasswordToggleBtn"
+                class="password-toggle-btn"
+                aria-label="Show password"
+                aria-pressed="false"
+              >
+                <span class="password-toggle-text">Show password</span>
+              </button>
+            </div>
           </label>
           <label id="authOtpWrap" hidden>
             OTP
             <input id="authOtp" type="text" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit OTP" />
           </label>
+          <div id="authOtpActions" class="auth-otp-actions" hidden>
+            <button type="button" id="authResendOtpBtn" class="link-btn">Resend OTP</button>
+            <span id="authResendOtpHint" class="auth-otp-hint" hidden></span>
+          </div>
           <button id="authSubmitBtn" class="btn btn-primary" type="submit">Sign in</button>
         </form>
         <p id="authError" class="auth-error"></p>
@@ -98,7 +110,7 @@
         <div class="container">
           <div class="member-choice-topbar" aria-label="Section navigation">
             <div class="member-choice-brand-lockup">
-              <img class="member-choice-brand-logo" src="assets/h2-logo-wordmark.svg" alt="House of Health" />
+              <img class="member-choice-brand-logo" src="assets/brand/H2_Logo.png" alt="H2 House of Health" />
             </div>
             <nav class="member-choice-nav" aria-label="Primary">
               <a href="#cmp-perfect-01">Benefits</a>
@@ -118,7 +130,7 @@
               <p class="auth-kicker">Redefine wellness. Rejuvenate life.</p>
               <h2 class="member-choice-title">Choose How You Want To <span class="member-choice-title-em">Continue</span></h2>
               <p class="membership-copy">
-                Choose whether you want to activate membership first, enter with member benefits, or continue with non-member access.
+                Activate membership for exclusive benefits or continue with flexible non-member access. Wellness, tailored to you.
               </p>
 
               <div class="member-choice-benefits" aria-label="Membership highlights">
@@ -129,7 +141,7 @@
                       <path d="M12 9.25c1.29 1.54 2.33 3.09 2.33 4.32A2.33 2.33 0 1 1 9.67 13.57c0-1.23 1.04-2.78 2.33-4.32Z" />
                     </svg>
                   </span>
-                  Book hydrogen, therapies &amp; shots in one place.
+                  Book hydrogen, therapies &amp; shots all in one place.
                 </p>
                 <p>
                   <span class="member-choice-check" aria-hidden="true">
@@ -138,7 +150,7 @@
                       <path d="M8 20h8" />
                     </svg>
                   </span>
-                  Member pricing and exclusive hydrogen session access.
+                  Exclusive member pricing &amp; hydrogen session access.
                 </p>
                 <p>
                   <span class="member-choice-check" aria-hidden="true">
@@ -150,7 +162,7 @@
                       <path d="m8 13 2 2 5-5" />
                     </svg>
                   </span>
-                  Change or cancel your plan anytime.
+                  Change or cancel your plan anytime, effortlessly.
                 </p>
               </div>
 
@@ -189,7 +201,7 @@
 
           <div class="member-choice-experience" aria-label="Select your experience">
             <p class="member-choice-experience-kicker">Experiences That Heal</p>
-            <h3 class="member-choice-experience-title section-title">Select Your Experience</h3>
+            <h3 class="member-choice-experience-title section-title">Select Your <span>Experience</span></h3>
             <div class="member-choice-experience-grid cards" role="group" aria-label="Continue options">
               <button id="continueAsMemberBtn" class="member-choice-experience-card card-member is-featured" type="button">
                 <span class="member-choice-experience-badge">Most Popular</span>
@@ -200,15 +212,17 @@
                 </div>
                 <div class="member-choice-card-highlight">
                   <span class="member-choice-card-highlight-icon" aria-hidden="true">✦</span>
-                  <span>Save up to ₹50,000 annually</span>
+                  <span>Save up to ₹1,50,000 annually</span>
                 </div>
                 <ul class="member-choice-card-list">
                   <li>16 sessions included</li>
-                  <li>Exclusive Member pricing</li>
+                  <li>Exclusive member pricing</li>
                   <li>Priority booking access</li>
-                  <li>Complimentary consultations</li>
+                  <li>Access to all included services</li>
+                  <li>Flexible plan management</li>
+                  <li>Exclusive offers &amp; early access</li>
                 </ul>
-                <span class="member-choice-card-cta">Choose Membership</span>
+                <span class="member-choice-card-cta">Become a Member</span>
               </button>
               <button id="continueAsNonMemberBtn" class="member-choice-experience-card card-light" type="button">
                 <span class="member-choice-experience-badge is-placeholder" aria-hidden="true">Most Popular</span>
@@ -225,9 +239,11 @@
                   <li>No free sessions</li>
                   <li>Regular standard pricing</li>
                   <li>Standard booking window</li>
-                  <li>Pay-per-visit flexibility</li>
+                  <li>Limited access to services</li>
+                  <li>No exclusive offers</li>
+                  <li>Pay per session</li>
                 </ul>
-                <span class="member-choice-card-cta">Continue without membership</span>
+                <span class="member-choice-card-cta">Continue as Non-member</span>
               </button>
             </div>
             <div id="cmp-perfect-01" class="member-choice-comparison" aria-label="Member vs non-member comparison">
@@ -243,9 +259,6 @@
                   <h3>Compare Benefits</h3>
                   <p>See the difference between member and non-member benefits side by side.</p>
                   <a href="#membershipSection">View Full Comparison →</a>
-                  <div class="member-choice-matrix-decor" aria-hidden="true">
-                    <img src="assets/pot_image_cropped.png" alt="" />
-                  </div>
                 </aside>
                 <div class="member-choice-matrix-table-wrap table">
                   <div class="member-choice-matrix-head" aria-hidden="true">
@@ -303,8 +316,8 @@
                     <div class="cmp-pricing-table-wrap table table">
                       <div class="cmp-pricing-table-head pricing-header pricing-header">
                         <div>Hydrogen Sessions</div>
-                        <div>Exclusive Membership Pricing <span>(16 hydrogen sessions free)</span></div>
-                        <div>Regular Pricing <span>(Pay per hydrogen session)</span></div>
+                        <div>Member price</div>
+                        <div>Regular Price</div>
                       </div>
                       <div class="cmp-pricing-table-row">
                         <div>1 Hydrogen Session price</div>
@@ -332,6 +345,43 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <div class="member-choice-final-cta" aria-label="Explore plans">
+            <div class="member-choice-final-cta-points">
+              <div class="member-choice-final-cta-point">
+                <span aria-hidden="true">🛡</span>
+                <div>
+                  <strong>Premium Care</strong>
+                  <small>You Can Trust</small>
+                </div>
+              </div>
+              <div class="member-choice-final-cta-point">
+                <span aria-hidden="true">⚛</span>
+                <div>
+                  <strong>Science Backed</strong>
+                  <small>Therapies</small>
+                </div>
+              </div>
+              <div class="member-choice-final-cta-point">
+                <span aria-hidden="true">✿</span>
+                <div>
+                  <strong>Personalized</strong>
+                  <small>Wellness</small>
+                </div>
+              </div>
+              <div class="member-choice-final-cta-point">
+                <span aria-hidden="true">♡</span>
+                <div>
+                  <strong>Results</strong>
+                  <small>That Last</small>
+                </div>
+              </div>
+            </div>
+            <button class="member-choice-final-cta-btn" type="button" data-member-choice-join>
+              Explore All Plans
+              <span aria-hidden="true">→</span>
+            </button>
           </div>
         </div>
       </section>
@@ -1278,24 +1328,9 @@
           <button id="noticeDialogOkBtn" class="btn btn-primary" type="button">OK</button>
         </div>
       </div>
-    <dialog id="bookingEmailTimelineDialog" class="booking-dialog">
-      <form method="dialog">
-        <div class="dialog-head">
-          <h2>Payment Email Timeline</h2>
-          <button id="bookingEmailTimelineCloseBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
-        </div>
-        <input id="bookingEmailTimelineBookingId" type="hidden" />
-        <div class="dialog-actions">
-          <button id="bookingEmailTimelineResendBtn" class="btn btn-primary" type="button">Resend Payment Link</button>
-        </div>
-        <p id="bookingEmailTimelineMeta" class="membership-copy"></p>
-        <div id="bookingEmailTimelineAnalytics" class="coupon-preview" hidden></div>
-        <div id="bookingEmailTimelineList" class="admin-notes-modal-list"></div>
-        <p id="bookingEmailTimelineEmpty" class="empty-state" hidden>No payment-link email events yet.</p>
-      </form>
     </dialog>
 
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-    <script src="app.js?v=18"></script>
+    <script src="app.js?v=19"></script>
   </body>
 </html>

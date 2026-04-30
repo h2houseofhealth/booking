@@ -1,19 +1,19 @@
-const mysql = require("mysql2");
+const path = require('path');
+const Database = require('better-sqlite3');
 
-const connection = mysql.createConnection({
-  host: process.env.RDS_HOST || process.env.DB_HOST || "127.0.0.1",
-  user: process.env.RDS_USER || process.env.DB_USER || "admin",
-  password: process.env.RDS_PASSWORD || process.env.DB_PASSWORD || "g6qGCyyqbeY8iv:P7.z0U.)yJQ[G",
-  database: process.env.RDS_DATABASE || process.env.DB_NAME || "mysql",
-  port: Number(process.env.RDS_PORT || process.env.DB_PORT || 3306),
-});
+const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, '..', 'data'));
+const dbPath = path.join(dataDir, 'booking.db');
+const db = new Database(dbPath);
 
-connection.connect((err) => {
-  if (err) {
-    console.error("❌ MySQL connection failed:", err);
-  } else {
-    console.log("✅ Connected to RDS MySQL");
+function query(sql, callback) {
+  try {
+    const statement = db.prepare(sql);
+    const normalizedSql = String(sql || '').trim().toUpperCase();
+    const results = normalizedSql.startsWith('SELECT') ? statement.all() : statement.run();
+    callback(null, results);
+  } catch (error) {
+    callback(error);
   }
-});
+}
 
-module.exports = connection;
+module.exports = { query };

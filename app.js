@@ -170,10 +170,15 @@ const BOOKING_WINDOW_DAYS = 60;
 const IV_REBOOK_COOLDOWN_DAYS = 14;
 const MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER = 3;
 const BOOKING_HOLD_MINUTES = 10;
+const HYDROGEN_SLOT_CAPACITY_PER_TIME_SLOT = 8;
 const HYDROGEN_FREE_SESSIONS_PER_USER = 16;
 const ADMIN_USER_CARD_DEFAULT_LIMIT = 10;
 const ADMIN_USER_CARD_LARGE_DATASET_THRESHOLD = 300;
 const AUTH_OTP_RESEND_COOLDOWN_MS = 30_000;
+
+function isHydrogenCategory(category) {
+  return String(category || '').trim().toUpperCase() === 'HYDROGEN SESSION';
+}
 
 const elements = {
   authCard: document.getElementById('authCard'),
@@ -2259,13 +2264,18 @@ function openAdminConsultationBookingFromCalendar() {
     return;
   }
   const serviceAvailability = state.adminCalendarAvailability?.[consultationService.name] || {};
-  const capacity = Number(state.adminCalendarCapacityByService?.[consultationService.name] || 8);
+  const serviceHolds = state.adminCalendarHoldCounts?.[consultationService.name] || {};
+  const capacityRaw = Number(state.adminCalendarCapacityByService?.[consultationService.name] || 8);
+  const capacity = isHydrogenCategory(consultationService.category)
+    ? Math.max(capacityRaw, HYDROGEN_SLOT_CAPACITY_PER_TIME_SLOT)
+    : capacityRaw;
   const targetDate = state.adminCalendarDate || getTodayIsoDate();
   const nextOpenSlot =
     SLOT_OPTIONS.find((slot) => {
       if (isBookingSlotInPast(targetDate, slot.value)) return false;
       const booked = Number(serviceAvailability[slot.value] || 0);
-      return booked < capacity;
+      const held = Number(serviceHolds[slot.value] || 0);
+      return booked + held < capacity;
     })?.value || '';
   openAdminCalendarBooking(consultationService.name, nextOpenSlot);
 }
@@ -2310,24 +2320,34 @@ function getAdminCalendarDayData(dateKey) {
   return state.adminCalendarDayCache?.[getAdminCalendarCacheKey(dateKey)] || null;
 }
 
-function getAdminCalendarDaySummary(dateKey) {
+function getAdminCalendarDaySummary(dateKey, serviceName) {
   const dayData = getAdminCalendarDayData(dateKey);
-  if (!dayData) return { hasData: false, openSlotCount: 0, hasAnyOpen: false };
+  if (!dayData) return { hasData: false, openSeatCount: 0, hasAnyOpen: false };
 
-  let openSlotCount = 0;
-  for (const [serviceName, serviceAvailability] of Object.entries(dayData.availability || {})) {
-    const capacity = Math.max(1, Number(dayData.slotCapacityByService?.[serviceName] || 8));
+  const availabilityByService = dayData.availability || {};
+  const holdsByService = dayData.holds || {};
+  const targetServiceName = String(serviceName || '').trim();
+  const servicesToCheck = targetServiceName && availabilityByService[targetServiceName] ? [targetServiceName] : Object.keys(availabilityByService);
+  const enforceHydrogenCapacity = isHydrogenCategory(state.adminCalendarCategory);
+
+  let openSeatCount = 0;
+  for (const candidateServiceName of servicesToCheck) {
+    const serviceAvailability = availabilityByService[candidateServiceName] || {};
+    const serviceHolds = holdsByService[candidateServiceName] || {};
+    const capacityRaw = Math.max(1, Number(dayData.slotCapacityByService?.[candidateServiceName] || 8));
+    const capacity = enforceHydrogenCapacity ? Math.max(capacityRaw, HYDROGEN_SLOT_CAPACITY_PER_TIME_SLOT) : capacityRaw;
     for (const slot of SLOT_OPTIONS) {
       if (isBookingSlotInPast(dateKey, slot.value)) continue;
       const booked = Number(serviceAvailability?.[slot.value] || 0);
-      if (booked < capacity) openSlotCount += 1;
+      const held = Number(serviceHolds?.[slot.value] || 0);
+      openSeatCount += Math.max(0, capacity - booked - held);
     }
   }
 
   return {
     hasData: true,
-    openSlotCount,
-    hasAnyOpen: openSlotCount > 0,
+    openSeatCount,
+    hasAnyOpen: openSeatCount > 0,
   };
 }
 
@@ -2411,11 +2431,11 @@ function renderAdminCalendar() {
       cell.innerHTML = '<span></span>';
     } else {
       const dateKey = getCalendarDateKey(year, monthIndex, dayNumber);
-      const summary = getAdminCalendarDaySummary(dateKey);
+      const summary = getAdminCalendarDaySummary(dateKey, selectedServiceName);
       const isDisabled = dateKey < todayKey || (maxAllowed && dateKey > maxAllowed);
       cell.innerHTML = `
         <strong>${escapeHtml(String(dayNumber))}</strong>
-        <small>${isDisabled ? '' : summary.hasAnyOpen ? `${summary.openSlotCount} open` : summary.hasData ? 'Full' : '...'}</small>
+        <small>${isDisabled ? '' : summary.hasAnyOpen ? `${summary.openSeatCount} open` : summary.hasData ? 'Full' : '...'}</small>
       `;
       if (dateKey === todayKey) cell.classList.add('is-today');
       if (dateKey === selectedDate) cell.classList.add('is-selected');
@@ -2441,14 +2461,17 @@ function renderAdminCalendar() {
   if (serviceNames.length > 0) {
     const serviceAvailability = state.adminCalendarAvailability[selectedServiceName] || {};
     const serviceHolds = state.adminCalendarHoldCounts[selectedServiceName] || {};
-    const slotCapacity = Math.max(1, Number(state.adminCalendarCapacityByService[selectedServiceName] || 8));
+    const slotCapacityRaw = Math.max(1, Number(state.adminCalendarCapacityByService[selectedServiceName] || 8));
+    const slotCapacity = isHydrogenCategory(state.adminCalendarCategory)
+      ? Math.max(slotCapacityRaw, HYDROGEN_SLOT_CAPACITY_PER_TIME_SLOT)
+      : slotCapacityRaw;
     const slotList = document.createElement('div');
     slotList.className = 'admin-calendar-slot-list';
 
     SLOT_OPTIONS.forEach((slot) => {
       const booked = Number(serviceAvailability[slot.value] || 0);
       const holdCount = Number(serviceHolds[slot.value] || 0);
-      const openSeats = Math.max(0, slotCapacity - booked);
+      const openSeats = Math.max(0, slotCapacity - booked - holdCount);
       const isPast = isBookingSlotInPast(selectedDate, slot.value);
       const row = document.createElement('article');
       row.className = `admin-calendar-slot-row${openSeats <= 0 || isPast ? ' is-full' : ' is-open'}`;
@@ -2541,7 +2564,7 @@ function populateAvailableTimeOptions(selectElement, serviceName, bookingDate, c
     const held = Number(serviceHolds[optionData.value] || 0);
     const isCurrentReserved = bookingDate === reservedDate && optionData.value === reservedTime;
     const isPastSlot = isBookingSlotInPast(bookingDate, optionData.value);
-    const isFull = booked >= capacity && !isCurrentReserved;
+    const isFull = booked + held >= capacity && !isCurrentReserved;
     const option = document.createElement('option');
     option.value = optionData.value;
     option.textContent = isPastSlot

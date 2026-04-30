@@ -17,6 +17,7 @@ loadEnvFromFile(path.join(__dirname, '.env'));
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_super_secret_change_me';
 const IS_PRODUCTION = normalizeEnvValue(process.env.NODE_ENV).toLowerCase() === 'production';
+const AUTH_COOKIE_SECURE_MODE = normalizeEnvValue(process.env.AUTH_COOKIE_SECURE || 'auto').toLowerCase();
 const ALLOW_DEV_OTP_FALLBACK = !IS_PRODUCTION && normalizeEnvValue(process.env.ALLOW_DEV_OTP_FALLBACK || 'true').toLowerCase() !== 'false';
 const TOKEN_COOKIE = 'booking_portal_token';
 const ALLOWED_SLOT_START_TIMES = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
@@ -359,6 +360,7 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 app.options('/{*any}', cors(corsOptions));
+app.set('trust proxy', 1);
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const uploadsDir = path.resolve(process.env.UPLOADS_DIR || path.join(__dirname, 'uploads'));
 const dbPath = path.join(dataDir, 'booking.db');
@@ -823,7 +825,7 @@ app.post('/api/auth/register/complete', (req, res) => {
     membershipSubscriptionId: null,
   };
 
-  setAuthCookie(res, user);
+  setAuthCookie(req, res, user);
   return res.status(201).json({ user });
 });
 
@@ -879,7 +881,7 @@ app.post('/api/auth/login', (req, res) => {
     membershipSubscriptionId: syncedUser.membershipSubscriptionId || null,
   };
 
-  setAuthCookie(res, authUser);
+  setAuthCookie(req, res, authUser);
   return res.json({ user: authUser });
 });
 
@@ -1026,8 +1028,8 @@ app.post('/api/auth/password/reset', (req, res) => {
   return res.json({ message: 'Password reset successful. Please login with your new password.' });
 });
 
-app.post('/api/auth/logout', (_req, res) => {
-  res.clearCookie(TOKEN_COOKIE, getAuthCookieOptions());
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie(TOKEN_COOKIE, getAuthCookieOptions(req));
   res.status(204).send();
 });
 
@@ -7526,7 +7528,7 @@ function backfillMembershipSubscriptionsFromOrders() {
   }
 }
 
-function setAuthCookie(res, user) {
+function setAuthCookie(req, res, user) {
   const token = jwt.sign(
     { sub: user.id, name: user.name, email: user.email, role: user.role },
     JWT_SECRET,
@@ -7534,19 +7536,32 @@ function setAuthCookie(res, user) {
   );
 
   res.cookie(TOKEN_COOKIE, token, {
-    ...getAuthCookieOptions(),
+    ...getAuthCookieOptions(req),
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 }
 
-function getAuthCookieOptions() {
-  const useCrossSiteCookie = IS_PRODUCTION && FRONTEND_ORIGINS.length > 0;
+function getAuthCookieOptions(req) {
+  const secure = shouldUseSecureAuthCookie(req);
+  const useCrossSiteCookie = secure && FRONTEND_ORIGINS.length > 0;
   return {
     httpOnly: true,
     sameSite: useCrossSiteCookie ? 'none' : 'lax',
-    secure: IS_PRODUCTION,
+    secure,
     path: '/',
   };
+}
+
+function shouldUseSecureAuthCookie(req) {
+  if (AUTH_COOKIE_SECURE_MODE === 'true' || AUTH_COOKIE_SECURE_MODE === 'always') return true;
+  if (AUTH_COOKIE_SECURE_MODE === 'false' || AUTH_COOKIE_SECURE_MODE === 'never') return false;
+  if (!IS_PRODUCTION) return false;
+  if (req?.secure) return true;
+  const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  return forwardedProto === 'https';
 }
 
 function requireAuth(req, res, next) {

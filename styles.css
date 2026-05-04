@@ -571,15 +571,16 @@ h1, h2, h3 {
 .membership-dashboard-kicker {
   display: inline-block;
   margin-bottom: 6px;
-  padding: 7px 16px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.88);
-  border: 1px solid rgba(236, 215, 199, 0.95);
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
   color: #d2602d;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .membership-dashboard h3 {
@@ -1071,13 +1072,30 @@ h1, h2, h3 {
 
 @media (max-width: 768px) {
   .membership-dashboard {
-    padding: 16px;
-    border-radius: 16px;
+    padding: 12px 0 0;
+    border-radius: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
   }
 
   .membership-dashboard-head {
+    display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 14px;
+    min-height: 0;
+    padding: 16px;
+    border: 1px solid rgba(227, 210, 198, 0.9);
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(255, 249, 244, 0.98), rgba(247, 236, 225, 0.96));
+    box-shadow: 0 16px 34px rgba(115, 77, 49, 0.07);
+    overflow: hidden;
+  }
+
+  .membership-dashboard-head::before {
+    content: none;
   }
 
   .membership-quick-actions {
@@ -1092,8 +1110,74 @@ h1, h2, h3 {
     grid-template-columns: 1fr;
   }
 
+  .dashboard-left {
+    position: relative;
+    max-width: min(18.5rem, 67%);
+    width: auto;
+    min-height: 172px;
+    height: 172px;
+    padding: 0.72rem 0.88rem 0.62rem 0.94rem;
+    z-index: 2;
+    display: grid;
+    align-content: start;
+    justify-items: start;
+    gap: 0.22rem;
+    border-radius: 18px 0 0 18px;
+    overflow: hidden;
+  }
+
+  .dashboard-left::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(255, 244, 235, 0.97) 0%, rgba(248, 231, 218, 0.9) 68%, rgba(248, 231, 218, 0.18) 86%, rgba(248, 231, 218, 0) 100%);
+    z-index: -1;
+  }
+
+  .dashboard-left h3 {
+    font-size: clamp(1.55rem, 5vw, 2rem);
+    line-height: 1.04;
+    margin: 0;
+  }
+
+  .dashboard-left .membership-copy {
+    max-width: none;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    color: #5f4739;
+    margin: 0.3rem 0 0;
+    white-space: nowrap;
+    align-self: end;
+  }
+
+  .membership-dashboard-kicker,
+  .dashboard-left h3,
+  .dashboard-left .membership-copy {
+    position: relative;
+    z-index: 2;
+  }
+
+  .membership-dashboard-kicker {
+    margin-bottom: 0.02rem;
+  }
+
   .dashboard-hero-img {
-    display: none;
+    display: block;
+    position: absolute;
+    inset: 16px 16px auto 16px;
+    width: calc(100% - 32px);
+    height: 172px;
+    object-fit: cover;
+    object-position: 78% center;
+    border-radius: 18px;
+    z-index: 1;
+  }
+
+  .dashboard-actions {
+    width: 100%;
+    margin-top: 0;
+    position: relative;
+    z-index: 2;
   }
 
   .progress-flex {
@@ -5391,6 +5475,26 @@ th {
 
 .action-btn.danger {
   color: #8a3d2f;
+}
+
+#adminUserBookingsSection .action-row,
+#adminAllBookingsSection .action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  gap: 0.45rem;
+  align-items: stretch;
+}
+
+#adminUserBookingsSection .action-btn,
+#adminAllBookingsSection .action-btn {
+  width: 100%;
+  min-width: 140px;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.45rem 0.7rem;
 }
 
 /* =============================================
@@ -11614,9 +11718,18 @@ img {
     gap: 14px;
   }
 
+  .membership-dashboard-head {
+    display: flex;
+    flex-direction: column !important;
+    justify-content: flex-start;
+    align-items: stretch;
+    min-height: 0;
+    padding: 18px;
+  }
+
   .dashboard-hero-img {
-    width: 100%;
-    max-width: 100%;
+    width: calc(100% - 36px);
+    max-width: none;
     border-radius: 18px;
   }
 
@@ -11789,6 +11902,45 @@ img {
     padding-right: 14px;
   }
 
+  .membership-dashboard-head {
+    aspect-ratio: auto;
+    display: flex;
+    flex-direction: column !important;
+    padding: 12px;
+    gap: 10px;
+    border-radius: 20px;
+    min-height: 0;
+  }
+
+  .dashboard-left h3 {
+    font-size: clamp(1.38rem, 4.8vw, 1.75rem);
+  }
+
+  .dashboard-left .membership-copy {
+    max-width: none;
+    font-size: 0.64rem;
+    line-height: 1.15;
+    margin-top: 0.38rem;
+  }
+
+  .dashboard-left {
+    max-width: min(15.6rem, 66%);
+    width: auto;
+    min-height: 150px;
+    height: 150px;
+    padding: 0.58rem 0.72rem 0.5rem 0.78rem;
+  }
+
+  .dashboard-hero-img {
+    inset: 12px 12px auto 12px;
+    width: calc(100% - 24px);
+    height: 150px;
+    min-height: 150px;
+    border-radius: 16px;
+    object-fit: cover;
+    object-position: 80% center;
+  }
+
   .panel-head h2,
   .panel-head h3 {
     font-size: 1.25rem;
@@ -11838,4 +11990,690 @@ img {
   table {
     min-width: 560px;
   }
+}
+
+/* ============================================
+   User Journey Theme Refresh
+   ============================================ */
+
+:root {
+  --terracotta: #c96a2d;
+  --terracotta-deep: #934626;
+  --terracotta-mist: #f4e3d7;
+  --beige-cream: #fbf5ee;
+  --beige-warm: #f3e7da;
+  --sand-line: rgba(132, 82, 49, 0.16);
+}
+
+#userTabNav,
+#servicesSection,
+#userBookingsSection,
+#userCartSection {
+  background:
+    radial-gradient(circle at top right, rgba(201, 106, 45, 0.12), transparent 30%),
+    linear-gradient(180deg, rgba(255, 251, 247, 0.98), rgba(245, 235, 224, 0.95));
+  border: 1px solid rgba(201, 106, 45, 0.16);
+  box-shadow: 0 22px 48px rgba(120, 72, 40, 0.11);
+}
+
+#servicesSection .panel-head h2,
+#userBookingsSection .panel-head h2,
+#userCartSection .panel-head h2 {
+  color: #7e3f25;
+}
+
+#servicesSection .service-panel-lead,
+#userCartSection .service-panel-lead,
+#userBookingsSection .membership-copy,
+#userBookingsSection .empty-state,
+#userCartSection .empty-state {
+  color: #7f6655;
+}
+
+.btn-primary,
+.experience-card-btn,
+.my-bookings-schedule-btn,
+.my-bookings-session-btn.primary,
+#bookingsPayAllBtn,
+#servicesNextBtn,
+#experienceBookBtn {
+  background: linear-gradient(135deg, var(--terracotta), var(--terracotta-deep));
+  color: #fff;
+  border: 1px solid rgba(147, 70, 38, 0.26);
+  box-shadow: 0 12px 28px rgba(201, 106, 45, 0.28);
+}
+
+.btn-primary:hover,
+.experience-card-btn:hover,
+.my-bookings-schedule-btn:hover,
+.my-bookings-session-btn.primary:hover,
+#bookingsPayAllBtn:hover,
+#servicesNextBtn:hover,
+#experienceBookBtn:hover {
+  background: linear-gradient(135deg, #d3753b, #8d3f21);
+  box-shadow: 0 16px 34px rgba(201, 106, 45, 0.34);
+}
+
+.btn-secondary,
+.my-bookings-session-btn.secondary,
+.action-btn,
+#cartContinueShoppingBtn,
+#cartViewBookingsBtn,
+#bookingsBackBtn,
+#servicesBackBtn,
+#userApplyCouponBtn {
+  background: linear-gradient(180deg, rgba(255, 252, 248, 0.98), rgba(244, 233, 222, 0.96));
+  border: 1px solid rgba(201, 106, 45, 0.28);
+  color: #874a2b;
+  box-shadow: 0 8px 20px rgba(122, 77, 45, 0.08);
+}
+
+.btn-secondary:hover,
+.my-bookings-session-btn.secondary:hover,
+.action-btn:hover,
+#cartContinueShoppingBtn:hover,
+#cartViewBookingsBtn:hover,
+#bookingsBackBtn:hover,
+#servicesBackBtn:hover,
+#userApplyCouponBtn:hover {
+  background: linear-gradient(180deg, rgba(248, 236, 224, 1), rgba(241, 226, 212, 1));
+  border-color: rgba(201, 106, 45, 0.42);
+  color: #733d23;
+}
+
+.cart-btn,
+.cart-btn.has-items,
+.cart-btn.is-active {
+  background: linear-gradient(135deg, rgba(201, 106, 45, 0.16), rgba(147, 70, 38, 0.22));
+  border: 1px solid rgba(201, 106, 45, 0.3);
+  color: #7e4025;
+  box-shadow: 0 10px 24px rgba(140, 83, 45, 0.14);
+}
+
+.cart-count {
+  background: linear-gradient(135deg, var(--terracotta), var(--terracotta-deep));
+  color: #fff;
+}
+
+.user-tab-nav {
+  padding: 0.2rem 0.75rem 0;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(var(--brand-deep-rgb), 0.12);
+  box-shadow: 0 10px 24px rgba(var(--brand-deep-rgb), 0.06);
+  overflow: hidden;
+}
+
+.user-tab-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: center;
+  min-height: 4.35rem;
+  border-bottom: 4px solid rgba(var(--brand-deep-rgb), 0.88);
+}
+
+.user-tab-btn {
+  border: 0;
+  border-radius: 0;
+  padding: 1rem 0.4rem 1.1rem;
+  background: transparent;
+  color: rgba(var(--brand-deep-rgb), 0.88);
+  box-shadow: none;
+  font-family: var(--font-brand);
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.user-tab-btn::after {
+  display: block;
+}
+
+.user-tab-btn:hover {
+  color: var(--brand-primary);
+  background: transparent;
+  transform: none;
+}
+
+.user-tab-btn.is-active {
+  color: var(--brand-primary);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+#userBookingsSection {
+  background:
+    radial-gradient(circle at top right, rgba(201, 106, 45, 0.1), transparent 28%),
+    linear-gradient(180deg, rgba(255, 252, 248, 0.98), rgba(246, 236, 226, 0.96));
+}
+
+#userBookingsSection .panel-head {
+  margin-bottom: 1rem;
+}
+
+#userBookingsSection .panel-head h2 {
+  font-family: "Times New Roman", Georgia, serif;
+  font-size: clamp(2rem, 3vw, 2.6rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #2c221d;
+}
+
+#userBookingsSection .service-panel-lead {
+  margin-top: 0.25rem;
+  font-size: 1rem;
+  color: #725d4f;
+}
+
+#userBookingsSection .my-bookings-summary,
+#userBookingsSection .my-bookings-upcoming,
+#userBookingsSection .my-bookings-calendar {
+  display: none;
+}
+
+.my-bookings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.72rem;
+  margin: 0 0 1.35rem;
+}
+
+.my-bookings-filter {
+  min-height: 44px;
+  padding: 0.72rem 1.18rem;
+  border-radius: 14px;
+  border: 1px solid rgba(201, 106, 45, 0.16);
+  background: rgba(255, 255, 255, 0.82);
+  color: #6e4e3a;
+  font-size: 0.92rem;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.68);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.my-bookings-filter:hover {
+  border-color: rgba(201, 106, 45, 0.28);
+  color: #8d4a26;
+}
+
+.my-bookings-filter.is-active {
+  border-color: rgba(147, 70, 38, 0.24);
+  background: linear-gradient(135deg, var(--terracotta), var(--terracotta-deep));
+  color: #fff;
+  box-shadow: 0 12px 24px rgba(201, 106, 45, 0.24);
+}
+
+.my-bookings-table-wrap {
+  overflow: hidden;
+  border: 1px solid rgba(201, 106, 45, 0.12);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(201, 106, 45, 0.06), transparent 30%),
+    linear-gradient(180deg, rgba(255, 253, 250, 0.98), rgba(247, 238, 228, 0.95));
+  box-shadow: 0 18px 36px rgba(111, 73, 44, 0.08);
+}
+
+.my-bookings-table-wrap table {
+  min-width: 100%;
+}
+
+.my-bookings-table-wrap .empty-state {
+  margin: 0;
+  padding: 1.15rem 1rem 1.25rem;
+  text-align: center;
+  color: #8d715f;
+}
+
+.my-bookings-table-wrap th,
+.my-bookings-table-wrap td {
+  padding: 1.2rem 1rem;
+  border-bottom: 1px solid rgba(201, 106, 45, 0.12);
+  white-space: normal;
+}
+
+.my-bookings-table-wrap th {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  color: #ab785c;
+}
+
+.my-bookings-table-wrap tbody tr {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.my-bookings-table-wrap tbody tr:hover {
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.booking-service-block {
+  display: grid;
+  grid-template-columns: 3.35rem minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
+}
+
+.booking-service-content {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.booking-service-icon {
+  width: 3.35rem;
+  height: 3.35rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(255, 247, 240, 0.98), rgba(243, 232, 221, 0.92));
+  border: 1px solid rgba(201, 106, 45, 0.14);
+  color: var(--terracotta);
+  font-size: 1.28rem;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+}
+
+.booking-service-title {
+  font-size: 1.08rem;
+  color: #221b18;
+}
+
+.booking-service-meta,
+.booking-schedule-line {
+  font-size: 0.9rem;
+  color: #765f50;
+}
+
+.booking-schedule-block {
+  gap: 0.45rem;
+}
+
+.booking-schedule-line {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.booking-amount-value {
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: #2b2018;
+  white-space: nowrap;
+}
+
+.status-chip {
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0.34rem 0.72rem;
+  border: 1px solid transparent;
+  font-size: 0.76rem;
+}
+
+.status-booked,
+.status-confirmed,
+.status-pending {
+  background: rgba(240, 122, 58, 0.12);
+  border-color: rgba(240, 122, 58, 0.16);
+  color: #d45e27;
+}
+
+.status-completed {
+  background: rgba(119, 159, 104, 0.12);
+  border-color: rgba(119, 159, 104, 0.16);
+  color: #5a8551;
+}
+
+.status-cancelled {
+  background: rgba(120, 105, 95, 0.12);
+  border-color: rgba(120, 105, 95, 0.14);
+  color: #75695f;
+}
+
+.action-row {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+}
+
+.action-btn {
+  min-width: 108px;
+  min-height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(201, 106, 45, 0.34);
+  background: rgba(255,255,255,0.72);
+  color: #c25b2d;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.action-btn:hover {
+  border-color: rgba(201, 106, 45, 0.5);
+  color: #9b4925;
+}
+
+.action-btn.danger {
+  color: #b45431;
+}
+
+#userBookingsSection .dialog-actions {
+  justify-content: flex-start;
+  margin-top: 1rem;
+}
+
+@media (max-width: 768px) {
+  #userBookingsSection .panel-head {
+    margin-bottom: 0.8rem;
+  }
+
+  #userBookingsSection .panel-head h2 {
+    font-size: clamp(2rem, 8vw, 2.35rem);
+  }
+
+  #userBookingsSection .service-panel-lead {
+    font-size: 0.95rem;
+    max-width: 24ch;
+  }
+
+  .my-bookings-toolbar {
+    gap: 0.55rem;
+    margin-bottom: 1rem;
+  }
+
+  .my-bookings-filter {
+    min-height: 34px;
+    padding: 0.42rem 0.78rem;
+    border-radius: 12px;
+    font-size: 0.82rem;
+  }
+
+  .my-bookings-table-wrap {
+    border-radius: 20px;
+    padding: 0.15rem 0;
+  }
+
+  .my-bookings-table-wrap table,
+  .my-bookings-table-wrap thead,
+  .my-bookings-table-wrap tbody,
+  .my-bookings-table-wrap tr,
+  .my-bookings-table-wrap td {
+    display: block;
+    width: 100%;
+  }
+
+  .my-bookings-table-wrap thead {
+    display: none;
+  }
+
+  .my-bookings-table-wrap tbody tr {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(201, 106, 45, 0.12);
+  }
+
+  .my-bookings-table-wrap tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .my-bookings-table-wrap td {
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  .my-bookings-table-wrap td + td {
+    margin-top: 0.6rem;
+  }
+
+  .my-bookings-table-wrap td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.3rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #b4876d;
+  }
+
+  .booking-service-block {
+    grid-template-columns: 2.9rem minmax(0, 1fr);
+    gap: 0.8rem;
+  }
+
+  .booking-service-icon {
+    width: 2.9rem;
+    height: 2.9rem;
+    font-size: 1.08rem;
+  }
+
+  .booking-service-title {
+    font-size: 0.98rem;
+  }
+
+  .booking-service-meta,
+  .booking-schedule-line,
+  .booking-amount-value {
+    font-size: 0.84rem;
+  }
+
+  .action-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+  }
+
+  .action-btn {
+    width: 100%;
+    min-width: 0;
+    min-height: 36px;
+    font-size: 0.76rem;
+  }
+}
+
+.experience-card,
+.service-cluster,
+.service-category-card,
+.my-bookings-stat-card,
+.my-bookings-progress,
+.my-bookings-upcoming,
+.my-bookings-calendar,
+.my-bookings-session-card,
+.user-checkout-summary,
+.user-cart-notice,
+.table-wrap {
+  border-color: rgba(201, 106, 45, 0.16);
+}
+
+.experience-card,
+.service-cluster,
+.my-bookings-progress,
+.my-bookings-upcoming,
+.my-bookings-calendar,
+.table-wrap {
+  background:
+    linear-gradient(180deg, rgba(255, 252, 248, 0.98), rgba(244, 235, 226, 0.96));
+  box-shadow: 0 18px 34px rgba(110, 73, 44, 0.08);
+}
+
+#userBookingsSection .my-bookings-table-wrap {
+  border-color: rgba(201, 106, 45, 0.12);
+  background:
+    radial-gradient(circle at top right, rgba(201, 106, 45, 0.06), transparent 30%),
+    linear-gradient(180deg, rgba(255, 253, 250, 0.98), rgba(247, 238, 228, 0.95));
+  box-shadow: 0 18px 36px rgba(111, 73, 44, 0.08);
+}
+
+.experience-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.experience-card::before,
+.service-cluster::before,
+.my-bookings-progress::before,
+.my-bookings-upcoming::before,
+.my-bookings-calendar::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(90deg, var(--terracotta), #e6b48c, transparent 88%);
+}
+
+.service-cluster,
+.my-bookings-progress,
+.my-bookings-upcoming,
+.my-bookings-calendar {
+  position: relative;
+  overflow: hidden;
+}
+
+.service-category-card {
+  background: linear-gradient(180deg, rgba(255, 250, 245, 0.98), rgba(245, 235, 225, 0.94));
+  border: 1px solid rgba(201, 106, 45, 0.14);
+}
+
+.service-category-card:hover:not(:disabled) {
+  border-color: rgba(201, 106, 45, 0.34);
+  background: linear-gradient(180deg, rgba(250, 240, 231, 1), rgba(246, 234, 223, 1));
+  box-shadow: 0 16px 28px rgba(122, 77, 45, 0.12);
+}
+
+.service-category-card.is-active {
+  border-color: rgba(201, 106, 45, 0.46);
+  background: linear-gradient(135deg, rgba(201, 106, 45, 0.16), rgba(255, 245, 237, 0.98));
+}
+
+.service-category-name,
+.experience-card-title,
+.my-bookings-progress-title,
+.my-bookings-upcoming-title,
+.my-bookings-session-name,
+.my-bookings-calendar .panel-head h3 {
+  color: #7e3f25;
+}
+
+.service-category-meta,
+.experience-card-desc,
+.my-bookings-session-meta,
+.my-bookings-session-date,
+.my-bookings-progress-text,
+.my-bookings-stat-sub {
+  color: #84695a;
+}
+
+.service-page-note,
+.user-cart-notice,
+.user-checkout-summary,
+.coupon-preview {
+  background: linear-gradient(180deg, rgba(255, 248, 241, 0.98), rgba(243, 231, 219, 0.96));
+  border: 1px solid rgba(201, 106, 45, 0.2);
+}
+
+.service-page-note .note-icon,
+.my-bookings-stat-icon,
+.stat-icon,
+.stat-label,
+.bookings-view-cart-btn {
+  color: var(--terracotta);
+}
+
+.my-bookings-summary {
+  gap: 1.2rem;
+}
+
+.my-bookings-stat-card {
+  background: linear-gradient(180deg, rgba(255, 251, 246, 0.98), rgba(244, 234, 223, 0.94));
+  box-shadow: 0 18px 30px rgba(114, 76, 44, 0.08);
+}
+
+.my-bookings-stat-card:hover,
+.my-bookings-session-card:hover {
+  border-color: rgba(201, 106, 45, 0.3);
+  box-shadow: 0 18px 32px rgba(110, 73, 44, 0.12);
+}
+
+.my-bookings-stat-label,
+.my-bookings-progress-head span,
+.my-bookings-calendar-month {
+  color: #9b6b4f;
+}
+
+.my-bookings-stat-value,
+.my-bookings-session-price {
+  color: var(--terracotta-deep);
+}
+
+.my-bookings-progress-bar,
+.my-bookings-progress-bar-container {
+  background: rgba(201, 106, 45, 0.12);
+}
+
+.my-bookings-progress-bar span,
+.my-bookings-progress-bar-fill {
+  background: linear-gradient(90deg, var(--terracotta), #e2a474);
+}
+
+.my-bookings-session-card {
+  background: linear-gradient(180deg, rgba(255, 252, 249, 0.98), rgba(246, 238, 229, 0.95));
+}
+
+.my-bookings-status-chip.confirmed,
+.my-bookings-payment-chip.paid,
+.status-confirmed,
+.payment-paid {
+  background: rgba(180, 118, 69, 0.18);
+  color: #7c4326;
+}
+
+.my-bookings-status-chip.pending,
+.my-bookings-payment-chip.payment_pending,
+.status-pending,
+.payment-payment_pending {
+  background: rgba(221, 168, 95, 0.2);
+  color: #8e5824;
+}
+
+.my-bookings-status-chip.completed,
+.status-completed {
+  background: rgba(170, 120, 83, 0.18);
+  color: #77452b;
+}
+
+.my-bookings-status-chip.cancelled,
+.my-bookings-payment-chip.unpaid,
+.status-cancelled,
+.payment-unpaid {
+  background: rgba(176, 90, 43, 0.12);
+  color: #94492c;
+}
+
+#userCartSection table,
+#userBookingsSection table {
+  background: transparent;
+}
+
+#userCartSection th,
+#userBookingsSection th {
+  color: #99684d;
+  border-bottom-color: rgba(201, 106, 45, 0.18);
+}
+
+#userCartSection td,
+#userBookingsSection td {
+  border-bottom-color: rgba(201, 106, 45, 0.12);
+}
+
+#userCartSection tr:hover td,
+#userBookingsSection tr:hover td {
+  background: rgba(201, 106, 45, 0.035);
+}
+
+.coupon-entry-row input,
+#userCouponCode {
+  background: rgba(255, 251, 246, 0.98);
+  border: 1px solid rgba(201, 106, 45, 0.22);
 }

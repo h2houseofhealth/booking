@@ -166,9 +166,6 @@
                 </p>
               </div>
 
-              <div class="member-choice-primary-row">
-                <button id="joinAsMemberBtn" class="btn btn-primary" type="button">Explore All Plans</button>
-              </div>
               <div class="member-choice-trust" aria-label="Member trust">
                 <div class="member-choice-avatars" aria-hidden="true">
                   <span>S</span>
@@ -433,8 +430,9 @@
               <p id="membershipDashboardStatus" class="membership-copy"></p>
             </div>
             <div class="dashboard-actions membership-quick-actions">
-              <button id="membershipTakeMembershipBtn" class="btn btn-secondary" type="button" hidden>Take Membership</button>
+              <button id="membershipTakeMembershipBtn" class="btn btn-secondary" type="button" hidden>Become a member</button>
               <button id="membershipQuickBookBtn" class="btn btn-primary" type="button">Book Hydrogen Session</button>
+              <button id="membershipQuickAddPersonBtn" class="btn btn-secondary" type="button">Add Person</button>
               <button id="membershipQuickHistoryBtn" class="btn btn-secondary" type="button">View History</button>
             </div>
             <img
@@ -650,7 +648,7 @@
             <input id="adminCalendarCustomerPhone" type="tel" placeholder="Enter contact number" />
           </label>
           <label>
-            Jump to Date
+            Date
             <input id="adminCalendarDate" type="date" />
           </label>
           <label>
@@ -706,13 +704,22 @@
 
       <section id="userBookingsSection" class="panel app-only user-only" aria-label="User bookings" hidden>
         <div class="panel-head">
-          <h2>My Bookings</h2>
+          <div>
+            <h2>My Bookings</h2>
+            <p class="service-panel-lead">View and manage all your scheduled hydrogen sessions.</p>
+          </div>
         </div>
         <div id="bookingsCartNotice" class="user-cart-notice" hidden>
           <p>
             You have items waiting in your cart.
             <button id="bookingsViewCartBtn" class="link-btn" type="button">View cart</button>
           </p>
+        </div>
+        <div class="my-bookings-toolbar" aria-label="Booking status filters">
+          <button id="myBookingsFilterAll" class="my-bookings-filter is-active" type="button" data-booking-filter="all">All Bookings</button>
+          <button id="myBookingsFilterUpcoming" class="my-bookings-filter" type="button" data-booking-filter="upcoming">Upcoming</button>
+          <button id="myBookingsFilterCompleted" class="my-bookings-filter" type="button" data-booking-filter="completed">Completed</button>
+          <button id="myBookingsFilterCancelled" class="my-bookings-filter" type="button" data-booking-filter="cancelled">Cancelled</button>
         </div>
         <div id="myBookingsSummary" class="my-bookings-summary">
           <div class="my-bookings-stats-grid">
@@ -774,14 +781,14 @@
           <div id="myBookingsCalendarDetails" class="my-bookings-calendar-details"></div>
         </div>
   
-        <div class="table-wrap">
+        <div class="table-wrap my-bookings-table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Service</th>
                 <th>Date & Time</th>
                 <th>Status</th>
-                <th>Payment</th>
+                <th>Amount</th>
                 <th>Actions</th>
               </tr>
             </thead>

@@ -5,7 +5,15 @@
     typeof document !== 'undefined'
       ? String(document.querySelector('meta[name="api-base-url"]')?.content || '').trim()
       : '';
-  return configuredWindowValue || configuredMetaValue || '';
+  const hostname = typeof window !== 'undefined' ? String(window.location.hostname || '').trim().toLowerCase() : '';
+  const isLocalHost =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1';
+
+  if (configuredWindowValue) return configuredWindowValue;
+  if (isLocalHost) return '';
+  return configuredMetaValue || '';
 })();
 
 function buildApiUrl(url = '') {
@@ -41,6 +49,7 @@ const state = {
   pendingPreAuthChoice: '',
   showAuthCard: false,
   activeUserTab: 'services',
+  userBookingsFilter: 'all',
   adminActiveTab: 'bookings',
   adminPendingBookingSearch: '',
   adminAllBookingSearch: '',
@@ -297,6 +306,10 @@ const elements = {
   myBookingsCalendarMonth: document.getElementById('myBookingsCalendarMonth'),
   myBookingsCalendarGrid: document.getElementById('myBookingsCalendarGrid'),
   myBookingsCalendarDetails: document.getElementById('myBookingsCalendarDetails'),
+  myBookingsFilterAll: document.getElementById('myBookingsFilterAll'),
+  myBookingsFilterUpcoming: document.getElementById('myBookingsFilterUpcoming'),
+  myBookingsFilterCompleted: document.getElementById('myBookingsFilterCompleted'),
+  myBookingsFilterCancelled: document.getElementById('myBookingsFilterCancelled'),
 
   serviceGrid: document.getElementById('serviceGrid'),
   serviceEmpty: document.getElementById('serviceEmpty'),
@@ -338,6 +351,7 @@ const elements = {
   membershipNextSessionTitle: document.getElementById('membershipNextSessionTitle'),
   membershipNextSessionMeta: document.getElementById('membershipNextSessionMeta'),
   membershipQuickBookBtn: document.getElementById('membershipQuickBookBtn'),
+  membershipQuickAddPersonBtn: document.getElementById('membershipQuickAddPersonBtn'),
   membershipQuickHistoryBtn: document.getElementById('membershipQuickHistoryBtn'),
   membershipBackBtn: document.getElementById('membershipBackBtn'),
   membershipNextBtn: document.getElementById('membershipNextBtn'),
@@ -586,6 +600,20 @@ async function bootstrap() {
 }
 
 function attachEvents() {
+  const openMembershipPlansFromLanding = () => {
+    if (!state.user) {
+      openAuthFromLanding('join-member');
+      return;
+    }
+    state.postLoginChoice = 'join-member';
+    state.activeUserTab = 'membership';
+    window.location.hash = '#membership';
+    render();
+    requestAnimationFrame(() => {
+      document.querySelector('[aria-label="Membership"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
   window.addEventListener('hashchange', () => {
     const nextTab = getUserTabFromHash(window.location.hash);
     if (!nextTab) return;
@@ -845,24 +873,10 @@ function attachEvents() {
     const normalized = normalizeTenDigitMobile(target.value);
     if (target.value !== normalized) target.value = normalized;
   });
-  elements.joinAsMemberBtn?.addEventListener('click', () => {
-    if (!state.user) {
-      openAuthFromLanding('join-member');
-      return;
-    }
-    state.postLoginChoice = 'join-member';
-    state.activeUserTab = 'membership';
-    window.location.hash = '#membership';
-    render();
-    requestAnimationFrame(() => {
-      document.querySelector('[aria-label="Membership"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  });
-  elements.topExplorePlansBtn?.addEventListener('click', () => {
-    elements.joinAsMemberBtn?.click();
-  });
+  elements.joinAsMemberBtn?.addEventListener('click', openMembershipPlansFromLanding);
+  elements.topExplorePlansBtn?.addEventListener('click', openMembershipPlansFromLanding);
   document.querySelectorAll('[data-member-choice-join]').forEach((btn) => {
-    btn.addEventListener('click', () => elements.joinAsMemberBtn?.click());
+    btn.addEventListener('click', openMembershipPlansFromLanding);
   });
   elements.continueAsMemberBtn?.addEventListener('click', () => {
     if (!state.user) {
@@ -953,6 +967,14 @@ function attachEvents() {
       elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
+  [elements.myBookingsFilterAll, elements.myBookingsFilterUpcoming, elements.myBookingsFilterCompleted, elements.myBookingsFilterCancelled]
+    .filter(Boolean)
+    .forEach((button) => {
+      button.addEventListener('click', () => {
+        state.userBookingsFilter = String(button.dataset.bookingFilter || 'all').trim() || 'all';
+        render();
+      });
+    });
   elements.membershipBackBtn?.addEventListener('click', () => {
     if (state.user?.role === 'user' && !state.membership?.active && state.membershipBrowseVisible) {
       state.membershipBrowseVisible = false;
@@ -986,6 +1008,15 @@ function attachEvents() {
     render();
     requestAnimationFrame(() => {
       elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  elements.membershipQuickAddPersonBtn?.addEventListener('click', () => {
+    state.activeUserTab = 'membership';
+    state.membershipBrowseVisible = true;
+    window.location.hash = '#membership';
+    render();
+    requestAnimationFrame(() => {
+      elements.membershipBrowsePanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
   elements.membershipQuickHistoryBtn?.addEventListener('click', () => {
@@ -4254,6 +4285,20 @@ function getFilteredBookings(sourceBookings = state.bookings) {
     .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
 }
 
+function getFilteredUserHistoryBookings(sourceBookings = state.bookings) {
+  const bookings = Array.isArray(sourceBookings) ? sourceBookings : [];
+  const activeFilter = String(state.userBookingsFilter || 'all').trim().toLowerCase();
+  if (activeFilter === 'all') return bookings;
+
+  return bookings.filter((booking) => {
+    const status = String(booking?.status || '').trim().toLowerCase();
+    if (activeFilter === 'completed') return status === 'completed';
+    if (activeFilter === 'cancelled') return status === 'cancelled';
+    if (activeFilter === 'upcoming') return status !== 'completed' && status !== 'cancelled';
+    return true;
+  });
+}
+
 function getFilteredAdminUsers() {
   const users = Array.isArray(state.adminUsers) ? state.adminUsers : [];
   const query = String(state.adminSessionSearch || '').trim().toLowerCase();
@@ -4563,7 +4608,12 @@ function render() {
     const cartPayableBookings = getUserCartPayableBookings(state.bookings || []);
     const cartDisplayBookings = getUserCartDisplayBookings(state.bookings || []);
     const historyBookings = getUserHistoryBookings(state.bookings || []);
-    renderUserRows(getFilteredBookings(historyBookings));
+    const filteredHistoryBookings = getFilteredUserHistoryBookings(historyBookings);
+    elements.myBookingsFilterAll?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'all');
+    elements.myBookingsFilterUpcoming?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'upcoming');
+    elements.myBookingsFilterCompleted?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'completed');
+    elements.myBookingsFilterCancelled?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'cancelled');
+    renderUserRows(filteredHistoryBookings);
     renderCartRows(cartDisplayBookings);
     renderUserCheckoutSummary(cartPayableBookings);
 
@@ -6688,7 +6738,7 @@ function renderMembership() {
   }
 
   if (elements.membershipBrowsePanel) {
-    elements.membershipBrowsePanel.hidden = active ? true : !state.membershipBrowseVisible;
+    elements.membershipBrowsePanel.hidden = !state.membershipBrowseVisible;
   }
 
   if (elements.membershipDashboard) {
@@ -7779,12 +7829,13 @@ function renderUserRows(bookings) {
 
   for (const row of displayRows) {
     const tr = document.createElement('tr');
-    tr.appendChild(userBookingServiceCell(row));
-    tr.appendChild(userBookingScheduleCell(row));
-    tr.appendChild(statusCell(row.status || 'pending'));
-    tr.appendChild(paymentCell(row.paymentStatus || 'unpaid'));
+    tr.appendChild(userBookingServiceCell(row, 'Service'));
+    tr.appendChild(userBookingScheduleCell(row, 'Date & Time'));
+    tr.appendChild(statusCell(row.status || 'pending', 'Status'));
+    tr.appendChild(bookingAmountCell(row, 'Amount'));
 
     const actionCell = document.createElement('td');
+    actionCell.dataset.label = 'Actions';
     const actions = document.createElement('div');
     actions.className = 'action-row';
 
@@ -7817,6 +7868,7 @@ function renderUserRows(bookings) {
 
 function cartAmountCell(row) {
   const td = document.createElement('td');
+  td.dataset.label = 'Amount';
   let amountInr = 0;
   if (row.isGroupedHydrogen) {
     const payableHydrogenEntries = (row.hydrogenEntries || []).filter(
@@ -9237,15 +9289,35 @@ function multilineCell(content) {
   return td;
 }
 
-function userBookingServiceCell(row) {
+function getBookingRowAmountInr(row) {
+  if (row?.isGroupedHydrogen) {
+    const hydrogenEntries = Array.isArray(row?.hydrogenEntries) ? row.hydrogenEntries : [];
+    const addOnEntries = Array.isArray(row?.addOnEntries) ? row.addOnEntries : [];
+    const breakdown = getHydrogenGroupBreakdown(hydrogenEntries, addOnEntries);
+    return Number(breakdown?.totalAmountInr || 0);
+  }
+  return Number(getDisplayedServicePriceInr(row?.booking?.serviceName || row?.serviceTitle || '') || 0);
+}
+
+function userBookingServiceCell(row, label = 'Service') {
   const td = document.createElement('td');
+  td.dataset.label = label;
   const wrap = document.createElement('div');
   wrap.className = 'booking-service-block';
+
+  const icon = document.createElement('span');
+  icon.className = 'booking-service-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '◔';
+  wrap.appendChild(icon);
+
+  const content = document.createElement('div');
+  content.className = 'booking-service-content';
 
   const title = document.createElement('div');
   title.className = 'booking-service-title';
   title.textContent = row.serviceTitle || row.serviceText || '-';
-  wrap.appendChild(title);
+  content.appendChild(title);
 
   const metaLines = Array.isArray(row.serviceMetaLines) ? row.serviceMetaLines : [];
   for (const line of metaLines) {
@@ -9259,7 +9331,7 @@ function userBookingServiceCell(row) {
       meta.classList.add(`is-${String(line.tone).trim()}`);
     }
     meta.textContent = text;
-    wrap.appendChild(meta);
+    content.appendChild(meta);
   }
 
   if (Array.isArray(row.detailSections) && row.detailSections.length) {
@@ -9290,15 +9362,17 @@ function userBookingServiceCell(row) {
       details.appendChild(block);
     }
 
-    wrap.appendChild(details);
+    content.appendChild(details);
   }
 
+  wrap.appendChild(content);
   td.appendChild(wrap);
   return td;
 }
 
-function userBookingScheduleCell(row) {
+function userBookingScheduleCell(row, label = 'Date & Time') {
   const td = document.createElement('td');
+  td.dataset.label = label;
   const wrap = document.createElement('div');
   wrap.className = 'booking-schedule-block';
 
@@ -9313,6 +9387,17 @@ function userBookingScheduleCell(row) {
   }
 
   td.appendChild(wrap);
+  return td;
+}
+
+function bookingAmountCell(row, label = 'Amount') {
+  const td = document.createElement('td');
+  td.dataset.label = label;
+  const amountInr = getBookingRowAmountInr(row);
+  const amount = document.createElement('div');
+  amount.className = 'booking-amount-value';
+  amount.textContent = amountInr > 0 ? `Rs. ${amountInr.toLocaleString('en-IN')}` : 'Included';
+  td.appendChild(amount);
   return td;
 }
 
@@ -9530,8 +9615,9 @@ function summarizeGroupPaymentStatus(bookings) {
   return 'unpaid';
 }
 
-function statusCell(status) {
+function statusCell(status, label = 'Status') {
   const td = document.createElement('td');
+  td.dataset.label = label;
   td.innerHTML = `<span class="status-chip status-${status}">${status}</span>`;
   return td;
 }

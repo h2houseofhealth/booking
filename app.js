@@ -1113,10 +1113,20 @@ function attachEvents() {
   elements.membershipQuickBookBtn?.addEventListener('click', () => {
     resetServiceBrowserState();
     state.activeUserTab = 'services';
+    state.expandedServiceCategories = {
+      'HYDROGEN SESSION': true,
+      'IV THERAPIES': false,
+      'IV SHOTS': false,
+    };
     window.location.hash = '#services';
     render();
     requestAnimationFrame(() => {
-      elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const hydrogenSection = document.querySelector('#service-category-details-hydrogen-session');
+      if (hydrogenSection) {
+        hydrogenSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     });
   });
   elements.membershipQuickAddPersonBtn?.addEventListener('click', () => {
@@ -5599,7 +5609,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   const stickyButton = document.createElement('button');
   stickyButton.type = 'button';
   stickyButton.className = 'btn btn-primary service-sticky-book-btn';
-  stickyButton.textContent = isEditingHydrogenGroup ? 'Update Package' : canScheduleWithoutCart ? 'Schedule' : 'Add to Cart';
+  stickyButton.textContent = isEditingHydrogenGroup ? 'Apply Changes' : canScheduleWithoutCart ? 'Schedule' : 'Add to Cart';
   stickyButton.disabled = selectedServiceIsMembershipOnly && !selectedServiceHasMemberAccess;
   const submitHydrogenBooking = async ({ forceChargeable = false } = {}) => {
     try {
@@ -5833,6 +5843,10 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
     : `₹${selectedServicePrice.toLocaleString('en-IN')}`;
   const stickyPriceClass = /₹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
 
+  // Check if editing any service in this category
+  const editingBookingId = String(state.ivSelections?.[selectedService.name]?.editingBookingId || '').trim();
+  const isEditingIvBooking = Boolean(editingBookingId);
+
   const stickyWrap = document.createElement('div');
   stickyWrap.className = 'service-sticky-book';
   stickyWrap.innerHTML = `
@@ -5844,17 +5858,26 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
   const stickyButton = document.createElement('button');
   stickyButton.type = 'button';
   stickyButton.className = 'btn btn-primary service-sticky-book-btn';
-  stickyButton.textContent = 'Add to Cart';
+  stickyButton.textContent = isEditingIvBooking ? 'Apply Changes' : 'Add to Cart';
   stickyButton.disabled = selectedServiceIsMembershipOnly && !selectedServiceHasMemberAccess;
   stickyButton.addEventListener('click', async () => {
     try {
-      await saveIvUnifiedBookingToCart({
-        serviceName: selectedService.name,
-        bookingDate: dateInput.value || getTodayIsoDate(),
-        bookingTime: timeSelect.value || SLOT_OPTIONS[0].value,
-      });
+      if (isEditingIvBooking) {
+        await updateIvUnifiedBooking({
+          bookingId: editingBookingId,
+          serviceName: selectedService.name,
+          bookingDate: dateInput.value || getTodayIsoDate(),
+          bookingTime: timeSelect.value || SLOT_OPTIONS[0].value,
+        });
+      } else {
+        await saveIvUnifiedBookingToCart({
+          serviceName: selectedService.name,
+          bookingDate: dateInput.value || getTodayIsoDate(),
+          bookingTime: timeSelect.value || SLOT_OPTIONS[0].value,
+        });
+      }
     } catch (error) {
-      showNotice({ title: 'Error', body: error.message || 'Unable to add this hydrogen session to cart.' });
+      showNotice({ title: 'Error', body: error.message || 'Unable to process this request.' });
     }
   });
   stickyWrap.appendChild(stickyButton);
@@ -5944,6 +5967,59 @@ async function saveIvUnifiedBookingToCart({ serviceName, bookingDate, bookingTim
   showNotice({
     title: 'Added to cart',
     body: `${serviceName} on ${formatDateTime(safeDate, safeTime)}\nCart items: ${Number(cartSummary.unitCount || 0)}`,
+  });
+}
+
+async function updateIvUnifiedBooking({ bookingId, serviceName, bookingDate, bookingTime }) {
+  const service = getServiceCatalogEntry(serviceName);
+  if (!service) {
+    showNotice({ title: 'Error', body: 'Selected service is not available.' });
+    return;
+  }
+  const safeDate = String(bookingDate || '').trim();
+  const safeTime = String(bookingTime || '').trim();
+  if (!safeDate || !safeTime) {
+    showNotice({ title: 'Notice', body: 'Set date and time first.' });
+    return;
+  }
+
+  const cooldownConflict = findIvCooldownConflictClient(serviceName, safeDate, bookingId);
+  if (cooldownConflict) {
+    showNotice({ title: 'Not available', body: getIvCooldownAlertMessage(cooldownConflict) });
+    return;
+  }
+
+  const result = await api(`/api/bookings/${encodeURIComponent(bookingId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      serviceName,
+      bookingDate: safeDate,
+      bookingTime: safeTime,
+      notes: '',
+    }),
+  });
+
+  state.singleSessionEditingBookingId = '';
+  state.ivSelections[serviceName] = {
+    ...(state.ivSelections[serviceName] || {}),
+    editingBookingId: '',
+  };
+
+  await loadDashboardData();
+  const returnTab = state.returnUserTabAfterEdit || 'bookings';
+  state.returnUserTabAfterEdit = '';
+  state.activeUserTab = returnTab;
+  window.location.hash = `#${returnTab}`;
+  render();
+  requestAnimationFrame(() => {
+    if (returnTab === 'bookings') {
+      elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+  showNotice({
+    title: 'Booking updated',
+    body: `${serviceName} rescheduled to ${formatDateTime(safeDate, safeTime)}`,
   });
 }
 

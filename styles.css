@@ -6887,6 +6887,14 @@ table tbody td {
   color: var(--brand-primary);
 }
 
+.service-sticky-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 @media (max-width: 768px) {
   .service-sticky-meta .service-sticky-price {
     font-size: clamp(1.08rem, 4.2vw, 1.24rem);
@@ -7005,6 +7013,10 @@ table tbody td {
   }
 
   .service-sticky-book-btn {
+    width: 100%;
+  }
+
+  .service-sticky-actions {
     width: 100%;
   }
 }

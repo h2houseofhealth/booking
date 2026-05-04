@@ -10456,7 +10456,7 @@ body {
   align-self: auto;
   overflow: visible;
   padding: 0;
-  background: transparent;
+  background: var(--bg-main);
   border: 0;
   box-shadow: none;
   min-height: 0;
@@ -10466,7 +10466,7 @@ body {
 #memberChoiceGate .hero-image {
   padding: 0 !important;
   margin: 0 !important;
-  background: transparent !important;
+  background: var(--bg-main) !important;
   border: 0 !important;
   outline: 0 !important;
   box-shadow: none !important;

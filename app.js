@@ -221,7 +221,6 @@ function normalizeSlotStartTime(value) {
 }
 
 const SLOT_OPTIONS = [
-  { value: '09:00', label: '9:00 AM - 10:00 AM' },
   { value: '10:00', label: '10:00 AM - 11:00 AM' },
   { value: '11:00', label: '11:00 AM - 12:00 PM' },
   { value: '12:00', label: '12:00 PM - 1:00 PM' },
@@ -3513,7 +3512,7 @@ async function payAllUserBookings() {
   }
 }
 
-async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, addOnServiceName, addOnSessionIndex }) {
+async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, addOnServiceName, addOnSessionIndex, forceChargeable = false }) {
   const isAdmin = state.user?.role === 'admin';
   if (isAdmin && !isAdminCustomerFormReady()) {
     setHydrogenComposerNotice('Enter customer name, email, and contact number first.', 'error');
@@ -3556,6 +3555,7 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
       slots,
       addOnServiceName,
       addOnSessionIndex,
+      forceChargeable,
     }),
   });
 
@@ -3568,8 +3568,10 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
   const shouldRouteToCart = !isAdmin && totalAmountInr > 0;
   const lines = [
     `Service: ${serviceName}`,
-    summary.membershipActive
+    summary.membershipActive && !summary.forceChargeable
       ? `Free hydrogen sessions applied: ${Number(summary.freeSessionsApplied || 0)} (of ${HYDROGEN_FREE_SESSIONS_PER_USER})`
+      : summary.membershipActive
+        ? 'Free hydrogen sessions applied: 0 (buy extra)'
       : `Hydrogen Amount: Rs. ${Number(summary.packagePriceInr || 0).toLocaleString('en-IN')}`,
     summary.membershipActive
       ? `Chargeable hydrogen sessions: ${Number(summary.chargeableHydrogenSessions || 0)} x Rs. ${Number(summary.memberSessionPriceInr || 0).toLocaleString('en-IN')}`
@@ -3624,7 +3626,7 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
     copyTextToClipboard(result.paymentLinkUrl);
     lines.push('', `Payment Link: ${result.paymentLinkUrl}`, 'Payment link copied.');
   }
-  showNotice({ title: 'Booking saved', body: lines });
+  showNotice({ title: shouldRouteToCart ? 'Added to cart' : 'Booking saved', body: lines });
 }
 
 async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSessions, slots, addOnServiceName, addOnSessionIndex }) {
@@ -4876,7 +4878,7 @@ function renderServicePanelContext() {
       </div>
       <div class="admin-client-chip">
         <strong>Valid Till</strong>
-        <span>${resolvedCustomer?.membershipExpiresAt ? escapeHtml(new Date(resolvedCustomer.membershipExpiresAt).toLocaleDateString()) : '-'}</span>
+        <span>${resolvedCustomer?.membershipExpiresAt ? escapeHtml(formatDateOnly(resolvedCustomer.membershipExpiresAt)) : '-'}</span>
       </div>
       <div class="admin-client-chip">
         <strong>Discount</strong>
@@ -4974,7 +4976,7 @@ function renderProfileMembershipBadge() {
   const expiresAt = getEffectiveMembershipExpiryDate(state.user?.membershipStartedAt, state.user?.membershipExpiresAt);
   elements.userMembershipBadge.textContent = '★ Member';
   elements.userMembershipBadge.title =
-    expiresAt && !Number.isNaN(expiresAt.getTime()) ? `Membership active until ${expiresAt.toLocaleDateString()}` : 'Membership active';
+    expiresAt && !Number.isNaN(expiresAt.getTime()) ? `Membership active until ${formatDateAsDayMonthYear(expiresAt)}` : 'Membership active';
 }
 
 function getMembershipHydrogenSessionSummary() {
@@ -5599,7 +5601,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   stickyButton.className = 'btn btn-primary service-sticky-book-btn';
   stickyButton.textContent = isEditingHydrogenGroup ? 'Update Package' : canScheduleWithoutCart ? 'Schedule' : 'Add to Cart';
   stickyButton.disabled = selectedServiceIsMembershipOnly && !selectedServiceHasMemberAccess;
-  stickyButton.addEventListener('click', async () => {
+  const submitHydrogenBooking = async ({ forceChargeable = false } = {}) => {
     try {
       const slots = state.selectedHydrogenSlots.slice(0, requiredSlots).map((slot) => ({
         bookingDate: slot?.bookingDate || getTodayIsoDate(),
@@ -5635,14 +5637,32 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
           slots,
           addOnServiceName,
           addOnSessionIndex,
+          forceChargeable,
         });
       }
     } catch (error) {
       setHydrogenComposerNotice(error.message || `Unable to ${isEditingHydrogenGroup ? 'update' : 'save'} hydrogen booking.`, 'error');
       renderServices();
     }
+  };
+  stickyButton.addEventListener('click', () => {
+    submitHydrogenBooking({ forceChargeable: false });
   });
-  stickyWrap.appendChild(stickyButton);
+  const stickyActions = document.createElement('div');
+  stickyActions.className = 'service-sticky-actions';
+  stickyActions.appendChild(stickyButton);
+  if (canScheduleWithoutCart) {
+    const buyExtraButton = document.createElement('button');
+    buyExtraButton.type = 'button';
+    buyExtraButton.className = 'btn btn-primary service-sticky-book-btn';
+    buyExtraButton.textContent = 'Buy Extra';
+    buyExtraButton.disabled = selectedServiceIsMembershipOnly && !selectedServiceHasMemberAccess;
+    buyExtraButton.addEventListener('click', () => {
+      submitHydrogenBooking({ forceChargeable: true });
+    });
+    stickyActions.appendChild(buyExtraButton);
+  }
+  stickyWrap.appendChild(stickyActions);
   schedulePanel.appendChild(stickyWrap);
 
   layout.appendChild(schedulePanel);
@@ -6959,7 +6979,7 @@ function renderMembership() {
   }
   if (elements.membershipDashboardStatus) {
     elements.membershipDashboardStatus.textContent = active
-      ? `${activePlanName}${effectiveExpiry ? ` • valid till ${effectiveExpiry.toLocaleDateString()}` : ''}`
+      ? `${activePlanName}${effectiveExpiry ? ` • valid till ${formatDateAsDayMonthYear(effectiveExpiry)}` : ''}`
       : 'Non-member account • standard pricing and pay-per-visit access';
   }
 
@@ -6988,7 +7008,7 @@ function renderMembership() {
     elements.membershipStatMembersMeta.textContent = active ? 'Covered' : 'Total';
   }
   if (elements.membershipStatValid) {
-    elements.membershipStatValid.textContent = active ? (effectiveExpiry ? effectiveExpiry.toLocaleDateString() : '-') : '\u20B9 9,500';
+    elements.membershipStatValid.textContent = active ? (effectiveExpiry ? formatDateAsDayMonthYear(effectiveExpiry) : '-') : '\u20B9 9,500';
   }
   if (elements.membershipStatValidLabel) {
     elements.membershipStatValidLabel.textContent = active ? 'Valid Till' : 'Non-member Price';
@@ -7072,8 +7092,8 @@ function renderMembership() {
 
       const validityLine =
         startedAt && !Number.isNaN(startedAt.getTime())
-          ? `Validity starts from ${startedAt.toLocaleDateString()}` +
-            (expiresAt && !Number.isNaN(expiresAt.getTime()) ? ` • ends on ${expiresAt.toLocaleDateString()}` : '')
+          ? `Validity starts from ${formatDateAsDayMonthYear(startedAt)}` +
+            (expiresAt && !Number.isNaN(expiresAt.getTime()) ? ` • ends on ${formatDateAsDayMonthYear(expiresAt)}` : '')
           : '';
       elements.membershipPeopleMeta.textContent = `${members.length} of ${currentPeopleCount} member${
         currentPeopleCount === 1 ? '' : 's'
@@ -7351,7 +7371,7 @@ function openMembershipAddPersonDialog() {
   if (elements.membershipAddPersonValidityNote) {
     elements.membershipAddPersonValidityNote.textContent =
       startedAt && !Number.isNaN(startedAt.getTime())
-        ? `Validity for this person starts from your payment date: ${startedAt.toLocaleDateString()}.`
+        ? `Validity for this person starts from your payment date: ${formatDateAsDayMonthYear(startedAt)}.`
         : 'Validity for this person starts from your membership payment date.';
   }
   if (elements.membershipAddPersonName) elements.membershipAddPersonName.value = '';
@@ -7556,7 +7576,7 @@ function renderMembershipCheckoutSummary() {
   const startedAt = startedAtValue ? new Date(startedAtValue) : null;
   const addPersonValidityNote =
     planId === 'h2_add_person' && startedAt && !Number.isNaN(startedAt.getTime())
-      ? ` • Validity starts from ${startedAt.toLocaleDateString()}`
+    ? ` • Validity starts from ${formatDateAsDayMonthYear(startedAt)}`
       : '';
 
   if (preview) {
@@ -8227,6 +8247,11 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
         isGroupedHydrogen: false,
         status: booking.status,
         paymentStatus: booking.paymentStatus || 'unpaid',
+        amountInr:
+          String(booking?.paymentReference || '').trim().toLowerCase() === 'membership' ||
+          String(booking?.paymentStatus || '').trim().toLowerCase() === 'paid'
+            ? 0
+            : Number(getDisplayedServicePriceInr(booking.serviceName) || 0),
         serviceTitle: booking.serviceName,
         serviceMetaLines: [
           getBookingCategoryLabel(booking.serviceName),
@@ -8282,6 +8307,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       isGroupedHydrogen: true,
       status: summarizeGroupStatus(sortedEntries),
       paymentStatus: summarizeGroupPaymentStatus(sortedEntries),
+      amountInr: Number(breakdown.totalAmountInr || 0),
       serviceTitle: 'Hydrogen Package Booking',
       serviceMetaLines: [
         baseServiceName,
@@ -9633,12 +9659,18 @@ function multilineCell(content) {
 }
 
 function getBookingRowAmountInr(row) {
+  if (Number.isFinite(Number(row?.amountInr))) {
+    return Number(row.amountInr);
+  }
   if (row?.isGroupedHydrogen) {
     const hydrogenEntries = Array.isArray(row?.hydrogenEntries) ? row.hydrogenEntries : [];
     const addOnEntries = Array.isArray(row?.addOnEntries) ? row.addOnEntries : [];
     const breakdown = getHydrogenGroupBreakdown(hydrogenEntries, addOnEntries);
     return Number(breakdown?.totalAmountInr || 0);
   }
+  const booking = row?.booking || {};
+  if (String(booking?.paymentReference || '').trim().toLowerCase() === 'membership') return 0;
+  if (String(booking?.paymentStatus || '').trim().toLowerCase() === 'paid') return 0;
   return Number(getDisplayedServicePriceInr(row?.booking?.serviceName || row?.serviceTitle || '') || 0);
 }
 
@@ -9739,7 +9771,7 @@ function bookingAmountCell(row, label = 'Amount') {
   const amountInr = getBookingRowAmountInr(row);
   const amount = document.createElement('div');
   amount.className = 'booking-amount-value';
-  amount.textContent = amountInr > 0 ? `Rs. ${amountInr.toLocaleString('en-IN')}` : 'Included';
+  amount.textContent = `Rs. ${amountInr.toLocaleString('en-IN')}`;
   td.appendChild(amount);
   return td;
 }
@@ -9877,6 +9909,9 @@ function hasStandaloneIvOnDateClient(bookingDate, excludeGroupId = '') {
 
 function getHydrogenGroupBreakdown(hydrogenEntries, addOnEntries) {
   const membershipActive = isCurrentUserMembershipActive();
+  const chargeableHydrogenEntries = hydrogenEntries.filter(
+    (entry) => String(entry?.paymentReference || '').trim().toLowerCase() !== 'membership'
+  );
   const baseServiceName = hydrogenEntries[0]?.serviceName || '';
   const singleSessionService =
     state.services.find(
@@ -9893,10 +9928,12 @@ function getHydrogenGroupBreakdown(hydrogenEntries, addOnEntries) {
 
   let hydrogenAmountInr = 0;
   if (membershipActive && extraSessionPriceInr > 0) {
-    hydrogenAmountInr = hydrogenEntries.length * extraSessionPriceInr;
-    breakdownParts.push(
-      `${hydrogenEntries.length} hydrogen session${hydrogenEntries.length === 1 ? '' : 's'} Rs. ${hydrogenAmountInr.toLocaleString('en-IN')}`
-    );
+    hydrogenAmountInr = chargeableHydrogenEntries.length * extraSessionPriceInr;
+    if (hydrogenAmountInr > 0) {
+      breakdownParts.push(
+        `${chargeableHydrogenEntries.length} hydrogen session${chargeableHydrogenEntries.length === 1 ? '' : 's'} Rs. ${hydrogenAmountInr.toLocaleString('en-IN')}`
+      );
+    }
   } else {
     const packageSessions = getHydrogenSessionCountFromServiceName(baseServiceName);
     const extraSessions = Math.max(0, hydrogenEntries.length - packageSessions);
@@ -10323,11 +10360,16 @@ function formatDateOnly(value) {
   if (!value) return '-';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
-  return new Intl.DateTimeFormat(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(date);
+  return formatDateAsDayMonthYear(date);
+}
+
+function formatDateAsDayMonthYear(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = String(date.getFullYear());
+  return `${day}/${month}/${year}`;
 }
 
 function formatBookingDateLabel(dateISO) {
@@ -10338,11 +10380,7 @@ function formatBookingDateLabel(dateISO) {
   const day = Number(match[3]);
   const date = new Date(year, monthIndex, day, 12, 0, 0);
   if (Number.isNaN(date.getTime())) return '-';
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  }).format(date);
+  return formatDateAsDayMonthYear(date);
 }
 
 function formatBookingTimeLabel(time24) {

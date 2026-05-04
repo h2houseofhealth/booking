@@ -825,8 +825,8 @@ app.post('/api/auth/register/complete', (req, res) => {
     membershipSubscriptionId: null,
   };
 
-  setAuthCookie(req, res, user);
-  return res.status(201).json({ user });
+  const token = setAuthCookie(req, res, user);
+  return res.status(201).json({ user, token });
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -881,8 +881,8 @@ app.post('/api/auth/login', (req, res) => {
     membershipSubscriptionId: syncedUser.membershipSubscriptionId || null,
   };
 
-  setAuthCookie(req, res, authUser);
-  return res.json({ user: authUser });
+  const token = setAuthCookie(req, res, authUser);
+  return res.json({ user: authUser, token });
 });
 
 app.post('/api/auth/login/verify', (req, res) => {
@@ -6017,6 +6017,127 @@ app.patch('/api/bookings/:id/mark-paid-cash', requireAuth, requireAdmin, (req, r
   });
 });
 
+app.patch('/api/admin/bookings/:id/reschedule-missed', requireAuth, requireAdmin, (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = db
+    .prepare(
+      `SELECT b.id,
+              b.user_id AS userId,
+              b.service_name AS serviceName,
+              b.booking_date AS bookingDate,
+              b.booking_time AS bookingTime,
+              b.status,
+              b.payment_status AS paymentStatus,
+              b.notes,
+              u.name,
+              u.email,
+              u.mobile,
+              u.membership_status AS membershipStatus,
+              u.membership_expires_at AS membershipExpiresAt
+       FROM bookings b
+       JOIN users u ON u.id = b.user_id
+       WHERE b.id = ?`
+    )
+    .get(bookingId);
+
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+
+  const status = String(booking.status || '').trim().toLowerCase();
+  if (status === 'completed' || status === 'cancelled') {
+    return res.status(409).json({ message: 'completed or cancelled sessions cannot be rescheduled here' });
+  }
+
+  if (String(booking.paymentStatus || '').trim().toLowerCase() !== 'paid') {
+    return res.status(409).json({ message: 'only already-paid missed sessions can be rescheduled from this tab' });
+  }
+
+  const missedAt = new Date(`${booking.bookingDate}T${normalizeSlotStartTime(booking.bookingTime) || booking.bookingTime}:00`).getTime();
+  if (!Number.isFinite(missedAt) || missedAt >= Date.now()) {
+    return res.status(409).json({ message: 'only missed sessions can be rescheduled from this tab' });
+  }
+
+  const rescheduleWindowMs = 48 * 60 * 60 * 1000;
+  if (Date.now() > missedAt + rescheduleWindowMs) {
+    return res.status(409).json({ message: 'the 48-hour reschedule window has expired for this missed session' });
+  }
+
+  const owner = {
+    id: booking.userId,
+    name: booking.name,
+    email: booking.email,
+    mobile: booking.mobile,
+    membershipStatus: booking.membershipStatus,
+    membershipExpiresAt: booking.membershipExpiresAt,
+  };
+  const payload = validateBookingPayload(
+    {
+      serviceName: booking.serviceName,
+      bookingDate: req.body?.bookingDate,
+      bookingTime: req.body?.bookingTime,
+      notes: booking.notes || '',
+    },
+    owner
+  );
+  if (payload.error) return res.status(400).json({ message: payload.error });
+
+  const selectedService = getServiceByName(booking.serviceName);
+  if (selectedService && String(selectedService.category || '').toUpperCase() === 'HYDROGEN SESSION') {
+    const dailyLimitConflict = validateHydrogenDailySessionLimit(
+      booking.userId,
+      [{ bookingDate: payload.data.bookingDate, bookingTime: payload.data.bookingTime }],
+      [booking.id]
+    );
+    if (dailyLimitConflict) {
+      return res.status(409).json({
+        message: `Only ${dailyLimitConflict.maxAllowed} hydrogen sessions can be booked in one day.`,
+      });
+    }
+  }
+
+  const slotStatus = getSlotCapacityStatus(booking.serviceName, payload.data.bookingDate, payload.data.bookingTime, booking.id);
+  if (slotStatus.reached) {
+    const message = slotStatus.holdTotal > 0
+      ? buildHoldSlotMessage()
+      : `This slot is full. Maximum ${slotStatus.maxPerSlot} bookings are allowed.`;
+    return res.status(409).json({ message });
+  }
+
+  const rescheduleNote = `Rescheduled by admin from ${booking.bookingDate} ${booking.bookingTime} to ${payload.data.bookingDate} ${payload.data.bookingTime}`;
+  const nextNotes = [String(booking.notes || '').trim(), rescheduleNote].filter(Boolean).join('\n');
+
+  db.prepare(
+    `UPDATE bookings
+     SET booking_date = ?,
+         booking_time = ?,
+         status = 'confirmed',
+         notes = ?
+     WHERE id = ?`
+  ).run(payload.data.bookingDate, payload.data.bookingTime, nextNotes, booking.id);
+
+  const updated = db
+    .prepare(
+      `SELECT id,
+              user_id AS userId,
+              service_name AS serviceName,
+              booking_date AS bookingDate,
+              booking_time AS bookingTime,
+              status,
+              payment_status AS paymentStatus,
+              notes
+       FROM bookings
+       WHERE id = ?`
+    )
+    .get(booking.id);
+
+  return res.json({ booking: updated });
+});
+
 app.post('/api/bookings/:id/pay', requireAuth, (req, res) => {
   return res.status(410).json({ message: 'Use /api/payments/create-order and /api/payments/verify for Razorpay.' });
 });
@@ -7539,6 +7660,7 @@ function setAuthCookie(req, res, user) {
     ...getAuthCookieOptions(req),
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
+  return token;
 }
 
 function getAuthCookieOptions(req) {
@@ -7565,37 +7687,47 @@ function shouldUseSecureAuthCookie(req) {
 }
 
 function requireAuth(req, res, next) {
-  const token = req.cookies[TOKEN_COOKIE];
-  if (!token) return res.status(401).json({ message: 'unauthorized' });
+  const authorizationHeader = String(req.headers.authorization || '').trim();
+  const bearerToken = authorizationHeader.toLowerCase().startsWith('bearer ')
+    ? authorizationHeader.slice(7).trim()
+    : '';
+  const tokens = [req.cookies[TOKEN_COOKIE], bearerToken]
+    .map((token) => String(token || '').trim())
+    .filter(Boolean);
+  if (!tokens.length) return res.status(401).json({ message: 'unauthorized' });
 
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    syncMembershipForUser({ userId: Number(payload.sub) });
-    const user = getUserProfileById(Number(payload.sub));
+  for (const token of tokens) {
+    try {
+      const payload = jwt.verify(token, JWT_SECRET);
+      syncMembershipForUser({ userId: Number(payload.sub) });
+      const user = getUserProfileById(Number(payload.sub));
 
-    if (!user) return res.status(401).json({ message: 'unauthorized' });
+      if (!user) continue;
 
-    req.user = {
-      id: Number(user.id),
-      name: String(user.name),
-      email: String(user.email),
-      role: String(user.role || 'user'),
-      age: user.age ?? null,
-      gender: user.gender || '',
-      mobile: user.mobile || '',
-      avatarUrl: user.avatarUrl || '',
-      membershipStatus: user.membershipStatus || 'inactive',
-      membershipPlan: user.membershipPlan || '',
-      membershipStartedAt: user.membershipStartedAt || null,
-      membershipExpiresAt: user.membershipExpiresAt || null,
-      membershipPeopleCount: user.membershipPeopleCount ?? null,
-      membershipSubscriptionId: user.membershipSubscriptionId || null,
-    };
+      req.user = {
+        id: Number(user.id),
+        name: String(user.name),
+        email: String(user.email),
+        role: String(user.role || 'user'),
+        age: user.age ?? null,
+        gender: user.gender || '',
+        mobile: user.mobile || '',
+        avatarUrl: user.avatarUrl || '',
+        membershipStatus: user.membershipStatus || 'inactive',
+        membershipPlan: user.membershipPlan || '',
+        membershipStartedAt: user.membershipStartedAt || null,
+        membershipExpiresAt: user.membershipExpiresAt || null,
+        membershipPeopleCount: user.membershipPeopleCount ?? null,
+        membershipSubscriptionId: user.membershipSubscriptionId || null,
+      };
 
-    return next();
-  } catch {
-    return res.status(401).json({ message: 'unauthorized' });
+      return next();
+    } catch {
+      // Try the next available auth source before rejecting the request.
+    }
   }
+
+  return res.status(401).json({ message: 'unauthorized' });
 }
 
 function validateBookingPayload(body, user) {

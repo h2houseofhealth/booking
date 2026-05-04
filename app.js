@@ -24,14 +24,45 @@ function buildApiUrl(url = '') {
   return `${apiBase}${normalized}`;
 }
 
+const AUTH_TOKEN_STORAGE_KEY = 'booking_portal_auth_token';
+
+function getStoredAuthToken() {
+  try {
+    return String(window.localStorage?.getItem(AUTH_TOKEN_STORAGE_KEY) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function storeAuthToken(token = '') {
+  const normalized = String(token || '').trim();
+  state.authToken = normalized;
+  try {
+    if (normalized) {
+      window.localStorage?.setItem(AUTH_TOKEN_STORAGE_KEY, normalized);
+    } else {
+      window.localStorage?.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // Local storage can be unavailable in private or embedded browsing contexts.
+  }
+}
+
 function withApiCredentials(options = {}) {
+  const headers = new Headers(options.headers || {});
+  const authToken = String(state.authToken || '').trim();
+  if (authToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${authToken}`);
+  }
   return {
     credentials: 'include',
     ...options,
+    headers,
   };
 }
 const state = {
   user: null,
+  authToken: getStoredAuthToken(),
   bookings: [],
   services: [],
   adminMembershipOrders: [],
@@ -61,6 +92,10 @@ const state = {
     startDate: '',
     endDate: '',
   },
+  adminRescheduleSearch: '',
+  adminRescheduleSelections: {},
+  adminRescheduleAvailability: {},
+  adminRescheduleLoading: {},
   returnUserTabAfterEdit: '',
   membership: {
     plans: [],
@@ -269,6 +304,7 @@ const elements = {
   adminTabCalendar: document.getElementById('adminTabCalendar'),
   adminTabMemberships: document.getElementById('adminTabMemberships'),
   adminTabCoupons: document.getElementById('adminTabCoupons'),
+  adminTabRescheduled: document.getElementById('adminTabRescheduled'),
   adminPaymentLinkAnalytics: document.getElementById('adminPaymentLinkAnalytics'),
   adminPaymentLinkFunnel: document.getElementById('adminPaymentLinkFunnel'),
   adminEmailAnalyticsStartDate: document.getElementById('adminEmailAnalyticsStartDate'),
@@ -498,6 +534,10 @@ const elements = {
   adminUserSessionsSection: document.getElementById('adminUserSessionsSection'),
   adminMembershipSection: document.getElementById('adminMembershipSection'),
   adminCouponsSection: document.getElementById('adminCouponsSection'),
+  adminRescheduledSection: document.getElementById('adminRescheduledSection'),
+  adminRescheduleSearch: document.getElementById('adminRescheduleSearch'),
+  adminRescheduleList: document.getElementById('adminRescheduleList'),
+  adminRescheduleEmptyState: document.getElementById('adminRescheduleEmptyState'),
 
   adminSessionSearch: document.getElementById('adminSessionSearch'),
   adminMembershipSearch: document.getElementById('adminMembershipSearch'),
@@ -586,6 +626,46 @@ function openAuthFromLanding(choice = '') {
   });
 }
 
+function ensurePostLoginDashboardChoice() {
+  if (state.user?.role !== 'user' || state.postLoginChoice) return;
+  state.postLoginChoice = isCurrentUserMembershipActive() ? 'continue-member' : 'continue-non-member';
+}
+
+function routeAfterAuthSuccess() {
+  ensurePostLoginDashboardChoice();
+  if (state.postLoginChoice === 'join-member') {
+    state.activeUserTab = 'membership';
+    window.location.hash = '#membership';
+    return;
+  }
+  state.activeUserTab = 'services';
+  window.location.hash = '#services';
+}
+
+async function finishAuthSuccess(result) {
+  state.user = result.user;
+  storeAuthToken(result.token || result.authToken || '');
+  state.postLoginChoice = state.pendingPreAuthChoice || '';
+  state.pendingPreAuthChoice = '';
+  state.showAuthCard = false;
+  routeAfterAuthSuccess();
+  render();
+
+  try {
+    await loadProfile();
+    await loadDashboardData();
+    routeAfterAuthSuccess();
+  } catch (error) {
+    if (Number(error?.status || 0) === 401) {
+      console.warn('Dashboard data load was unauthorized after successful sign-in. Check server restart/auth cookie settings.');
+    } else {
+      console.error(error);
+    }
+  }
+
+  render();
+}
+
 async function bootstrap() {
   const initialTab = getUserTabFromHash(window.location.hash);
   if (initialTab) state.activeUserTab = initialTab;
@@ -595,6 +675,7 @@ async function bootstrap() {
   if (state.user) {
     await loadProfile();
     await loadDashboardData();
+    ensurePostLoginDashboardChoice();
   }
   render();
 }
@@ -744,6 +825,7 @@ function attachEvents() {
     state.pendingPreAuthChoice = '';
     state.showAuthCard = false;
     state.activeUserTab = 'services';
+    storeAuthToken('');
     clearTimeout(adminCustomerRefreshTimer);
     state.membership = { plans: [], active: false, current: null };
     state.membershipBrowseVisible = false;
@@ -769,6 +851,10 @@ function attachEvents() {
     state.adminPaymentLinkAnalytics = null;
     state.adminPaymentLinkAnalyticsRows = [];
     state.adminEmailAnalyticsFilters = { startDate: '', endDate: '' };
+    state.adminRescheduleSearch = '';
+    state.adminRescheduleSelections = {};
+    state.adminRescheduleAvailability = {};
+    state.adminRescheduleLoading = {};
     state.adminCalendarDate = '';
     state.adminCalendarCategory = 'HYDROGEN SESSION';
     state.adminCalendarServiceName = '';
@@ -873,8 +959,32 @@ function attachEvents() {
     const normalized = normalizeTenDigitMobile(target.value);
     if (target.value !== normalized) target.value = normalized;
   });
-  elements.joinAsMemberBtn?.addEventListener('click', openMembershipPlansFromLanding);
-  elements.topExplorePlansBtn?.addEventListener('click', openMembershipPlansFromLanding);
+  elements.joinAsMemberBtn?.addEventListener('click', () => {
+    if (!state.user) {
+      openAuthFromLanding('join-member');
+      return;
+    }
+    state.postLoginChoice = 'join-member';
+    state.activeUserTab = 'membership';
+    window.location.hash = '#membership';
+    render();
+    requestAnimationFrame(() => {
+      document.querySelector('[aria-label="Membership"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  elements.topExplorePlansBtn?.addEventListener('click', () => {
+    if (state.user) {
+      ensurePostLoginDashboardChoice();
+      state.activeUserTab = 'services';
+      window.location.hash = '#services';
+      render();
+      requestAnimationFrame(() => {
+        elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return;
+    }
+    openAuthFromLanding('continue-member');
+  });
   document.querySelectorAll('[data-member-choice-join]').forEach((btn) => {
     btn.addEventListener('click', openMembershipPlansFromLanding);
   });
@@ -1403,6 +1513,10 @@ function attachEvents() {
     state.adminMembershipSearch = String(event.target.value || '').trim().toLowerCase();
     render();
   });
+  elements.adminRescheduleSearch?.addEventListener('input', (event) => {
+    state.adminRescheduleSearch = String(event.target.value || '').trim().toLowerCase();
+    render();
+  });
   elements.adminCalendarDate?.addEventListener('change', async (event) => {
     state.adminCalendarDate = String(event.target.value || '').trim() || getTodayIsoDate();
     state.adminCalendarMonth = state.adminCalendarDate.slice(0, 7);
@@ -1483,6 +1597,10 @@ function attachEvents() {
   });
   elements.adminTabMemberships?.addEventListener('click', () => {
     state.adminActiveTab = 'memberships';
+    render();
+  });
+  elements.adminTabRescheduled?.addEventListener('click', () => {
+    state.adminActiveTab = 'rescheduled';
     render();
   });
   elements.adminTabCoupons?.addEventListener('click', () => {
@@ -1720,22 +1838,8 @@ async function submitAuth() {
         body: JSON.stringify({ email, password }),
       });
 
-      state.user = result.user;
-      state.postLoginChoice = state.pendingPreAuthChoice || '';
-      state.pendingPreAuthChoice = '';
-      state.showAuthCard = false;
-      state.activeUserTab = 'services';
       elements.authForm.reset();
-      await loadProfile();
-      await loadDashboardData();
-      if (state.postLoginChoice === 'join-member') {
-        state.activeUserTab = 'membership';
-        window.location.hash = '#membership';
-      } else if (state.postLoginChoice === 'continue-member' || state.postLoginChoice === 'continue-non-member') {
-        state.activeUserTab = 'services';
-        window.location.hash = '#services';
-      }
-      render();
+      await finishAuthSuccess(result);
       return;
     }
 
@@ -1848,27 +1952,18 @@ async function submitAuth() {
       }),
     });
 
-    state.user = result.user;
-    state.postLoginChoice = state.pendingPreAuthChoice || '';
-    state.pendingPreAuthChoice = '';
-    state.showAuthCard = false;
-    state.activeUserTab = 'services';
     signupStage = 'details';
     pendingSignupName = '';
     pendingSignupEmail = '';
     signupOtpResendAvailableAt = 0;
     elements.authForm.reset();
-    await loadProfile();
-    await loadDashboardData();
-    if (state.postLoginChoice === 'join-member') {
-      state.activeUserTab = 'membership';
-      window.location.hash = '#membership';
-    } else if (state.postLoginChoice === 'continue-member' || state.postLoginChoice === 'continue-non-member') {
-      state.activeUserTab = 'services';
-      window.location.hash = '#services';
-    }
-    render();
+    await finishAuthSuccess(result);
   } catch (error) {
+    if (state.user) {
+      routeAfterAuthSuccess();
+      render();
+      return;
+    }
     elements.authError.textContent = error.message;
   }
 }
@@ -1880,6 +1975,7 @@ async function loadCurrentUser() {
     syncPostLoginChoiceWithMembership();
   } catch {
     state.user = null;
+    storeAuthToken('');
   }
 }
 
@@ -4473,6 +4569,106 @@ function getFilteredAdminAllBookings(bookings = state.bookings) {
   });
 }
 
+function getMissedRescheduleWindowMs() {
+  return 48 * 60 * 60 * 1000;
+}
+
+function getRescheduleWindowExpiresAt(booking) {
+  const startTime = getBookingStartTime(booking);
+  if (!Number.isFinite(startTime)) return Number.NaN;
+  return startTime + getMissedRescheduleWindowMs();
+}
+
+function isAdminRescheduleEligible(booking) {
+  const status = String(booking?.status || '').trim().toLowerCase();
+  if (status === 'cancelled' || status === 'completed') return false;
+  if (normalizePaymentStatusKey(booking?.paymentStatus) !== 'paid') return false;
+  if (!isBookingMissed(booking)) return false;
+  const expiresAt = getRescheduleWindowExpiresAt(booking);
+  return Number.isFinite(expiresAt) && Date.now() <= expiresAt;
+}
+
+function getFilteredAdminRescheduleBookings(bookings = state.bookings) {
+  const query = String(state.adminRescheduleSearch || '').trim().toLowerCase();
+  const queue = (Array.isArray(bookings) ? bookings : [])
+    .filter(isAdminRescheduleEligible)
+    .sort((a, b) => getBookingStartTime(a) - getBookingStartTime(b));
+  if (!query) return queue;
+  return queue.filter((booking) => {
+    const haystack = [booking?.clientName, booking?.clientEmail, booking?.clientMobile, booking?.serviceName]
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
+function getServiceCategoryForBooking(booking) {
+  return String(getServiceCatalogEntry(booking?.serviceName || '')?.category || '').trim().toUpperCase();
+}
+
+function getAdminRescheduleSelection(booking) {
+  const id = String(booking?.id || '');
+  const existing = state.adminRescheduleSelections?.[id] || {};
+  const bookingCategory = getServiceCategoryForBooking(booking) || 'HYDROGEN SESSION';
+  const date = String(existing.bookingDate || getTodayIsoDate()).trim();
+  return {
+    bookingDate: date < getTodayIsoDate() ? getTodayIsoDate() : date,
+    bookingTime: String(existing.bookingTime || '').trim(),
+    category: bookingCategory,
+  };
+}
+
+function getAdminRescheduleAvailabilityKey(bookingId, bookingDate, category) {
+  return [bookingId, bookingDate, category].map((value) => String(value || '').trim()).join('|');
+}
+
+async function loadAdminRescheduleAvailability(booking) {
+  const id = String(booking?.id || '');
+  if (!id) return;
+  const selection = getAdminRescheduleSelection(booking);
+  const key = getAdminRescheduleAvailabilityKey(id, selection.bookingDate, selection.category);
+  state.adminRescheduleLoading = { ...(state.adminRescheduleLoading || {}), [id]: true };
+  renderAdminRescheduleQueue();
+  try {
+    const params = new URLSearchParams({
+      bookingDate: selection.bookingDate,
+      category: selection.category || 'HYDROGEN SESSION',
+    });
+    if (String(booking.clientEmail || '').trim()) {
+      params.set('customerEmail', String(booking.clientEmail || '').trim());
+    }
+    const result = await api(`/api/services/availability?${params.toString()}`);
+    state.adminRescheduleAvailability = {
+      ...(state.adminRescheduleAvailability || {}),
+      [key]: {
+        availability: result.availability || {},
+        holds: result.holds || {},
+        slotCapacityByService: result.slotCapacityByService || {},
+      },
+    };
+  } finally {
+    state.adminRescheduleLoading = { ...(state.adminRescheduleLoading || {}), [id]: false };
+    renderAdminRescheduleQueue();
+  }
+}
+
+function getAvailableAdminRescheduleSlots(booking) {
+  const selection = getAdminRescheduleSelection(booking);
+  const key = getAdminRescheduleAvailabilityKey(booking.id, selection.bookingDate, selection.category);
+  const payload = state.adminRescheduleAvailability?.[key] || null;
+  if (!payload) return [];
+  const serviceName = String(booking?.serviceName || '').trim();
+  const bookedBySlot = payload.availability?.[serviceName] || {};
+  const holdsBySlot = payload.holds?.[serviceName] || {};
+  const capacity = Math.max(1, Number(payload.slotCapacityByService?.[serviceName] || 1));
+  return SLOT_OPTIONS.filter((slot) => {
+    if (isBookingSlotInPast(selection.bookingDate, slot.value)) return false;
+    const booked = Number(bookedBySlot[slot.value] || 0);
+    const held = Number(holdsBySlot[slot.value] || 0);
+    return booked + held < capacity;
+  });
+}
+
 function render() {
   const isAuthenticated = Boolean(state.user);
   const showPublicChoiceGate = !isAuthenticated;
@@ -4571,6 +4767,7 @@ function render() {
     elements.adminTabCalendar?.classList.toggle('is-active', activeAdminTab === 'calendar');
     elements.adminTabMemberships?.classList.toggle('is-active', activeAdminTab === 'memberships');
     elements.adminTabCoupons?.classList.toggle('is-active', activeAdminTab === 'coupons');
+    elements.adminTabRescheduled?.classList.toggle('is-active', activeAdminTab === 'rescheduled');
 
     if (elements.adminHistoryToggleBtnWrap) elements.adminHistoryToggleBtnWrap.hidden = true;
     if (elements.adminHistorySection) elements.adminHistorySection.hidden = !(activeAdminTab === 'bookings' || activeAdminTab === 'today');
@@ -4580,6 +4777,7 @@ function render() {
     if (elements.adminCalendarSection) elements.adminCalendarSection.hidden = activeAdminTab !== 'calendar';
     if (elements.adminMembershipSection) elements.adminMembershipSection.hidden = activeAdminTab !== 'memberships';
     if (elements.adminCouponsSection) elements.adminCouponsSection.hidden = activeAdminTab !== 'coupons';
+    if (elements.adminRescheduledSection) elements.adminRescheduledSection.hidden = activeAdminTab !== 'rescheduled';
     if (elements.servicesSection) elements.servicesSection.hidden = activeAdminTab !== 'bookings';
     if (elements.bookingFiltersSection) elements.bookingFiltersSection.hidden = activeAdminTab !== 'bookings';
 
@@ -4600,6 +4798,7 @@ function render() {
     renderAdminCalendar();
     renderAdminUserSessionDialog();
     renderAdminMembershipOrders();
+    renderAdminRescheduleQueue();
     renderAdminDiscountPhones();
     renderAdminDiscountUsers();
     renderAdminCoupons();
@@ -4876,6 +5075,11 @@ function renderServices() {
   }
   if (!state.serviceDetailSelections) {
     state.serviceDetailSelections = {};
+  }
+  for (const category of orderedCategories) {
+    if ((grouped.get(category) || []).length && !Object.prototype.hasOwnProperty.call(state.expandedServiceCategories, category)) {
+      state.expandedServiceCategories[category] = true;
+    }
   }
 
   // Display all service categories as image-first, clickable cards.
@@ -8605,6 +8809,145 @@ function renderAdminMembershipOrders() {
     });
     elements.adminMembershipOrdersList.appendChild(circle);
   }
+}
+
+function renderAdminRescheduleQueue() {
+  if (!elements.adminRescheduleList || !elements.adminRescheduleEmptyState) return;
+
+  const bookings = getFilteredAdminRescheduleBookings(state.bookings);
+  elements.adminRescheduleList.innerHTML = '';
+  if (!bookings.length) {
+    elements.adminRescheduleEmptyState.hidden = false;
+    return;
+  }
+
+  elements.adminRescheduleEmptyState.hidden = true;
+  for (const booking of bookings) {
+    const id = String(booking.id || '');
+    const selection = getAdminRescheduleSelection(booking);
+    const expiresAt = getRescheduleWindowExpiresAt(booking);
+    const slots = getAvailableAdminRescheduleSlots(booking);
+    const availabilityKey = getAdminRescheduleAvailabilityKey(id, selection.bookingDate, selection.category);
+    const hasCheckedAvailability = Boolean(state.adminRescheduleAvailability?.[availabilityKey]);
+    const isLoading = Boolean(state.adminRescheduleLoading?.[id]);
+
+    const card = document.createElement('article');
+    card.className = 'admin-reschedule-card';
+    card.innerHTML = `
+      <div class="admin-reschedule-card-main">
+        <h3>${escapeHtml(booking.clientName || 'User')}</h3>
+        <p>${escapeHtml([booking.clientMobile, booking.clientEmail].filter(Boolean).join(' • ') || '-')}</p>
+        <p><strong>${escapeHtml(booking.serviceName || 'Session')}</strong></p>
+        <p>Missed: ${escapeHtml(formatDateTime(booking.bookingDate, booking.bookingTime))}</p>
+        <p>Payment: ${escapeHtml(formatPaymentStatusLabel(booking.paymentStatus))}</p>
+        <p>Window closes: ${Number.isFinite(expiresAt) ? escapeHtml(new Date(expiresAt).toLocaleString()) : '-'}</p>
+      </div>
+      <div class="admin-reschedule-controls">
+        <label>
+          New date
+          <input class="admin-reschedule-date" type="date" min="${getTodayIsoDate()}" max="${getMaxBookingIsoDate()}" value="${escapeHtml(selection.bookingDate)}" />
+        </label>
+        <button class="btn btn-secondary admin-reschedule-check" type="button">${isLoading ? 'Checking...' : 'Check Slots'}</button>
+        <label>
+          Available slot
+          <select class="admin-reschedule-time"></select>
+        </label>
+        <button class="btn btn-primary admin-reschedule-confirm" type="button">Confirm Reschedule</button>
+      </div>
+    `;
+
+    const dateInput = card.querySelector('.admin-reschedule-date');
+    const checkBtn = card.querySelector('.admin-reschedule-check');
+    const timeSelect = card.querySelector('.admin-reschedule-time');
+    const confirmBtn = card.querySelector('.admin-reschedule-confirm');
+
+    if (timeSelect) {
+      timeSelect.innerHTML = '';
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = hasCheckedAvailability
+        ? slots.length
+          ? 'Select an available slot'
+          : 'No open slots for this date'
+        : 'Check slots first';
+      timeSelect.appendChild(placeholder);
+      for (const slot of slots) {
+        const option = document.createElement('option');
+        option.value = slot.value;
+        option.textContent = slot.label;
+        timeSelect.appendChild(option);
+      }
+      if (slots.some((slot) => slot.value === selection.bookingTime)) {
+        timeSelect.value = selection.bookingTime;
+      }
+      timeSelect.disabled = !hasCheckedAvailability || isLoading || !slots.length;
+    }
+
+    if (confirmBtn) {
+      confirmBtn.disabled = !timeSelect?.value || isLoading;
+    }
+    if (checkBtn) {
+      checkBtn.disabled = isLoading;
+    }
+
+    dateInput?.addEventListener('change', () => {
+      state.adminRescheduleSelections = {
+        ...(state.adminRescheduleSelections || {}),
+        [id]: {
+          bookingDate: String(dateInput.value || getTodayIsoDate()).trim(),
+          bookingTime: '',
+        },
+      };
+      renderAdminRescheduleQueue();
+    });
+
+    checkBtn?.addEventListener('click', async () => {
+      await loadAdminRescheduleAvailability(booking);
+    });
+
+    timeSelect?.addEventListener('change', () => {
+      state.adminRescheduleSelections = {
+        ...(state.adminRescheduleSelections || {}),
+        [id]: {
+          ...getAdminRescheduleSelection(booking),
+          bookingTime: String(timeSelect.value || '').trim(),
+        },
+      };
+      renderAdminRescheduleQueue();
+    });
+
+    confirmBtn?.addEventListener('click', async () => {
+      await confirmAdminRescheduleBooking(booking);
+    });
+
+    elements.adminRescheduleList.appendChild(card);
+  }
+}
+
+async function confirmAdminRescheduleBooking(booking) {
+  const id = Number(booking?.id || 0);
+  if (!Number.isInteger(id) || id <= 0) return;
+  const selection = getAdminRescheduleSelection(booking);
+  if (!selection.bookingDate || !selection.bookingTime) {
+    showNotice({ title: 'Select slot', body: 'Choose an available reschedule slot first.' });
+    return;
+  }
+  const confirmed = confirm(`Reschedule ${booking.clientName || 'this user'} to ${formatDateTime(selection.bookingDate, selection.bookingTime)}?`);
+  if (!confirmed) return;
+
+  await api(`/api/admin/bookings/${id}/reschedule-missed`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      bookingDate: selection.bookingDate,
+      bookingTime: selection.bookingTime,
+    }),
+  });
+  delete state.adminRescheduleSelections[String(id)];
+  state.adminRescheduleAvailability = {};
+  await loadDashboardData();
+  render();
+  showNotice({ title: 'Rescheduled', body: 'Missed session rescheduled without requesting another payment.' });
 }
 
 function openMembershipDetailsModal(order) {

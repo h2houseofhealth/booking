@@ -12677,3 +12677,45 @@ img {
   background: rgba(255, 251, 246, 0.98);
   border: 1px solid rgba(201, 106, 45, 0.22);
 }
+
+.admin-reschedule-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-reschedule-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.85fr);
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(201, 106, 45, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 251, 246, 0.96);
+}
+
+.admin-reschedule-card-main h3 {
+  margin: 0 0 0.35rem;
+}
+
+.admin-reschedule-card-main p {
+  margin: 0.25rem 0;
+  color: #6c584d;
+}
+
+.admin-reschedule-controls {
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+}
+
+.admin-reschedule-controls label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .admin-reschedule-card {
+    grid-template-columns: 1fr;
+  }
+}

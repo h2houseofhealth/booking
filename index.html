@@ -119,8 +119,8 @@
               <a href="#memberChoiceGate">About Us</a>
               <a href="#memberChoiceGate">FAQs</a>
             </nav>
-            <button id="topExplorePlansBtn" class="member-choice-topbar-cta" type="button" aria-label="Explore all plans">
-              Explore All Plans
+            <button id="topExplorePlansBtn" class="member-choice-topbar-cta" type="button" aria-label="Sign in or login to member account">
+              Sign In / Login
               <span aria-hidden="true">→</span>
             </button>
           </div>
@@ -402,6 +402,7 @@
           <button id="adminTabHistory" class="user-tab-btn" type="button">History</button>
           <button id="adminTabCoupons" class="user-tab-btn" type="button">Coupons</button>
           <button id="adminTabMemberships" class="user-tab-btn" type="button">Memberships</button>
+          <button id="adminTabRescheduled" class="user-tab-btn" type="button">Rescheduled</button>
         </div>
       </section>
 
@@ -990,6 +991,21 @@
         </div>
         <div id="adminMembershipOrdersList" class="admin-membership-circles"></div>
         <p id="adminMembershipEmptyState" class="empty-state">No paid memberships found.</p>
+      </section>
+
+      <section id="adminRescheduledSection" class="panel app-only admin-only" aria-label="Missed session rescheduling" hidden>
+        <div class="panel-head">
+          <h2>Rescheduled</h2>
+        </div>
+        <div class="admin-section-toolbar">
+          <p class="membership-copy">Only paid missed sessions still inside the 48-hour reschedule window are shown here.</p>
+          <label class="admin-inline-search">
+            <span>Search</span>
+            <input id="adminRescheduleSearch" type="text" placeholder="Search by name, email, phone number, service" />
+          </label>
+        </div>
+        <div id="adminRescheduleList" class="admin-reschedule-list"></div>
+        <p id="adminRescheduleEmptyState" class="empty-state">No missed sessions are eligible for rescheduling.</p>
       </section>
 
       <section id="adminCouponsSection" class="panel app-only admin-only" aria-label="Coupons" hidden>

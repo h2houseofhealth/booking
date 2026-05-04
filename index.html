@@ -388,7 +388,7 @@
           <p id="totalCount">0</p>
         </button>
         <button id="adminHistoryCard" class="stat-card" type="button">
-          <h2>User Bookings (Payment Pending)</h2>
+          <h2>Total Bookings Till Date</h2>
           <p id="historyCount">0</p>
         </button>
       </section>
@@ -397,12 +397,11 @@
         <div class="user-tab-grid admin-tab-grid">
           <button id="adminTabCalendar" class="user-tab-btn" type="button">Calendar</button>
           <button id="adminTabBookings" class="user-tab-btn" type="button">Bookings</button>
-          <button id="adminTabUserBookings" class="user-tab-btn" type="button">User Bookings</button>
           <button id="adminTabSessions" class="user-tab-btn" type="button">Session Tracking</button>
           <button id="adminTabHistory" class="user-tab-btn" type="button">History</button>
           <button id="adminTabCoupons" class="user-tab-btn" type="button">Coupons</button>
           <button id="adminTabMemberships" class="user-tab-btn" type="button">Memberships</button>
-          <button id="adminTabRescheduled" class="user-tab-btn" type="button">Rescheduled</button>
+          <button id="adminTabRescheduled" class="user-tab-btn" type="button">Reschedule</button>
         </div>
       </section>
 
@@ -480,6 +479,17 @@
               <span id="membershipStatValidLabel" class="stat-label">Valid Till</span>
               <strong id="membershipStatValid">-</strong>
               <small id="membershipStatValidMeta">Plan end</small>
+            </button>
+            <button class="membership-stat-card" type="button">
+              <span class="stat-icon stat-icon-session" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M12 5v14" />
+                  <path d="M5 12h14" />
+                </svg>
+              </span>
+              <span id="membershipStatExtraLabel" class="stat-label">Extra Sessions</span>
+              <strong id="membershipStatExtra">0</strong>
+              <small id="membershipStatExtraMeta">Bought</small>
             </button>
           </div>
           <div class="membership-dashboard-row">
@@ -656,7 +666,6 @@
             Category
             <select id="adminCalendarCategory">
               <option value="HYDROGEN SESSION">Hydrogen Session</option>
-              <option value="EXPERIENCE SESSION">Consultation</option>
               <option value="IV THERAPIES">Therapies</option>
               <option value="IV SHOTS">Shots</option>
             </select>
@@ -898,46 +907,6 @@
         </div>
       </section>
 
-      <section id="adminUserBookingsSection" class="panel app-only admin-only" aria-label="Payment pending bookings" hidden>
-        <div class="panel-head">
-          <h2>Payment Pending Bookings</h2>
-        </div>
-        <div class="admin-section-toolbar admin-section-toolbar--filters">
-          <p class="membership-copy">Bookings awaiting payment. Use “Paid in Cash” if customer paid offline.</p>
-          <label class="admin-inline-search admin-inline-search--date">
-            <span>From</span>
-            <input id="adminPendingBookingStartDate" type="date" />
-          </label>
-          <label class="admin-inline-search admin-inline-search--date">
-            <span>To</span>
-            <input id="adminPendingBookingEndDate" type="date" />
-          </label>
-          <button id="adminPendingBookingDateResetBtn" class="btn btn-secondary" type="button">Clear</button>
-          <label class="admin-inline-search admin-inline-search--search">
-            <span>Search</span>
-            <input id="adminPendingBookingSearch" type="text" placeholder="Search by name, email, phone number, service" />
-          </label>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Patient</th>
-                <th>Service</th>
-                <th>Date & Time</th>
-                <th>Booked At</th>
-                <th>Status</th>
-                <th>Payment</th>
-                <th>Payment Link Email</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="adminPendingBookingTableBody"></tbody>
-          </table>
-          <p id="adminPendingEmptyState" class="empty-state">No payment pending bookings found.</p>
-        </div>
-      </section>
-
       <section id="adminAllBookingsSection" class="panel app-only admin-only" aria-label="Booking history" hidden>
         <div class="panel-head">
           <h2>History of All Bookings</h2>
@@ -995,17 +964,17 @@
 
       <section id="adminRescheduledSection" class="panel app-only admin-only" aria-label="Missed session rescheduling" hidden>
         <div class="panel-head">
-          <h2>Rescheduled</h2>
+          <h2>Reschedule</h2>
         </div>
         <div class="admin-section-toolbar">
-          <p class="membership-copy">Only paid missed sessions still inside the 48-hour reschedule window are shown here.</p>
+          <p class="membership-copy">Bookings can be rescheduled before the slot starts, or within 20 minutes after a missed slot. Customer OTP verification is required.</p>
           <label class="admin-inline-search">
             <span>Search</span>
             <input id="adminRescheduleSearch" type="text" placeholder="Search by name, email, phone number, service" />
           </label>
         </div>
         <div id="adminRescheduleList" class="admin-reschedule-list"></div>
-        <p id="adminRescheduleEmptyState" class="empty-state">No missed sessions are eligible for rescheduling.</p>
+        <p id="adminRescheduleEmptyState" class="empty-state">No bookings to reschedule or track.</p>
       </section>
 
       <section id="adminCouponsSection" class="panel app-only admin-only" aria-label="Coupons" hidden>

@@ -173,6 +173,7 @@ const state = {
   adminCalendarMonth: '',
   adminCalendarMonthLoading: false,
   adminCalendarDayCache: {},
+  adminCalendarPaymentMode: 'link',
   filters: {
     search: '',
     status: 'all',
@@ -241,6 +242,7 @@ const HYDROGEN_FREE_SESSIONS_PER_USER = 16;
 const ADMIN_USER_CARD_DEFAULT_LIMIT = 10;
 const ADMIN_USER_CARD_LARGE_DATASET_THRESHOLD = 300;
 const AUTH_OTP_RESEND_COOLDOWN_MS = 30_000;
+const ADMIN_RESCHEDULE_MISSED_WINDOW_MS = 20 * 60 * 1000;
 
 function isHydrogenCategory(category) {
   return String(category || '').trim().toUpperCase() === 'HYDROGEN SESSION';
@@ -375,6 +377,9 @@ const elements = {
   membershipStatValidLabel: document.getElementById('membershipStatValidLabel'),
   membershipStatValid: document.getElementById('membershipStatValid'),
   membershipStatValidMeta: document.getElementById('membershipStatValidMeta'),
+  membershipStatExtraLabel: document.getElementById('membershipStatExtraLabel'),
+  membershipStatExtra: document.getElementById('membershipStatExtra'),
+  membershipStatExtraMeta: document.getElementById('membershipStatExtraMeta'),
   membershipUsageTitle: document.getElementById('membershipUsageTitle'),
   membershipUsageLabel: document.getElementById('membershipUsageLabel'),
   membershipUsageCount: document.getElementById('membershipUsageCount'),
@@ -1580,7 +1585,7 @@ function attachEvents() {
   });
 
   elements.adminHistoryCard?.addEventListener('click', () => {
-    state.adminActiveTab = 'userbookings';
+    state.adminActiveTab = 'history';
     render();
   });
 
@@ -1588,10 +1593,7 @@ function attachEvents() {
     state.adminActiveTab = 'bookings';
     render();
   });
-  elements.adminTabUserBookings?.addEventListener('click', () => {
-    state.adminActiveTab = 'userbookings';
-    render();
-  });
+  elements.adminTabUserBookings?.remove();
   elements.adminTabHistory?.addEventListener('click', () => {
     state.adminActiveTab = 'history';
     render();
@@ -2375,7 +2377,7 @@ function getAdminCalendarSelectedServiceName() {
   return serviceNames[0] || '';
 }
 
-function openAdminCalendarBooking(serviceName, bookingTime = '') {
+function openAdminCalendarBooking(serviceName, bookingTime = '', paymentMode = 'link') {
   const normalizedService = String(serviceName || '').trim();
   if (!normalizedService) {
     showNotice({ title: 'Notice', body: 'Select a service first.' });
@@ -2385,6 +2387,7 @@ function openAdminCalendarBooking(serviceName, bookingTime = '') {
     showNotice({ title: 'Notice', body: 'Enter customer name, email, and contact number first.' });
     return;
   }
+  state.adminCalendarPaymentMode = paymentMode === 'cash' ? 'cash' : 'link';
   openDialog();
   elements.serviceName.value = normalizedService;
   elements.bookingDate.value = state.adminCalendarDate || getTodayIsoDate();
@@ -2649,9 +2652,18 @@ function renderAdminCalendar() {
       actionBtn.textContent = isPast ? 'Unavailable' : 'Book Slot';
       actionBtn.disabled = isPast || openSeats <= 0;
       actionBtn.addEventListener('click', () => {
-        openAdminCalendarBooking(selectedServiceName, slot.value);
+        openAdminCalendarBooking(selectedServiceName, slot.value, 'link');
       });
       row.appendChild(actionBtn);
+      const cashBtn = document.createElement('button');
+      cashBtn.type = 'button';
+      cashBtn.className = 'btn btn-secondary admin-calendar-slot-btn';
+      cashBtn.textContent = 'Book Cash';
+      cashBtn.disabled = isPast || openSeats <= 0;
+      cashBtn.addEventListener('click', () => {
+        openAdminCalendarBooking(selectedServiceName, slot.value, 'cash');
+      });
+      row.appendChild(cashBtn);
       slotList.appendChild(row);
     });
 
@@ -3139,10 +3151,14 @@ async function upsertBooking() {
       if (isAdmin) {
         const registeredEmail = String(result?.customer?.email || '').trim() || String(state.adminCustomerForm.email || '').trim();
         const registeredMobile = String(result?.customer?.mobile || '').trim() || String(state.adminCustomerForm.phone || '').trim();
-        // Admin flow: send payment link to user's email
         closeDialog();
         render();
-        await showAdminPaymentLinkDialog(bookingId, registeredEmail, registeredMobile);
+        if ((state.adminActiveTab || '') === 'calendar' && state.adminCalendarPaymentMode === 'cash') {
+          await markBookingPaidInCash(bookingId);
+        } else {
+          await showAdminPaymentLinkDialog(bookingId, registeredEmail, registeredMobile);
+        }
+        state.adminCalendarPaymentMode = 'link';
       } else {
         // User flow: add to cart and let checkout happen only from "Pay Now"
         closeDialog();
@@ -4564,7 +4580,6 @@ function getFilteredAdminPaymentPendingBookings(bookings = state.bookings) {
 function getFilteredAdminAllBookings(bookings = state.bookings) {
   const query = String(state.adminAllBookingSearch || '').trim().toLowerCase();
   const history = getAdminHistoryBookings(bookings)
-    .filter((booking) => normalizePaymentStatusKey(booking?.paymentStatus) === 'paid')
     .filter((booking) =>
       isIsoDateWithinRange(
         booking?.bookingDate,
@@ -4581,33 +4596,39 @@ function getFilteredAdminAllBookings(bookings = state.bookings) {
   });
 }
 
-function getMissedRescheduleWindowMs() {
-  return 48 * 60 * 60 * 1000;
-}
-
 function getRescheduleWindowExpiresAt(booking) {
   const startTime = getBookingStartTime(booking);
   if (!Number.isFinite(startTime)) return Number.NaN;
-  return startTime + getMissedRescheduleWindowMs();
+  return startTime + ADMIN_RESCHEDULE_MISSED_WINDOW_MS;
 }
 
 function isAdminRescheduleEligible(booking) {
   const status = String(booking?.status || '').trim().toLowerCase();
   if (status === 'cancelled' || status === 'completed') return false;
-  if (normalizePaymentStatusKey(booking?.paymentStatus) !== 'paid') return false;
-  if (!isBookingMissed(booking)) return false;
-  const expiresAt = getRescheduleWindowExpiresAt(booking);
-  return Number.isFinite(expiresAt) && Date.now() <= expiresAt;
+  const startTime = getBookingStartTime(booking);
+  if (!Number.isFinite(startTime)) return false;
+  const now = Date.now();
+  if (startTime > now) return true;
+  return now <= startTime + ADMIN_RESCHEDULE_MISSED_WINDOW_MS;
+}
+
+function isAdminRescheduledBooking(booking) {
+  return String(booking?.notes || '').toLowerCase().includes('rescheduled by admin from');
 }
 
 function getFilteredAdminRescheduleBookings(bookings = state.bookings) {
   const query = String(state.adminRescheduleSearch || '').trim().toLowerCase();
   const queue = (Array.isArray(bookings) ? bookings : [])
-    .filter(isAdminRescheduleEligible)
-    .sort((a, b) => getBookingStartTime(a) - getBookingStartTime(b));
+    .filter((booking) => isAdminRescheduleEligible(booking) || isAdminRescheduledBooking(booking))
+    .sort((a, b) => {
+      const aEligible = isAdminRescheduleEligible(a) ? 0 : 1;
+      const bEligible = isAdminRescheduleEligible(b) ? 0 : 1;
+      if (aEligible !== bEligible) return aEligible - bEligible;
+      return getBookingStartTime(a) - getBookingStartTime(b);
+    });
   if (!query) return queue;
   return queue.filter((booking) => {
-    const haystack = [booking?.clientName, booking?.clientEmail, booking?.clientMobile, booking?.serviceName]
+    const haystack = [booking?.clientName, booking?.clientEmail, booking?.clientMobile, booking?.serviceName, booking?.notes]
       .join(' ')
       .toLowerCase();
     return haystack.includes(query);
@@ -4681,10 +4702,30 @@ function getAvailableAdminRescheduleSlots(booking) {
   });
 }
 
+async function openAdminRescheduleForBooking(booking) {
+  if (!booking?.id) return;
+  state.adminActiveTab = 'rescheduled';
+  state.adminRescheduleSearch = String(booking.clientMobile || booking.clientEmail || booking.clientName || booking.id || '')
+    .trim()
+    .toLowerCase();
+  if (elements.adminRescheduleSearch) elements.adminRescheduleSearch.value = state.adminRescheduleSearch;
+  state.adminRescheduleSelections = {
+    ...(state.adminRescheduleSelections || {}),
+    [String(booking.id)]: {
+      bookingDate: getTodayIsoDate(),
+      bookingTime: '',
+    },
+  };
+  render();
+  requestAnimationFrame(() => {
+    elements.adminRescheduledSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
 function render() {
   const isAuthenticated = Boolean(state.user);
-  const showPublicChoiceGate = !isAuthenticated;
   const showAuthCard = !isAuthenticated && state.showAuthCard;
+  const showPublicChoiceGate = !isAuthenticated && !showAuthCard;
   document.body.classList.toggle('auth-mode', showAuthCard);
   elements.authCard.hidden = !showAuthCard;
   elements.appArea.hidden = !isAuthenticated;
@@ -4767,13 +4808,17 @@ function render() {
   renderCartCouponPreview();
 
   if (isAdmin) {
-    const activeAdminTab = state.adminActiveTab || 'bookings';
+    let activeAdminTab = state.adminActiveTab || 'bookings';
+    if (activeAdminTab === 'userbookings') {
+      activeAdminTab = 'history';
+      state.adminActiveTab = 'history';
+    }
     const todayBookings = getTodayAdminBookings(state.bookings);
     renderAdminUserCards();
 
     if (elements.adminTabNav) elements.adminTabNav.hidden = false;
     elements.adminTabBookings?.classList.toggle('is-active', activeAdminTab === 'bookings' || activeAdminTab === 'today');
-    elements.adminTabUserBookings?.classList.toggle('is-active', activeAdminTab === 'userbookings');
+    elements.adminTabUserBookings?.classList.toggle('is-active', false);
     elements.adminTabHistory?.classList.toggle('is-active', activeAdminTab === 'history');
     elements.adminTabSessions?.classList.toggle('is-active', activeAdminTab === 'sessions');
     elements.adminTabCalendar?.classList.toggle('is-active', activeAdminTab === 'calendar');
@@ -4783,14 +4828,14 @@ function render() {
 
     if (elements.adminHistoryToggleBtnWrap) elements.adminHistoryToggleBtnWrap.hidden = true;
     if (elements.adminHistorySection) elements.adminHistorySection.hidden = !(activeAdminTab === 'bookings' || activeAdminTab === 'today');
-    if (elements.adminUserBookingsSection) elements.adminUserBookingsSection.hidden = activeAdminTab !== 'userbookings';
+    if (elements.adminUserBookingsSection) elements.adminUserBookingsSection.hidden = true;
     if (elements.adminAllBookingsSection) elements.adminAllBookingsSection.hidden = activeAdminTab !== 'history';
     if (elements.adminUserSessionsSection) elements.adminUserSessionsSection.hidden = activeAdminTab !== 'sessions';
     if (elements.adminCalendarSection) elements.adminCalendarSection.hidden = activeAdminTab !== 'calendar';
     if (elements.adminMembershipSection) elements.adminMembershipSection.hidden = activeAdminTab !== 'memberships';
     if (elements.adminCouponsSection) elements.adminCouponsSection.hidden = activeAdminTab !== 'coupons';
     if (elements.adminRescheduledSection) elements.adminRescheduledSection.hidden = activeAdminTab !== 'rescheduled';
-    if (elements.servicesSection) elements.servicesSection.hidden = activeAdminTab !== 'bookings';
+    if (elements.servicesSection) elements.servicesSection.hidden = true;
     if (elements.bookingFiltersSection) elements.bookingFiltersSection.hidden = activeAdminTab !== 'bookings';
 
     if (activeAdminTab === 'bookings' || activeAdminTab === 'today') {
@@ -4798,10 +4843,6 @@ function render() {
       syncAdminEmailAnalyticsFilterInputs();
       renderAdminPaymentLinkAnalytics();
       renderAdminRows(todayBookings);
-    }
-
-    if (activeAdminTab === 'userbookings') {
-      renderAdminHistoryRows(getFilteredAdminPaymentPendingBookings(state.bookings));
     }
 
     if (activeAdminTab === 'history') {
@@ -4948,6 +4989,26 @@ function getHydrogenSessionsUsedThisMembership() {
   return bookings.filter((booking) => {
     if (String(booking.status || '').toLowerCase() !== 'completed') return false;
     if (getBookingCategory(booking.serviceName) !== 'HYDROGEN SESSION') return false;
+    if (!range?.startIso || !range?.endIso) return true;
+    const bookingDate = String(booking.bookingDate || '').trim();
+    return bookingDate >= range.startIso && bookingDate <= range.endIso;
+  }).length;
+}
+
+function isBuyExtraHydrogenBooking(booking) {
+  return (
+    String(booking?.paymentReference || '').trim().toLowerCase() === 'buy_extra' &&
+    getBookingCategory(booking?.serviceName) === 'HYDROGEN SESSION'
+  );
+}
+
+function getHydrogenExtraSessionsThisMembership() {
+  const range = getCurrentMembershipIsoRange();
+  const bookings = Array.isArray(state.bookings) ? state.bookings : [];
+  return bookings.filter((booking) => {
+    if (String(booking.status || '').toLowerCase() === 'cancelled') return false;
+    if (booking.holdExpired) return false;
+    if (!isBuyExtraHydrogenBooking(booking)) return false;
     if (!range?.startIso || !range?.endIso) return true;
     const bookingDate = String(booking.bookingDate || '').trim();
     return bookingDate >= range.startIso && bookingDate <= range.endIso;
@@ -7094,6 +7155,16 @@ function renderMembership() {
   }
 
   const hydrogenSessionSummary = getMembershipHydrogenSessionSummary();
+  const extraSessionsBought = active ? getHydrogenExtraSessionsThisMembership() : 0;
+  if (elements.membershipStatExtraLabel) {
+    elements.membershipStatExtraLabel.textContent = 'Extra Sessions';
+  }
+  if (elements.membershipStatExtra) {
+    elements.membershipStatExtra.textContent = active ? String(extraSessionsBought) : '0';
+  }
+  if (elements.membershipStatExtraMeta) {
+    elements.membershipStatExtraMeta.textContent = active ? 'Bought' : 'Members only';
+  }
   const hydrogenSessions = allBookings.filter(
     (booking) =>
       getBookingCategory(booking.serviceName) === 'HYDROGEN SESSION'
@@ -7122,12 +7193,25 @@ function renderMembership() {
       ? `${usedSessions} of ${totalSessions}`
       : `${allBookings.length} total`;
   }
+  const progressRing = document.getElementById('progressRing');
+  const progressText = document.getElementById('progressText');
+  const remainingSessionsText = document.getElementById('remainingSessions');
+  if (progressRing) {
+    const ringPercent = active ? usagePercent : Math.min(100, Math.max(0, upcomingBookings.length * 12));
+    progressRing.style.background = `conic-gradient(#d2602d ${ringPercent * 3.6}deg, #f0ddd1 0deg)`;
+  }
+  if (progressText) {
+    progressText.textContent = `${active ? usagePercent : Math.min(100, Math.max(0, upcomingBookings.length * 12))}%`;
+  }
+  if (remainingSessionsText) {
+    remainingSessionsText.textContent = String(remainingSessions);
+  }
   if (elements.membershipUsageBar) {
     elements.membershipUsageBar.style.width = `${active ? usagePercent : Math.min(100, Math.max(12, upcomingBookings.length * 12))}%`;
   }
   if (elements.membershipUsageNote) {
     elements.membershipUsageNote.textContent = active
-      ? `${remainingSessions} hydrogen sessions remaining (per member)${missedSessions > 0 ? ` • Missed hydrogen sessions: ${missedSessions}` : ''}`
+      ? `${remainingSessions} hydrogen sessions remaining (per member) • Extra sessions bought: ${extraSessionsBought}${missedSessions > 0 ? ` • Missed hydrogen sessions: ${missedSessions}` : ''}`
       : `You have ${allBookings.length} total booking${allBookings.length === 1 ? '' : 's'}${upcomingBookings.length ? ` • ${upcomingBookings.length} upcoming` : ''}. Upgrade to membership to unlock 16 included hydrogen sessions.`;
   }
 
@@ -7899,12 +7983,14 @@ function renderStats(bookings) {
   const isAdmin = state.user?.role === 'admin';
   if (isAdmin) {
     const todayCount = getTodayAdminBookings(bookings).length;
-    const pendingCount = getAdminPaymentPendingBookings(bookings).length;
+    const totalBookingsTillDate = Array.isArray(bookings)
+      ? bookings.filter((booking) => String(booking?.status || '').trim().toLowerCase() !== 'cancelled').length
+      : 0;
     elements.totalCount.textContent = String(todayCount);
-    if (elements.historyCount) elements.historyCount.textContent = String(pendingCount);
+    if (elements.historyCount) elements.historyCount.textContent = String(totalBookingsTillDate);
     const activeAdminTab = state.adminActiveTab || 'bookings';
     elements.adminStatTotal?.classList.toggle('is-active', activeAdminTab === 'bookings' || activeAdminTab === 'today');
-    elements.adminHistoryCard?.classList.toggle('is-active', (state.adminActiveTab || 'bookings') === 'userbookings');
+    elements.adminHistoryCard?.classList.toggle('is-active', (state.adminActiveTab || 'bookings') === 'history');
     return;
   }
 
@@ -8158,7 +8244,6 @@ function renderUserRows(bookings) {
     if (String(row.status || '').toLowerCase() !== 'cancelled') {
       actions.append(createActionButton('Cancel', () => changeStatus(row.id, 'cancelled')));
     }
-    actions.append(createDangerButton('Delete', () => deleteBooking(row.booking)));
 
     actionCell.appendChild(actions);
     tr.appendChild(actionCell);
@@ -8179,7 +8264,7 @@ function cartAmountCell(row) {
     );
     amountInr = Number(getHydrogenGroupBreakdown(payableHydrogenEntries, payableAddOnEntries).totalAmountInr || 0);
   } else {
-    amountInr = Number(getDisplayedServicePriceInr(row.booking?.serviceName || row.serviceTitle || '') || 0);
+    amountInr = getBookingDisplayAmountInr(row.booking || { serviceName: row.serviceTitle });
   }
   td.textContent = amountInr > 0 ? `Rs. ${amountInr.toLocaleString('en-IN')}` : 'Included';
   return td;
@@ -8323,11 +8408,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
         isGroupedHydrogen: false,
         status: booking.status,
         paymentStatus: booking.paymentStatus || 'unpaid',
-        amountInr:
-          String(booking?.paymentReference || '').trim().toLowerCase() === 'membership' ||
-          String(booking?.paymentStatus || '').trim().toLowerCase() === 'paid'
-            ? 0
-            : Number(getDisplayedServicePriceInr(booking.serviceName) || 0),
+        amountInr: getBookingDisplayAmountInr(booking),
         serviceTitle: booking.serviceName,
         serviceMetaLines: [
           getBookingCategoryLabel(booking.serviceName),
@@ -8353,7 +8434,10 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
     const payableAddOnEntries = addOnEntries.filter(
       (entry) => entry.status !== 'cancelled' && String(entry.paymentStatus || 'unpaid').toLowerCase() !== 'paid'
     );
-    const breakdown = getHydrogenGroupBreakdown(payableHydrogenEntries, payableAddOnEntries);
+    const displayHydrogenEntries = hydrogenEntries.filter((entry) => entry.status !== 'cancelled');
+    const displayAddOnEntries = addOnEntries.filter((entry) => entry.status !== 'cancelled');
+    const breakdown = getHydrogenGroupBreakdown(displayHydrogenEntries, displayAddOnEntries);
+    const payableBreakdown = getHydrogenGroupBreakdown(payableHydrogenEntries, payableAddOnEntries);
     const addOnDetails = addOnEntries.map((entry) => {
       const linkedIndex = hydrogenEntries.findIndex(
         (slot) => slot.bookingDate === entry.bookingDate && slot.bookingTime === entry.bookingTime
@@ -8398,7 +8482,13 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
           ? [
               {
                 title: 'Payment',
-                lines: [breakdown.breakdownText, `Total: Rs. ${breakdown.totalAmountInr.toLocaleString('en-IN')}`],
+                lines: [
+                  breakdown.breakdownText,
+                  `Total: Rs. ${breakdown.totalAmountInr.toLocaleString('en-IN')}`,
+                  ...(payableBreakdown.totalAmountInr > 0
+                    ? [`Payable now: Rs. ${payableBreakdown.totalAmountInr.toLocaleString('en-IN')}`]
+                    : []),
+                ],
               },
             ]
           : []),
@@ -8472,7 +8562,7 @@ function buildUserCartSummary(bookings = state.bookings) {
     if (row.isGroupedHydrogen) {
       totalAmountInr += Number(getHydrogenGroupBreakdown(row.hydrogenEntries || [], row.addOnEntries || []).totalAmountInr || 0);
     } else {
-      totalAmountInr += Number(getDisplayedServicePriceInr(row.booking?.serviceName || row.serviceTitle || '') || 0);
+      totalAmountInr += getBookingDisplayAmountInr(row.booking || { serviceName: row.serviceTitle });
     }
   }
 
@@ -8860,10 +8950,14 @@ function renderAdminRows(bookings) {
 
     const bookingPaid = String(booking.paymentStatus || 'unpaid').toLowerCase() === 'paid';
     if (!bookingPaid && booking.status !== 'cancelled') {
+      actions.append(createActionButton('Paid in Cash', () => markBookingPaidInCash(booking.id)));
       actions.append(createActionButton('Copy Payment Link', () => copyBookingPaymentLink(booking.id)));
     }
     if (bookingPaid) {
       actions.append(createActionButton('Invoice', () => openBookingInvoice(booking.id)));
+    }
+    if (isAdminRescheduleEligible(booking)) {
+      actions.append(createActionButton('Reschedule', () => openAdminRescheduleForBooking(booking)));
     }
 
     actions.append(
@@ -8926,6 +9020,8 @@ function renderAdminRescheduleQueue() {
   elements.adminRescheduleEmptyState.hidden = true;
   for (const booking of bookings) {
     const id = String(booking.id || '');
+    const canReschedule = isAdminRescheduleEligible(booking);
+    const wasRescheduled = isAdminRescheduledBooking(booking);
     const selection = getAdminRescheduleSelection(booking);
     const expiresAt = getRescheduleWindowExpiresAt(booking);
     const slots = getAvailableAdminRescheduleSlots(booking);
@@ -8940,22 +9036,32 @@ function renderAdminRescheduleQueue() {
         <h3>${escapeHtml(booking.clientName || 'User')}</h3>
         <p>${escapeHtml([booking.clientMobile, booking.clientEmail].filter(Boolean).join(' • ') || '-')}</p>
         <p><strong>${escapeHtml(booking.serviceName || 'Session')}</strong></p>
-        <p>Missed: ${escapeHtml(formatDateTime(booking.bookingDate, booking.bookingTime))}</p>
+        <p>${isBookingMissed(booking) ? 'Missed' : 'Current slot'}: ${escapeHtml(formatDateTime(booking.bookingDate, booking.bookingTime))}</p>
         <p>Payment: ${escapeHtml(formatPaymentStatusLabel(booking.paymentStatus))}</p>
-        <p>Window closes: ${Number.isFinite(expiresAt) ? escapeHtml(new Date(expiresAt).toLocaleString()) : '-'}</p>
+        ${
+          canReschedule
+            ? isBookingMissed(booking)
+              ? `<p>Reschedule by: ${Number.isFinite(expiresAt) ? escapeHtml(new Date(expiresAt).toLocaleString()) : '-'}</p>`
+              : '<p>Reschedule allowed before the slot starts.</p>'
+            : `<p>Status: ${wasRescheduled ? 'Already rescheduled' : escapeHtml(getDerivedBookingStatus(booking))}</p>`
+        }
       </div>
-      <div class="admin-reschedule-controls">
-        <label>
-          New date
-          <input class="admin-reschedule-date" type="date" min="${getTodayIsoDate()}" max="${getMaxBookingIsoDate()}" value="${escapeHtml(selection.bookingDate)}" />
-        </label>
-        <button class="btn btn-secondary admin-reschedule-check" type="button">${isLoading ? 'Checking...' : 'Check Slots'}</button>
-        <label>
-          Available slot
-          <select class="admin-reschedule-time"></select>
-        </label>
-        <button class="btn btn-primary admin-reschedule-confirm" type="button">Confirm Reschedule</button>
-      </div>
+      ${
+        canReschedule
+          ? `<div class="admin-reschedule-controls">
+              <label>
+                New date
+                <input class="admin-reschedule-date" type="date" min="${getTodayIsoDate()}" max="${getMaxBookingIsoDate()}" value="${escapeHtml(selection.bookingDate)}" />
+              </label>
+              <button class="btn btn-secondary admin-reschedule-check" type="button">${isLoading ? 'Checking...' : 'Check Slots'}</button>
+              <label>
+                Available slot
+                <select class="admin-reschedule-time"></select>
+              </label>
+              <button class="btn btn-primary admin-reschedule-confirm" type="button">Confirm Reschedule</button>
+            </div>`
+          : ''
+      }
     `;
 
     const dateInput = card.querySelector('.admin-reschedule-date');
@@ -8963,7 +9069,7 @@ function renderAdminRescheduleQueue() {
     const timeSelect = card.querySelector('.admin-reschedule-time');
     const confirmBtn = card.querySelector('.admin-reschedule-confirm');
 
-    if (timeSelect) {
+    if (canReschedule && timeSelect) {
       timeSelect.innerHTML = '';
       const placeholder = document.createElement('option');
       placeholder.value = '';
@@ -8985,10 +9091,10 @@ function renderAdminRescheduleQueue() {
       timeSelect.disabled = !hasCheckedAvailability || isLoading || !slots.length;
     }
 
-    if (confirmBtn) {
+    if (canReschedule && confirmBtn) {
       confirmBtn.disabled = !timeSelect?.value || isLoading;
     }
-    if (checkBtn) {
+    if (canReschedule && checkBtn) {
       checkBtn.disabled = isLoading;
     }
 
@@ -9034,8 +9140,19 @@ async function confirmAdminRescheduleBooking(booking) {
     showNotice({ title: 'Select slot', body: 'Choose an available reschedule slot first.' });
     return;
   }
-  const confirmed = confirm(`Reschedule ${booking.clientName || 'this user'} to ${formatDateTime(selection.bookingDate, selection.bookingTime)}?`);
+  const confirmed = confirm(`Send OTP to ${booking.clientEmail || 'the customer'} before rescheduling to ${formatDateTime(selection.bookingDate, selection.bookingTime)}?`);
   if (!confirmed) return;
+
+  const otpResult = await api(`/api/admin/bookings/${id}/reschedule-otp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      bookingDate: selection.bookingDate,
+      bookingTime: selection.bookingTime,
+    }),
+  });
+  const otp = prompt(`${otpResult?.message || 'OTP sent to customer email.'}\n\nEnter customer OTP to confirm reschedule:`);
+  if (!otp) return;
 
   await api(`/api/admin/bookings/${id}/reschedule-missed`, {
     method: 'PATCH',
@@ -9043,6 +9160,7 @@ async function confirmAdminRescheduleBooking(booking) {
     body: JSON.stringify({
       bookingDate: selection.bookingDate,
       bookingTime: selection.bookingTime,
+      otp: String(otp || '').trim(),
     }),
   });
   delete state.adminRescheduleSelections[String(id)];
@@ -9745,9 +9863,8 @@ function getBookingRowAmountInr(row) {
     return Number(breakdown?.totalAmountInr || 0);
   }
   const booking = row?.booking || {};
-  if (String(booking?.paymentReference || '').trim().toLowerCase() === 'membership') return 0;
-  if (String(booking?.paymentStatus || '').trim().toLowerCase() === 'paid') return 0;
-  return Number(getDisplayedServicePriceInr(row?.booking?.serviceName || row?.serviceTitle || '') || 0);
+  if (booking?.serviceName) return getBookingDisplayAmountInr(booking);
+  return Number(getDisplayedServicePriceInr(row?.serviceTitle || '') || 0);
 }
 
 function userBookingServiceCell(row, label = 'Service') {
@@ -9881,6 +9998,27 @@ function getDisplayedServicePriceInr(serviceName) {
   return Number(service?.effectivePriceInr ?? service?.priceInr ?? 0);
 }
 
+function getHydrogenSingleSessionPriceInr() {
+  const singleSessionService =
+    state.services.find(
+      (service) =>
+        String(service.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
+        getHydrogenSessionCountFromServiceName(service.name) === 1
+    ) || null;
+  return Number(
+    singleSessionService?.effectivePriceInr ??
+      singleSessionService?.memberPriceInr ??
+      singleSessionService?.priceInr ??
+      0
+  );
+}
+
+function getBookingDisplayAmountInr(booking) {
+  if (String(booking?.paymentReference || '').trim().toLowerCase() === 'membership') return 0;
+  if (isBuyExtraHydrogenBooking(booking)) return getHydrogenSingleSessionPriceInr();
+  return Number(getDisplayedServicePriceInr(booking?.serviceName || '') || 0);
+}
+
 function normalizeDiscountPhoneKey(phone) {
   const digits = String(phone || '').replace(/\D+/g, '');
   if (digits.length < 7) return '';
@@ -9989,13 +10127,7 @@ function getHydrogenGroupBreakdown(hydrogenEntries, addOnEntries) {
     (entry) => String(entry?.paymentReference || '').trim().toLowerCase() !== 'membership'
   );
   const baseServiceName = hydrogenEntries[0]?.serviceName || '';
-  const singleSessionService =
-    state.services.find(
-      (service) =>
-        String(service.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
-        getHydrogenSessionCountFromServiceName(service.name) === 1
-    ) || null;
-  const extraSessionPriceInr = Number(singleSessionService?.effectivePriceInr ?? singleSessionService?.priceInr ?? 0);
+  const extraSessionPriceInr = getHydrogenSingleSessionPriceInr();
   const addOnParts = addOnEntries.map((entry) => ({
     label: entry.serviceName,
     amountInr: getDisplayedServicePriceInr(entry.serviceName),

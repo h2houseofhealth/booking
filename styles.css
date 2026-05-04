@@ -609,7 +609,7 @@ h1, h2, h3 {
 
 .membership-stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -1065,6 +1065,10 @@ h1, h2, h3 {
 }
 
 @media (max-width: 1024px) {
+  .membership-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .membership-dashboard-row {
     grid-template-columns: 1fr 1fr;
   }
@@ -12370,6 +12374,34 @@ img {
 
 .action-btn.danger {
   color: #b45431;
+}
+
+#adminHistorySection td:last-child,
+#adminAllBookingsSection td:last-child {
+  min-width: 260px;
+}
+
+#adminHistorySection .action-row,
+#adminAllBookingsSection .action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(112px, 1fr));
+  gap: 0.45rem;
+  align-items: stretch;
+  justify-items: stretch;
+}
+
+#adminHistorySection .action-btn,
+#adminAllBookingsSection .action-btn {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.56rem;
+  text-align: center;
+  white-space: normal;
+  line-height: 1.15;
 }
 
 #userBookingsSection .dialog-actions {

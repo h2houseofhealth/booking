@@ -98,6 +98,13 @@ if (SENDGRID_API_KEY) {
 }
 const SERVICE_CATALOG = [
   {
+    category: 'EXPERIENCE SESSION',
+    name: 'Experience Session',
+    priceInr: 0,
+    includes: '30 min consultation + hydrogen session',
+    description: 'Demo hydrogen session for first-time experience and consultation.',
+  },
+  {
     category: 'HYDROGEN SESSION',
     name: 'H2 Single Session',
     priceInr: 4800,
@@ -5503,6 +5510,7 @@ app.get('/invoice/booking', (req, res) => {
     membershipStatus: bookingOwner?.membershipStatus || 'inactive',
     membershipStartedAt: bookingOwner?.membershipStartedAt || null,
     membershipExpiresAt: bookingOwner?.membershipExpiresAt || null,
+    mobile: bookingOwner?.mobile || '',
   };
 
   const groupBookings = booking.bookingGroupId
@@ -5527,28 +5535,12 @@ app.get('/invoice/booking', (req, res) => {
   const activeBookings = groupBookings.filter((entry) => String(entry.status || '').toLowerCase() !== 'cancelled');
   let summary = null;
   try {
-    summary = booking.bookingGroupId
-      ? buildHydrogenGroupPaymentSummary(activeBookings, pricingUser)
-      : {
-          serviceName: booking.serviceName,
-          amountInr: getEffectiveServicePriceInr(getServiceByName(booking.serviceName), pricingUser),
-          totalAmountInr: getEffectiveServicePriceInr(getServiceByName(booking.serviceName), pricingUser),
-          bookingCount: 1,
-        };
+    summary = buildBookingInvoiceSummary(activeBookings, pricingUser);
   } catch {
     summary = null;
   }
 
-  const membershipCoveredAmount =
-    activeBookings.length > 0 &&
-    activeBookings.every((entry) => {
-      const service = getServiceByName(entry.serviceName);
-      return (
-        String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
-        String(entry.paymentReference || booking.paymentReference || '').trim().toLowerCase() === 'membership'
-      );
-    });
-  const amountInr = membershipCoveredAmount ? 0 : Number(summary?.totalAmountInr ?? summary?.amountInr ?? 0);
+  const amountInr = Number(summary?.totalAmountInr ?? summary?.amountInr ?? 0);
   const invoiceNo = `BK-${booking.id}`;
   const paidAtLabel = booking.paidAt ? new Date(booking.paidAt).toLocaleString() : '';
   const bookingDateTimeLabel = booking.bookingDate
@@ -6068,13 +6060,28 @@ app.patch('/api/bookings/:id/mark-paid-cash', requireAuth, requireAdmin, (req, r
   });
 });
 
-app.patch('/api/admin/bookings/:id/reschedule-missed', requireAuth, requireAdmin, (req, res) => {
-  const bookingId = Number(req.params.id);
-  if (!Number.isInteger(bookingId)) {
-    return res.status(400).json({ message: 'invalid booking id' });
+function getAdminRescheduleEligibility(booking) {
+  const status = String(booking?.status || '').trim().toLowerCase();
+  if (status === 'completed' || status === 'cancelled') {
+    return { eligible: false, message: 'completed or cancelled sessions cannot be rescheduled here' };
   }
+  const slotStart = new Date(`${booking.bookingDate}T${normalizeSlotStartTime(booking.bookingTime) || booking.bookingTime}:00`).getTime();
+  if (!Number.isFinite(slotStart)) {
+    return { eligible: false, message: 'booking slot is invalid' };
+  }
+  const now = Date.now();
+  if (slotStart > now) {
+    return { eligible: true, mode: 'upcoming' };
+  }
+  const missedWindowMs = 20 * 60 * 1000;
+  if (now <= slotStart + missedWindowMs) {
+    return { eligible: true, mode: 'missed' };
+  }
+  return { eligible: false, message: 'missed bookings can be rescheduled only within 20 minutes after the slot starts' };
+}
 
-  const booking = db
+function loadBookingForAdminReschedule(bookingId) {
+  return db
     .prepare(
       `SELECT b.id,
               b.user_id AS userId,
@@ -6094,30 +6101,9 @@ app.patch('/api/admin/bookings/:id/reschedule-missed', requireAuth, requireAdmin
        WHERE b.id = ?`
     )
     .get(bookingId);
+}
 
-  if (!booking) {
-    return res.status(404).json({ message: 'booking not found' });
-  }
-
-  const status = String(booking.status || '').trim().toLowerCase();
-  if (status === 'completed' || status === 'cancelled') {
-    return res.status(409).json({ message: 'completed or cancelled sessions cannot be rescheduled here' });
-  }
-
-  if (String(booking.paymentStatus || '').trim().toLowerCase() !== 'paid') {
-    return res.status(409).json({ message: 'only already-paid missed sessions can be rescheduled from this tab' });
-  }
-
-  const missedAt = new Date(`${booking.bookingDate}T${normalizeSlotStartTime(booking.bookingTime) || booking.bookingTime}:00`).getTime();
-  if (!Number.isFinite(missedAt) || missedAt >= Date.now()) {
-    return res.status(409).json({ message: 'only missed sessions can be rescheduled from this tab' });
-  }
-
-  const rescheduleWindowMs = 48 * 60 * 60 * 1000;
-  if (Date.now() > missedAt + rescheduleWindowMs) {
-    return res.status(409).json({ message: 'the 48-hour reschedule window has expired for this missed session' });
-  }
-
+function validateAdminRescheduleTarget(booking, body) {
   const owner = {
     id: booking.userId,
     name: booking.name,
@@ -6129,13 +6115,13 @@ app.patch('/api/admin/bookings/:id/reschedule-missed', requireAuth, requireAdmin
   const payload = validateBookingPayload(
     {
       serviceName: booking.serviceName,
-      bookingDate: req.body?.bookingDate,
-      bookingTime: req.body?.bookingTime,
+      bookingDate: body?.bookingDate,
+      bookingTime: body?.bookingTime,
       notes: booking.notes || '',
     },
     owner
   );
-  if (payload.error) return res.status(400).json({ message: payload.error });
+  if (payload.error) return { error: payload.error };
 
   const selectedService = getServiceByName(booking.serviceName);
   if (selectedService && String(selectedService.category || '').toUpperCase() === 'HYDROGEN SESSION') {
@@ -6145,9 +6131,7 @@ app.patch('/api/admin/bookings/:id/reschedule-missed', requireAuth, requireAdmin
       [booking.id]
     );
     if (dailyLimitConflict) {
-      return res.status(409).json({
-        message: `Only ${dailyLimitConflict.maxAllowed} hydrogen sessions can be booked in one day.`,
-      });
+      return { error: `Only ${dailyLimitConflict.maxAllowed} hydrogen sessions can be booked in one day.`, statusCode: 409 };
     }
   }
 
@@ -6156,10 +6140,132 @@ app.patch('/api/admin/bookings/:id/reschedule-missed', requireAuth, requireAdmin
     const message = slotStatus.holdTotal > 0
       ? buildHoldSlotMessage()
       : `This slot is full. Maximum ${slotStatus.maxPerSlot} bookings are allowed.`;
-    return res.status(409).json({ message });
+    return { error: message, statusCode: 409 };
   }
 
-  const rescheduleNote = `Rescheduled by admin from ${booking.bookingDate} ${booking.bookingTime} to ${payload.data.bookingDate} ${payload.data.bookingTime}`;
+  return { data: payload.data };
+}
+
+app.post('/api/admin/bookings/:id/reschedule-otp', requireAuth, requireAdmin, async (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = loadBookingForAdminReschedule(bookingId);
+
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+
+  const eligibility = getAdminRescheduleEligibility(booking);
+  if (!eligibility.eligible) {
+    return res.status(409).json({ message: eligibility.message });
+  }
+
+  if (!isValidEmail(booking.email)) {
+    return res.status(409).json({ message: 'customer email is required for reschedule OTP verification' });
+  }
+
+  const target = validateAdminRescheduleTarget(booking, req.body || {});
+  if (target.error) {
+    return res.status(target.statusCode || 400).json({ message: target.error });
+  }
+
+  const otp = generateOtp();
+  db.prepare(
+    `INSERT INTO pending_booking_reschedules (booking_id, otp_hash, booking_date, booking_time, expires_at, attempts_left, created_at)
+     VALUES (?, ?, ?, ?, ?, 5, datetime('now'))
+     ON CONFLICT(booking_id) DO UPDATE SET
+       otp_hash = excluded.otp_hash,
+       booking_date = excluded.booking_date,
+       booking_time = excluded.booking_time,
+       expires_at = excluded.expires_at,
+       attempts_left = 5,
+       created_at = datetime('now')`
+  ).run(
+    booking.id,
+    hashOtp(otp),
+    target.data.bookingDate,
+    target.data.bookingTime,
+    new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000).toISOString()
+  );
+
+  const mailResult = await sendOtpEmail(booking.email, otp, 'booking_reschedule');
+  if (!mailResult.ok) {
+    return res.status(mailResult.statusCode || 500).json({ message: mailResult.message || 'Unable to send reschedule OTP.' });
+  }
+
+  return res.json({
+    otpRequired: true,
+    message: mailResult.message || `Reschedule OTP sent to ${booking.email}. It expires in ${OTP_TTL_MINUTES} minutes.`,
+  });
+});
+
+app.patch('/api/admin/bookings/:id/reschedule-missed', requireAuth, requireAdmin, (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId)) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = loadBookingForAdminReschedule(bookingId);
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+
+  const eligibility = getAdminRescheduleEligibility(booking);
+  if (!eligibility.eligible) {
+    return res.status(409).json({ message: eligibility.message });
+  }
+
+  const pending = db
+    .prepare(
+      `SELECT booking_id AS bookingId,
+              otp_hash AS otpHash,
+              booking_date AS bookingDate,
+              booking_time AS bookingTime,
+              expires_at AS expiresAt,
+              attempts_left AS attemptsLeft
+       FROM pending_booking_reschedules
+       WHERE booking_id = ?`
+    )
+    .get(booking.id);
+  if (!pending) {
+    return res.status(400).json({ message: 'request a reschedule OTP before confirming' });
+  }
+  if (new Date(pending.expiresAt).getTime() < Date.now()) {
+    db.prepare('DELETE FROM pending_booking_reschedules WHERE booking_id = ?').run(booking.id);
+    return res.status(400).json({ message: 'OTP expired. Request a new reschedule OTP.' });
+  }
+  const otp = String(req.body?.otp || '').trim();
+  if (!otp) {
+    return res.status(400).json({ message: 'otp is required' });
+  }
+  if (hashOtp(otp) !== pending.otpHash) {
+    const attemptsLeft = Math.max(0, Number(pending.attemptsLeft || 0) - 1);
+    if (attemptsLeft <= 0) {
+      db.prepare('DELETE FROM pending_booking_reschedules WHERE booking_id = ?').run(booking.id);
+      return res.status(400).json({ message: 'Too many invalid OTP attempts. Request a new reschedule OTP.' });
+    }
+    db.prepare('UPDATE pending_booking_reschedules SET attempts_left = ? WHERE booking_id = ?').run(attemptsLeft, booking.id);
+    return res.status(400).json({ message: `Invalid OTP. ${attemptsLeft} attempts left.` });
+  }
+
+  const requestedDate = String(req.body?.bookingDate || '').trim();
+  const requestedTime = normalizeSlotStartTime(String(req.body?.bookingTime || '').trim());
+  if (requestedDate !== pending.bookingDate || requestedTime !== pending.bookingTime) {
+    return res.status(400).json({ message: 'selected slot changed after OTP was sent. Request a new OTP.' });
+  }
+
+  const target = validateAdminRescheduleTarget(booking, {
+    bookingDate: pending.bookingDate,
+    bookingTime: pending.bookingTime,
+  });
+  if (target.error) {
+    return res.status(target.statusCode || 400).json({ message: target.error });
+  }
+
+  const rescheduleNote = `Rescheduled by admin from ${booking.bookingDate} ${booking.bookingTime} to ${target.data.bookingDate} ${target.data.bookingTime}`;
   const nextNotes = [String(booking.notes || '').trim(), rescheduleNote].filter(Boolean).join('\n');
 
   db.prepare(
@@ -6169,7 +6275,8 @@ app.patch('/api/admin/bookings/:id/reschedule-missed', requireAuth, requireAdmin
          status = 'confirmed',
          notes = ?
      WHERE id = ?`
-  ).run(payload.data.bookingDate, payload.data.bookingTime, nextNotes, booking.id);
+  ).run(target.data.bookingDate, target.data.bookingTime, nextNotes, booking.id);
+  db.prepare('DELETE FROM pending_booking_reschedules WHERE booking_id = ?').run(booking.id);
 
   const updated = db
     .prepare(
@@ -7316,6 +7423,82 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
     bookingCount: bookings.length,
     totalAmountInr: pricing.totalAmountInr,
     ...pricing.summary,
+  };
+}
+
+function getMemberHydrogenSingleSessionPriceInr(user) {
+  const singleSessionService =
+    SERVICE_CATALOG.find(
+      (item) =>
+        String(item.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
+        getHydrogenSessionCountFromServiceName(item.name) === 1
+    ) || null;
+  const amountInr = Number(
+    singleSessionService?.memberPriceInr ??
+      singleSessionService?.priceInr ??
+      singleSessionService?.nonMemberPriceInr ??
+      0
+  );
+  return applyPhoneDiscount(amountInr, user?.mobile || '');
+}
+
+function buildBookingInvoiceSummary(bookings, user) {
+  const activeBookings = (Array.isArray(bookings) ? bookings : []).filter(
+    (entry) => String(entry?.status || '').toLowerCase() !== 'cancelled'
+  );
+  if (!activeBookings.length) {
+    return { serviceName: 'Booking', totalAmountInr: 0, amountInr: 0, bookingCount: 0 };
+  }
+
+  const hydrogenBookings = activeBookings.filter((entry) => {
+    const service = getServiceByName(entry.serviceName);
+    return String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION';
+  });
+
+  if (hydrogenBookings.length) {
+    const hasMembershipPricingReference = hydrogenBookings.some((entry) => {
+      const ref = String(entry.paymentReference || '').trim().toLowerCase();
+      return ref === 'membership' || ref === 'buy_extra';
+    });
+
+    if (!hasMembershipPricingReference) {
+      return buildHydrogenGroupPaymentSummary(activeBookings, user);
+    }
+
+    const baseService = getServiceByName(hydrogenBookings[0].serviceName);
+    const addOnBookings = activeBookings.filter((entry) => isAddOnService(getServiceByName(entry.serviceName)));
+    const addOnAmountInr = addOnBookings.reduce(
+      (sum, entry) => sum + Number(getEffectiveServicePriceInr(getServiceByName(entry.serviceName), user) || 0),
+      0
+    );
+    const chargeableHydrogenSessions = hydrogenBookings.filter(
+      (entry) => String(entry.paymentReference || '').trim().toLowerCase() !== 'membership'
+    ).length;
+    const memberSessionPriceInr = getMemberHydrogenSingleSessionPriceInr(user);
+    const hydrogenAmountInr = chargeableHydrogenSessions * Number(memberSessionPriceInr || 0);
+
+    return {
+      serviceName: baseService?.name || hydrogenBookings[0].serviceName || 'Hydrogen Session',
+      bookingCount: activeBookings.length,
+      totalSessions: hydrogenBookings.length,
+      freeSessionsApplied: Math.max(0, hydrogenBookings.length - chargeableHydrogenSessions),
+      chargeableHydrogenSessions,
+      memberSessionPriceInr,
+      addOnAmountInr,
+      totalAmountInr: hydrogenAmountInr + addOnAmountInr,
+      amountInr: hydrogenAmountInr + addOnAmountInr,
+    };
+  }
+
+  const booking = activeBookings[0];
+  const service = getServiceByName(booking.serviceName);
+  const paymentReference = String(booking.paymentReference || '').trim().toLowerCase();
+  const amountInr = paymentReference === 'membership' ? 0 : Number(getEffectiveServicePriceInr(service, user) || 0);
+  return {
+    serviceName: booking.serviceName,
+    amountInr,
+    totalAmountInr: amountInr,
+    bookingCount: 1,
   };
 }
 
@@ -8824,8 +9007,10 @@ async function sendBookingPaymentLinkEmail({
 async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
   const normalizedToEmail = String(toEmail || '').trim().toLowerCase();
   const otpValue = String(otp || '').trim();
-  const isPasswordReset = String(purpose || '').trim().toLowerCase() === 'password_reset';
-  const flowLabel = isPasswordReset ? 'password reset' : 'signup';
+  const normalizedPurpose = String(purpose || '').trim().toLowerCase();
+  const isPasswordReset = normalizedPurpose === 'password_reset';
+  const isBookingReschedule = normalizedPurpose === 'booking_reschedule';
+  const flowLabel = isBookingReschedule ? 'booking reschedule' : isPasswordReset ? 'password reset' : 'signup';
 
   if (!SENDGRID_API_KEY || !SENDGRID_OTP_FROM_EMAIL) {
     if (ALLOW_DEV_OTP_FALLBACK) {
@@ -8846,11 +9031,17 @@ async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
     };
   }
 
-  const subject = isPasswordReset ? 'Password Reset Verification' : 'Sign Up Verification';
-  const heading = isPasswordReset ? 'Password Reset Verification' : 'Sign Up Verification';
-  const intro = isPasswordReset
-    ? 'Use the OTP below to continue resetting your password.'
-    : 'Use the OTP below to complete your sign up.';
+  const subject = isBookingReschedule
+    ? 'Booking Reschedule Verification'
+    : isPasswordReset
+      ? 'Password Reset Verification'
+      : 'Sign Up Verification';
+  const heading = subject;
+  const intro = isBookingReschedule
+    ? 'Share this OTP with H2 House Of Health staff to confirm your booking reschedule.'
+    : isPasswordReset
+      ? 'Use the OTP below to continue resetting your password.'
+      : 'Use the OTP below to complete your sign up.';
   const text = `${heading}\n\n${intro}\n\nOTP: ${otpValue}\nValid for: ${OTP_TTL_MINUTES} minutes\n\nIf you did not request this, please ignore this email.`;
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">
@@ -8894,7 +9085,7 @@ async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
     return {
       ok: true,
       delivery: 'sendgrid',
-      message: `${isPasswordReset ? 'Password reset' : 'Signup'} OTP sent to ${normalizedToEmail}. It expires in ${OTP_TTL_MINUTES} minutes.`,
+      message: `${isBookingReschedule ? 'Booking reschedule' : isPasswordReset ? 'Password reset' : 'Signup'} OTP sent to ${normalizedToEmail}. It expires in ${OTP_TTL_MINUTES} minutes.`,
     };
   } catch (error) {
     const sendGridError = extractSendGridErrorDetails(error);
@@ -9015,6 +9206,16 @@ function migrate() {
       expires_at TEXT NOT NULL,
       attempts_left INTEGER NOT NULL,
       verified INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS pending_booking_reschedules (
+      booking_id INTEGER PRIMARY KEY REFERENCES bookings(id) ON DELETE CASCADE,
+      otp_hash TEXT NOT NULL,
+      booking_date TEXT NOT NULL,
+      booking_time TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      attempts_left INTEGER NOT NULL,
       created_at TEXT NOT NULL
     );
 

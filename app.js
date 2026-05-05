@@ -637,13 +637,9 @@ function ensurePostLoginDashboardChoice() {
 
 function routeAfterAuthSuccess() {
   ensurePostLoginDashboardChoice();
-  if (state.postLoginChoice === 'join-member') {
-    state.activeUserTab = 'membership';
-    window.location.hash = '#membership';
-    return;
-  }
-  state.activeUserTab = 'services';
-  window.location.hash = '#services';
+  state.membershipBrowseVisible = false;
+  state.activeUserTab = 'membership';
+  window.location.hash = '#membership';
 }
 
 async function finishAuthSuccess(result) {
@@ -680,6 +676,11 @@ async function bootstrap() {
     await loadProfile();
     await loadDashboardData();
     ensurePostLoginDashboardChoice();
+    if (state.user.role === 'user' && !initialTab) {
+      state.membershipBrowseVisible = false;
+      state.activeUserTab = 'membership';
+      window.location.hash = '#membership';
+    }
   }
   render();
 }
@@ -1090,8 +1091,9 @@ function attachEvents() {
       });
     });
   elements.membershipBackBtn?.addEventListener('click', () => {
-    if (state.user?.role === 'user' && !state.membership?.active && state.membershipBrowseVisible) {
+    if (state.user?.role === 'user' && state.membershipBrowseVisible) {
       state.membershipBrowseVisible = false;
+      state.membershipAdditions = {};
       render();
       requestAnimationFrame(() => {
         elements.membershipDashboard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -4320,7 +4322,14 @@ function resetSingleSessionComposer() {
 }
 
 function openSingleSessionBookingEditor(booking) {
-  const category = getBookingCategory(booking?.serviceName || '');
+  const bookingCategory = getBookingCategory(booking?.serviceName || '');
+  const service = getServiceCatalogEntry(booking?.serviceName || '');
+  const serviceCategory = String(service?.category || '').toUpperCase();
+  const category =
+    serviceCategory === 'IV THERAPIES' || serviceCategory === 'IV SHOTS'
+      ? serviceCategory
+      : bookingCategory;
+
   if (!booking || !category || category === 'HYDROGEN SESSION') {
     openDialog(booking || null);
     return;
@@ -4329,6 +4338,12 @@ function openSingleSessionBookingEditor(booking) {
   state.returnUserTabAfterEdit = state.activeUserTab || 'services';
   state.activeUserTab = 'services';
   window.location.hash = '#services';
+  state.expandedServiceCategories = {
+    'HYDROGEN SESSION': false,
+    'IV THERAPIES': false,
+    'IV SHOTS': false,
+    [category]: true,
+  };
   state.selectedServiceCategory = category;
   state.selectedSingleSessionServiceName = booking.serviceName;
   state.singleSessionEditingBookingId = String(booking.id);
@@ -4344,7 +4359,9 @@ function openSingleSessionBookingEditor(booking) {
   refreshSelectedCategoryAvailability(booking.bookingDate);
   render();
   requestAnimationFrame(() => {
-    document.querySelector(`[data-service-category="${category}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const categoryId = `service-category-details-${String(category).toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+    const target = document.getElementById(categoryId) || document.querySelector(`.service-category-card[data-category="${category}"]`);
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 }
 
@@ -4370,6 +4387,11 @@ function openHydrogenPackageEditor(row) {
   state.returnUserTabAfterEdit = state.activeUserTab || 'services';
   state.activeUserTab = 'services';
   window.location.hash = '#services';
+  state.expandedServiceCategories = {
+    'HYDROGEN SESSION': true,
+    'IV THERAPIES': false,
+    'IV SHOTS': false,
+  };
   state.selectedServiceCategory = 'HYDROGEN SESSION';
   state.selectedHydrogenServiceName = row.baseServiceName || hydrogenEntries[0].serviceName;
   state.selectedHydrogenExtraSessions = Math.max(0, Number(row.extraSessions || 0));
@@ -4387,7 +4409,10 @@ function openHydrogenPackageEditor(row) {
   refreshSelectedCategoryAvailability(hydrogenEntries[0].bookingDate || getTodayIsoDate());
   render();
   requestAnimationFrame(() => {
-    const target = document.querySelector('[data-hydrogen-editor="true"]') || document.querySelector('[data-service-category="HYDROGEN SESSION"]');
+    const target =
+      document.querySelector('[data-hydrogen-editor="true"]') ||
+      document.getElementById('service-category-details-hydrogen-session') ||
+      document.querySelector('.service-category-card[data-category="HYDROGEN SESSION"]');
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 }
@@ -7311,6 +7336,7 @@ function renderMembership() {
       state.membershipAdditions[plan.id] = additionalPeople;
     }
     const estimatedAmountInr = Number(plan.priceInr || 0) + additionalPeople * addPersonPriceInr;
+    const showPricing = !canAddPerson || additionalPeople > 0;
     const isCurrentBasePlan = active && String(current.plan || '') === String(plan.id);
     const theme = getMembershipPlanTheme(plan);
     const featureItems = getMembershipFeatureItems(plan).slice(0, 4);
@@ -7331,7 +7357,7 @@ function renderMembership() {
         <span class="membership-card-active${isCurrentBasePlan ? '' : ' is-placeholder'}">Current Plan</span>
       </div>
       <div class="membership-card-body">
-        <div class="membership-card-price-block">
+        <div class="membership-card-price-block${showPricing ? '' : ' is-hidden'}">
           <p class="membership-price">Rs. ${estimatedAmountInr.toLocaleString('en-IN')}</p>
           <p class="membership-price-caption">1-year access • ${escapeHtml(plan.validityDays)} days</p>
         </div>
@@ -7342,7 +7368,7 @@ function renderMembership() {
         ${
           canAddPerson
             ? `
-        <div class="membership-add-price-box">
+        <div class="membership-add-price-box${showPricing ? '' : ' is-hidden'}">
           <strong>Add Person</strong>
           <span class="membership-add-price-line">+ Rs. ${addPersonPriceInr.toLocaleString('en-IN')}</span>
         </div>

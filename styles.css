@@ -2630,6 +2630,11 @@ h1, h2, h3 {
   font-size: 0.86rem;
 }
 
+.membership-card-price-block.is-hidden,
+.membership-add-price-box.is-hidden {
+  display: none !important;
+}
+
 .membership-plan-caption {
   margin: 0;
   font-size: 0.79rem;
@@ -2838,6 +2843,15 @@ h1, h2, h3 {
   font-size: 0.88rem;
 }
 
+.auth-switch,
+.auth-forgot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.35rem;
+  text-align: left;
+}
+
 .auth-forgot {
   margin: 0.1rem 0 0.2rem;
 }
@@ -2862,6 +2876,9 @@ h1, h2, h3 {
   font-weight: 600;
   -webkit-appearance: none;
   appearance: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1.2;
 }
 
 .stats-grid {
@@ -10461,6 +10478,7 @@ body {
   box-shadow: none;
   min-height: 0;
   line-height: 0;
+  padding-top: 18px;
 }
 
 #memberChoiceGate .hero-image {
@@ -10519,14 +10537,36 @@ body {
   display: block;
   width: 100%;
   max-width: 100%;
-  height: auto;
+  height:550px;
+  max-height:200%;
   object-fit: fill;
   object-position: top left;
   border-radius: 0;
   box-shadow: none;
   margin: 0;
   background: transparent;
-  vertical-align: top;
+}
+
+#memberChoiceGate .member-choice-trust {
+  gap: 14px;
+  align-items: center;
+}
+
+#memberChoiceGate .member-choice-trust-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #d06a32, #b14c22);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  box-shadow: 0 10px 22px rgba(200, 101, 45, 0.22);
+  cursor: pointer;
 }
 
 #memberChoiceGate .member-choice-hero-text .member-choice-benefits,
@@ -11341,6 +11381,13 @@ img {
     height: auto !important;
     aspect-ratio: auto !important;
     border-radius: 28px !important;
+  }
+
+  #memberChoiceGate .member-choice-hero-img {
+    height: auto !important;
+    max-height: none !important;
+    object-fit: contain !important;
+    object-position: center top !important;
   }
 
   #memberChoiceGate .member-choice-hero-img {

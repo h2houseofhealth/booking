@@ -97,6 +97,7 @@ const state = {
   adminRescheduleSelections: {},
   adminRescheduleAvailability: {},
   adminRescheduleLoading: {},
+  adminRescheduleOtpRequested: {},
   returnUserTabAfterEdit: '',
   membership: {
     plans: [],
@@ -869,6 +870,7 @@ function attachEvents() {
     state.adminRescheduleSelections = {};
     state.adminRescheduleAvailability = {};
     state.adminRescheduleLoading = {};
+    state.adminRescheduleOtpRequested = {};
     state.adminCalendarDate = '';
     state.adminCalendarCategory = 'HYDROGEN SESSION';
     state.adminCalendarServiceName = '';
@@ -4880,6 +4882,7 @@ function isAdminRescheduledBooking(booking) {
 function getFilteredAdminRescheduleBookings(bookings = state.bookings) {
   const query = String(state.adminRescheduleSearch || '').trim().toLowerCase();
   const queue = (Array.isArray(bookings) ? bookings : [])
+    .filter((booking) => String(booking?.paymentStatus || '').trim().toLowerCase() === 'paid')
     .filter((booking) => isAdminRescheduleEligible(booking) || isAdminRescheduledBooking(booking))
     .sort((a, b) => {
       const aEligible = isAdminRescheduleEligible(a) ? 0 : 1;
@@ -5662,19 +5665,52 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   }
 
   const detailSelection = state.serviceDetailSelections[category] || {};
+  const hydrogenSummary = getMembershipHydrogenSessionSummary();
+  const isMembershipActiveNow = isCurrentUserMembershipActive();
+  const usedMembershipSessions = isMembershipActiveNow ? getHydrogenSessionsUsedThisMembership() : 0;
+  const inferredTotalFromUsage = isMembershipActiveNow
+    ? usedMembershipSessions + getHydrogenFreeSessionsRemainingClient()
+    : 0;
+  const totalMembershipSessions = Math.max(0, Number(hydrogenSummary.totalSessions || 0), inferredTotalFromUsage);
+  const remainingMembershipSessions = Math.max(0, totalMembershipSessions - usedMembershipSessions);
+  const singleSessionPlan = planOptions.find((opt) => Number(opt.sessions || 0) === 1) || planOptions[0];
+  const membershipUpcomingSessionNumbers =
+    isMembershipActiveNow && totalMembershipSessions > 0
+      ? Array.from(
+          { length: remainingMembershipSessions },
+          (_, index) => usedMembershipSessions + index + 1
+        )
+      : [];
+  const useUpcomingSessionMode = membershipUpcomingSessionNumbers.length > 0;
+
   if (!state.selectedHydrogenServiceName || !planOptions.some((opt) => opt.service.name === state.selectedHydrogenServiceName)) {
     const fromDetail = planOptions.find((opt) => opt.service.name === detailSelection.selectedPlanName);
-    state.selectedHydrogenServiceName = fromDetail?.service?.name || planOptions[0].service.name;
+    state.selectedHydrogenServiceName = useUpcomingSessionMode
+      ? singleSessionPlan.service.name
+      : fromDetail?.service?.name || planOptions[0].service.name;
+  }
+  if (useUpcomingSessionMode) {
+    state.selectedHydrogenServiceName = singleSessionPlan.service.name;
   }
   state.selectedHydrogenExtraSessions = 0;
+  const selectedUpcomingSessionNumber = useUpcomingSessionMode
+    ? Math.max(
+        membershipUpcomingSessionNumbers[0],
+        Math.min(
+          Number(detailSelection.selectedUpcomingSessionNumber || membershipUpcomingSessionNumbers[0]),
+          membershipUpcomingSessionNumbers[membershipUpcomingSessionNumbers.length - 1]
+        )
+      )
+    : null;
   state.serviceDetailSelections[category] = {
     ...detailSelection,
     selectedPlanName: state.selectedHydrogenServiceName,
+    ...(useUpcomingSessionMode ? { selectedUpcomingSessionNumber } : {}),
   };
 
   const selectedPlan = planOptions.find((opt) => opt.service.name === state.selectedHydrogenServiceName) || planOptions[0];
   const selectedService = selectedPlan.service;
-  const requiredSlots = Math.max(1, Number(selectedPlan.sessions || 1));
+  const requiredSlots = useUpcomingSessionMode ? 1 : Math.max(1, Number(selectedPlan.sessions || 1));
   if (state.selectedHydrogenSlots.length > requiredSlots) {
     state.selectedHydrogenSlots = state.selectedHydrogenSlots.slice(0, requiredSlots);
   }
@@ -5708,27 +5744,44 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     <h4 class="hydrogen-sidebar-title">Choose Your Package</h4>
     <div class="hydrogen-plan-controls">
       <label>
-        Hydrogen Sessions
+        ${useUpcomingSessionMode ? 'Upcoming Session' : 'Hydrogen Sessions'}
         <select class="hydrogen-plan-select"></select>
       </label>
     </div>
   `;
 
   const planSelect = controls.querySelector('.hydrogen-plan-select');
-  for (const optionData of planOptions) {
-    const option = document.createElement('option');
-    option.value = optionData.service.name;
-    option.textContent = formatSessionLabel(Number(optionData.sessions || 1));
-    planSelect.appendChild(option);
+  if (useUpcomingSessionMode) {
+    for (const sessionNumber of membershipUpcomingSessionNumbers) {
+      const option = document.createElement('option');
+      option.value = String(sessionNumber);
+      option.textContent = `Session ${sessionNumber}`;
+      planSelect.appendChild(option);
+    }
+  } else {
+    for (const optionData of planOptions) {
+      const option = document.createElement('option');
+      option.value = optionData.service.name;
+      option.textContent = formatSessionLabel(Number(optionData.sessions || 1));
+      planSelect.appendChild(option);
+    }
   }
-  planSelect.value = state.selectedHydrogenServiceName;
+  planSelect.value = useUpcomingSessionMode ? String(selectedUpcomingSessionNumber) : state.selectedHydrogenServiceName;
   planSelect.disabled = isEditingHydrogenGroup;
   planSelect.addEventListener('change', () => {
-    state.selectedHydrogenServiceName = planSelect.value;
-    state.serviceDetailSelections[category] = {
-      ...(state.serviceDetailSelections[category] || {}),
-      selectedPlanName: planSelect.value,
-    };
+    if (useUpcomingSessionMode) {
+      state.serviceDetailSelections[category] = {
+        ...(state.serviceDetailSelections[category] || {}),
+        selectedPlanName: singleSessionPlan.service.name,
+        selectedUpcomingSessionNumber: Number(planSelect.value || membershipUpcomingSessionNumbers[0] || 1),
+      };
+    } else {
+      state.selectedHydrogenServiceName = planSelect.value;
+      state.serviceDetailSelections[category] = {
+        ...(state.serviceDetailSelections[category] || {}),
+        selectedPlanName: planSelect.value,
+      };
+    }
     state.selectedHydrogenSlots = [];
     state.selectedHydrogenAddOnSessionIndex = 0;
     state.activeHydrogenSessionIndex = 0;
@@ -5821,6 +5874,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   const scheduleList = document.createElement('div');
   scheduleList.className = 'hydrogen-schedule-list';
   for (let idx = 0; idx < requiredSlots; idx += 1) {
+    const sessionDisplayNumber = useUpcomingSessionMode ? Number(selectedUpcomingSessionNumber || 1) + idx : idx + 1;
     const existing = state.selectedHydrogenSlots[idx] || {};
     const bookingDate = String(existing.bookingDate || state.selectedServiceDate || getTodayIsoDate());
     const bookingTime = String(existing.bookingTime || SLOT_OPTIONS[0].value);
@@ -5832,7 +5886,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     const row = document.createElement('article');
     row.className = 'hydrogen-schedule-row';
     row.innerHTML = `
-      <h5>Hydrogen Session ${idx + 1}</h5>
+      <h5>Hydrogen Session ${sessionDisplayNumber}</h5>
       <div class="hydrogen-schedule-grid">
         <label>
           Date
@@ -5985,7 +6039,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     const buyExtraButton = document.createElement('button');
     buyExtraButton.type = 'button';
     buyExtraButton.className = 'btn btn-primary service-sticky-book-btn';
-    buyExtraButton.textContent = 'Buy Extra';
+    buyExtraButton.textContent = 'Buy Additional';
     buyExtraButton.disabled = selectedServiceIsMembershipOnly && !selectedServiceHasMemberAccess;
     buyExtraButton.addEventListener('click', () => {
       submitHydrogenBooking({ forceChargeable: true });
@@ -6777,6 +6831,8 @@ function getHydrogenPlanOptions(services) {
     const isMembershipOnly = Boolean(selectedService.membershipOnly);
     const hasMemberAccess = isCurrentUserMembershipActive();
     const selection = state.ivSelections[selectedService.name] || {};
+    const nextMembershipSessionNumber = isCurrentUserMembershipActive() ? getHydrogenSessionsUsedThisMembership() + 1 : 1;
+    const singleSessionLabel = `Hydrogen Session ${nextMembershipSessionNumber}`;
     const activeSingleSessionEditId = String(state.singleSessionEditingBookingId || '').trim();
     const isEditingSingleSession =
       Boolean(activeSingleSessionEditId) && String(selection.editingBookingId || '').trim() === activeSingleSessionEditId;
@@ -6826,7 +6882,7 @@ function getHydrogenPlanOptions(services) {
     const sessionBtn = document.createElement('button');
     sessionBtn.type = 'button';
     sessionBtn.className = `hydrogen-session-item is-active${selection.bookingDate && selection.bookingTime ? ' is-assigned' : ''}`;
-    sessionBtn.textContent = `Hydrogen Session 1${selection.bookingDate && selection.bookingTime ? ' âœ“' : ''}`;
+    sessionBtn.textContent = `${singleSessionLabel}${selection.bookingDate && selection.bookingTime ? ' âœ“' : ''}`;
     sessionsList.appendChild(sessionBtn);
     sidebar.appendChild(sessionsList);
     layout.appendChild(sidebar);
@@ -6860,7 +6916,7 @@ function getHydrogenPlanOptions(services) {
     const editor = document.createElement('div');
     editor.className = 'hydrogen-session-editor';
     editor.innerHTML = `
-      <h4>Hydrogen Session 1</h4>
+      <h4>${singleSessionLabel}</h4>
       <div class="hydrogen-editor-grid">
         <label>
           Date
@@ -7415,14 +7471,24 @@ function renderMembership() {
 
   const hydrogenSessionSummary = getMembershipHydrogenSessionSummary();
   const extraSessionsBought = active ? getHydrogenExtraSessionsThisMembership() : 0;
+  const topUpUsedSessions = active
+    ? allBookings.filter(
+        (booking) =>
+          !booking.holdExpired &&
+          String(booking.status || '').toLowerCase() === 'completed' &&
+          isBuyExtraHydrogenBooking(booking)
+      ).length
+    : 0;
+  const topUpRemainingSessions = Math.max(0, extraSessionsBought - topUpUsedSessions);
+  const topUpUsagePercent = extraSessionsBought > 0 ? Math.min(100, Math.round((topUpUsedSessions / extraSessionsBought) * 100)) : 0;
   if (elements.membershipStatExtraLabel) {
-    elements.membershipStatExtraLabel.textContent = 'Extra Sessions';
+    elements.membershipStatExtraLabel.textContent = 'Top Up Sessions';
   }
   if (elements.membershipStatExtra) {
     elements.membershipStatExtra.textContent = active ? String(extraSessionsBought) : '0';
   }
   if (elements.membershipStatExtraMeta) {
-    elements.membershipStatExtraMeta.textContent = active ? 'Bought' : 'Members only';
+    elements.membershipStatExtraMeta.textContent = active ? 'Top Up' : 'Members only';
   }
   const hydrogenSessions = allBookings.filter(
     (booking) =>
@@ -7455,6 +7521,10 @@ function renderMembership() {
   const progressRing = document.getElementById('progressRing');
   const progressText = document.getElementById('progressText');
   const remainingSessionsText = document.getElementById('remainingSessions');
+  const topupProgressRing = document.getElementById('topupProgressRing');
+  const topupProgressText = document.getElementById('topupProgressText');
+  const membershipTopUpCount = document.getElementById('membershipTopUpCount');
+  const topupRemainingSessionsText = document.getElementById('topupRemainingSessions');
   if (progressRing) {
     const ringPercent = active ? usagePercent : Math.min(100, Math.max(0, upcomingBookings.length * 12));
     progressRing.style.background = `conic-gradient(#d2602d ${ringPercent * 3.6}deg, #f0ddd1 0deg)`;
@@ -7464,6 +7534,18 @@ function renderMembership() {
   }
   if (remainingSessionsText) {
     remainingSessionsText.textContent = String(remainingSessions);
+  }
+  if (topupProgressRing) {
+    topupProgressRing.style.background = `conic-gradient(#d2602d ${topUpUsagePercent * 3.6}deg, #f0ddd1 0deg)`;
+  }
+  if (topupProgressText) {
+    topupProgressText.textContent = `${topUpUsagePercent}%`;
+  }
+  if (membershipTopUpCount) {
+    membershipTopUpCount.textContent = `${topUpUsedSessions} of ${extraSessionsBought}`;
+  }
+  if (topupRemainingSessionsText) {
+    topupRemainingSessionsText.textContent = String(topUpRemainingSessions);
   }
   if (elements.membershipUsageBar) {
     elements.membershipUsageBar.style.width = `${active ? usagePercent : Math.min(100, Math.max(12, upcomingBookings.length * 12))}%`;
@@ -7570,7 +7652,7 @@ function renderMembership() {
       state.membershipAdditions[plan.id] = additionalPeople;
     }
     const estimatedAmountInr = Number(plan.priceInr || 0) + additionalPeople * addPersonPriceInr;
-    const showPricing = !canAddPerson || additionalPeople > 0;
+    const showAddPersonPricing = additionalPeople > 0;
     const isCurrentBasePlan = active && String(current.plan || '') === String(plan.id);
     const theme = getMembershipPlanTheme(plan);
     const featureItems = getMembershipFeatureItems(plan).slice(0, 4);
@@ -7591,7 +7673,7 @@ function renderMembership() {
         <span class="membership-card-active${isCurrentBasePlan ? '' : ' is-placeholder'}">Current Plan</span>
       </div>
       <div class="membership-card-body">
-        <div class="membership-card-price-block${showPricing ? '' : ' is-hidden'}">
+        <div class="membership-card-price-block">
           <p class="membership-price">Rs. ${estimatedAmountInr.toLocaleString('en-IN')}</p>
           <p class="membership-price-caption">1-year access • ${escapeHtml(plan.validityDays)} days</p>
         </div>
@@ -7602,7 +7684,7 @@ function renderMembership() {
         ${
           canAddPerson
             ? `
-        <div class="membership-add-price-box${showPricing ? '' : ' is-hidden'}">
+        <div class="membership-add-price-box${showAddPersonPricing ? '' : ' is-hidden'}">
           <strong>Add Person</strong>
           <span class="membership-add-price-line">+ Rs. ${addPersonPriceInr.toLocaleString('en-IN')}</span>
         </div>
@@ -9289,6 +9371,7 @@ function renderAdminRescheduleQueue() {
     const availabilityKey = getAdminRescheduleAvailabilityKey(id, selection.bookingDate, selection.category);
     const hasCheckedAvailability = Boolean(state.adminRescheduleAvailability?.[availabilityKey]);
     const isLoading = Boolean(state.adminRescheduleLoading?.[id]);
+    const otpRequested = Boolean(state.adminRescheduleOtpRequested?.[id]);
 
     const card = document.createElement('article');
     card.className = 'admin-reschedule-card';
@@ -9319,6 +9402,15 @@ function renderAdminRescheduleQueue() {
                 Available slot
                 <select class="admin-reschedule-time"></select>
               </label>
+              <label>
+                Customer OTP
+                <input class="admin-reschedule-otp" type="text" inputmode="numeric" maxlength="6" placeholder="${
+                  otpRequested ? 'Enter OTP sent to customer' : 'Click Request OTP first'
+                }" />
+              </label>
+              <button class="btn btn-secondary admin-reschedule-request-otp" type="button">${
+                otpRequested ? 'Resend OTP' : 'Request OTP'
+              }</button>
               <button class="btn btn-primary admin-reschedule-confirm" type="button">Confirm Reschedule</button>
             </div>`
           : ''
@@ -9328,6 +9420,8 @@ function renderAdminRescheduleQueue() {
     const dateInput = card.querySelector('.admin-reschedule-date');
     const checkBtn = card.querySelector('.admin-reschedule-check');
     const timeSelect = card.querySelector('.admin-reschedule-time');
+    const otpInput = card.querySelector('.admin-reschedule-otp');
+    const requestOtpBtn = card.querySelector('.admin-reschedule-request-otp');
     const confirmBtn = card.querySelector('.admin-reschedule-confirm');
 
     if (canReschedule && timeSelect) {
@@ -9353,10 +9447,16 @@ function renderAdminRescheduleQueue() {
     }
 
     if (canReschedule && confirmBtn) {
-      confirmBtn.disabled = !timeSelect?.value || isLoading;
+      confirmBtn.disabled = !timeSelect?.value || isLoading || !otpRequested;
     }
     if (canReschedule && checkBtn) {
       checkBtn.disabled = isLoading;
+    }
+    if (canReschedule && requestOtpBtn) {
+      requestOtpBtn.disabled = !timeSelect?.value || isLoading;
+    }
+    if (canReschedule && otpInput) {
+      otpInput.disabled = !otpRequested || isLoading;
     }
 
     dateInput?.addEventListener('change', () => {
@@ -9385,15 +9485,19 @@ function renderAdminRescheduleQueue() {
       renderAdminRescheduleQueue();
     });
 
+    requestOtpBtn?.addEventListener('click', async () => {
+      await requestAdminRescheduleOtp(booking);
+    });
+
     confirmBtn?.addEventListener('click', async () => {
-      await confirmAdminRescheduleBooking(booking);
+      await confirmAdminRescheduleBooking(booking, String(otpInput?.value || '').trim());
     });
 
     elements.adminRescheduleList.appendChild(card);
   }
 }
 
-async function confirmAdminRescheduleBooking(booking) {
+async function requestAdminRescheduleOtp(booking) {
   const id = Number(booking?.id || 0);
   if (!Number.isInteger(id) || id <= 0) return;
   const selection = getAdminRescheduleSelection(booking);
@@ -9401,9 +9505,10 @@ async function confirmAdminRescheduleBooking(booking) {
     showNotice({ title: 'Select slot', body: 'Choose an available reschedule slot first.' });
     return;
   }
-  const confirmed = confirm(`Send OTP to ${booking.clientEmail || 'the customer'} before rescheduling to ${formatDateTime(selection.bookingDate, selection.bookingTime)}?`);
+  const confirmed = confirm(
+    `Send OTP to ${booking.clientEmail || 'the customer'} for rescheduling to ${formatDateTime(selection.bookingDate, selection.bookingTime)}?`
+  );
   if (!confirmed) return;
-
   const otpResult = await api(`/api/admin/bookings/${id}/reschedule-otp`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -9412,8 +9517,27 @@ async function confirmAdminRescheduleBooking(booking) {
       bookingTime: selection.bookingTime,
     }),
   });
-  const otp = prompt(`${otpResult?.message || 'OTP sent to customer email.'}\n\nEnter customer OTP to confirm reschedule:`);
-  if (!otp) return;
+  state.adminRescheduleOtpRequested = {
+    ...(state.adminRescheduleOtpRequested || {}),
+    [String(id)]: true,
+  };
+  renderAdminRescheduleQueue();
+  showNotice({ title: 'OTP Sent', body: otpResult?.message || 'OTP sent to customer email.' });
+}
+
+async function confirmAdminRescheduleBooking(booking, otpValue = '') {
+  const id = Number(booking?.id || 0);
+  if (!Number.isInteger(id) || id <= 0) return;
+  const selection = getAdminRescheduleSelection(booking);
+  if (!selection.bookingDate || !selection.bookingTime) {
+    showNotice({ title: 'Select slot', body: 'Choose an available reschedule slot first.' });
+    return;
+  }
+  const otp = String(otpValue || '').trim();
+  if (!otp) {
+    showNotice({ title: 'Enter OTP', body: 'Please enter the customer OTP to confirm reschedule.' });
+    return;
+  }
 
   await api(`/api/admin/bookings/${id}/reschedule-missed`, {
     method: 'PATCH',
@@ -9421,10 +9545,11 @@ async function confirmAdminRescheduleBooking(booking) {
     body: JSON.stringify({
       bookingDate: selection.bookingDate,
       bookingTime: selection.bookingTime,
-      otp: String(otp || '').trim(),
+      otp,
     }),
   });
   delete state.adminRescheduleSelections[String(id)];
+  delete state.adminRescheduleOtpRequested[String(id)];
   state.adminRescheduleAvailability = {};
   await loadDashboardData();
   render();

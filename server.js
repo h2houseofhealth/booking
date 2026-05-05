@@ -36,10 +36,16 @@ const BOOKING_HOLD_MINUTES = 10;
 const BOOKING_HOLD_CUTOFF_SQL = `datetime('now', '-${BOOKING_HOLD_MINUTES} minutes')`;
 const FRONTEND_ORIGINS = String(process.env.FRONTEND_ORIGINS || process.env.FRONTEND_ORIGIN || '')
   .split(',')
-  .map((value) => normalizeEnvValue(value))
+  .map((value) => normalizeOriginValue(value))
   .filter(Boolean);
+const DEPLOYMENT_ORIGINS = [
+  normalizeOriginValue(process.env.PUBLIC_APP_URL || ''),
+  normalizeOriginValue(process.env.API_BASE_URL || ''),
+].filter(Boolean);
 const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
-const ALLOWED_CORS_ORIGINS = Array.from(new Set([...DEFAULT_ALLOWED_ORIGINS, ...FRONTEND_ORIGINS]));
+const ALLOWED_CORS_ORIGINS = Array.from(
+  new Set([...DEFAULT_ALLOWED_ORIGINS, ...FRONTEND_ORIGINS, ...DEPLOYMENT_ORIGINS].map(normalizeOriginValue).filter(Boolean))
+);
 const ADMIN_DISCOUNT_GATE_PASSWORD = normalizeEnvValue(process.env.ADMIN_DISCOUNT_GATE_PASSWORD || 'H2-FOUNDERS-2026');
 const RAZORPAY_KEY_ID = normalizeEnvValue(process.env.RAZORPAY_KEY_ID);
 const RAZORPAY_KEY_SECRET = normalizeEnvValue(process.env.RAZORPAY_KEY_SECRET);
@@ -433,6 +439,12 @@ function normalizeEnvValue(value) {
     normalized = normalized.slice(1, -1).trim();
   }
   return normalized;
+}
+
+function normalizeOriginValue(value) {
+  const normalized = normalizeEnvValue(value);
+  if (!normalized) return '';
+  return normalized.replace(/\/+$/, '');
 }
 
 function deriveBookingSenderEmail(email) {

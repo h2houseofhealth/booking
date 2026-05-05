@@ -3230,6 +3230,16 @@ h1, h2, h3 {
   background: rgba(180, 35, 24, 0.05);
 }
 
+.admin-calendar-slot-row.is-history {
+  border-color: rgba(var(--ink-rgb), 0.12);
+  background: rgba(var(--ink-rgb), 0.035);
+}
+
+.admin-calendar-slot-row.is-history.is-booked {
+  border-color: rgba(var(--brand-primary-rgb), 0.24);
+  background: rgba(var(--brand-primary-rgb), 0.07);
+}
+
 .admin-calendar-slot-time {
   display: grid;
   gap: 0.12rem;
@@ -6046,6 +6056,21 @@ th {
 
 #bookingForm {
   padding: 1rem;
+}
+
+.admin-payment-choice {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1rem;
+}
+
+.admin-payment-choice-actions {
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.admin-payment-choice-actions .btn {
+  flex: 1 1 220px;
 }
 
 .booking-summary {

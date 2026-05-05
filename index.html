@@ -486,9 +486,11 @@
                   <path d="M5 12h14" />
                 </svg>
               </span>
-              <span id="membershipStatExtraLabel" class="stat-label">Extra Sessions</span>
+              <span id="membershipStatExtraLabel" class="stat-label">Top Up Sessions</span>
               <strong id="membershipStatExtra">0</strong>
-              <small id="membershipStatExtraMeta">Bought</small>
+              <small id="membershipStatExtraMeta">Purchased</small>
+
+
             </button>
           </div>
           <div class="membership-dashboard-row">
@@ -498,15 +500,30 @@
                 <span id="membershipUsageLabel">0 of 0 used</span>
               </div>
               <div class="progress-flex">
-                <div class="progress-ring" id="progressRing">
-                  <span id="progressText">0%</span>
+                <div class="progress-cluster">
+                  <div class="progress-ring" id="progressRing">
+                    <span id="progressText">0%</span>
+                  </div>
+                  <div class="progress-info">
+                    <strong id="membershipUsageCount">0 of 0</strong>
+                    <p class="progress-sub">Sessions used</p>
+                    <div class="progress-mini">
+                      <span id="remainingSessions">0</span>
+                      <small>remaining</small>
+                    </div>
+                  </div>
                 </div>
-                <div class="progress-info">
-                  <strong id="membershipUsageCount">0 of 0</strong>
-                  <p class="progress-sub">Sessions used</p>
-                  <div class="progress-mini">
-                    <span id="remainingSessions">0</span>
-                    <small>remaining</small>
+                <div class="progress-cluster">
+                  <div class="progress-ring" id="topupProgressRing">
+                    <span id="topupProgressText">0%</span>
+                  </div>
+                  <div class="progress-info">
+                    <strong id="membershipTopUpCount">0 of 0</strong>
+                    <p class="progress-sub">Purchased</p>
+                    <div class="progress-mini">
+                      <span id="topupRemainingSessions">0</span>
+                      <small>remaining</small>
+                    </div>
                   </div>
                 </div>
               </div>

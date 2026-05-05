@@ -849,59 +849,90 @@ app.post('/api/auth/register/complete', (req, res) => {
 });
 
 app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) {
-    return res.status(400).json({ message: 'email and password are required' });
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ message: 'email and password are required' });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    let user = null;
+    try {
+      user = db
+        .prepare(
+          `SELECT id, name, email, password_hash, role, age, gender, mobile, avatar_url AS avatarUrl,
+                  membership_status AS membershipStatus, membership_plan AS membershipPlan,
+                  membership_started_at AS membershipStartedAt, membership_expires_at AS membershipExpiresAt,
+                  membership_people_count AS membershipPeopleCount,
+                  membership_subscription_id AS membershipSubscriptionId
+           FROM users
+           WHERE email = ?`
+        )
+        .get(normalizedEmail);
+    } catch {
+      // Older DB schema fallback.
+      user = db
+        .prepare(
+          `SELECT id, name, email, password_hash, role, age, gender, mobile
+           FROM users
+           WHERE email = ?`
+        )
+        .get(normalizedEmail);
+    }
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found. Please register.' });
+    }
+
+    const passwordHash = String(user.password_hash || '').trim();
+    if (!passwordHash) {
+      return res.status(500).json({
+        message: 'This account is missing a password. Please contact support or reseed the admin account.',
+      });
+    }
+
+    let passwordMatches = false;
+    try {
+      passwordMatches = bcrypt.compareSync(String(password), passwordHash);
+    } catch {
+      return res.status(500).json({ message: 'Stored password format is invalid. Please reset your password.' });
+    }
+
+    if (!passwordMatches) {
+      return res.status(401).json({ message: 'Invalid password.' });
+    }
+
+    let syncedUser = null;
+    try {
+      syncedUser = syncMembershipForUser({ userId: Number(user.id), email: normalizedEmail }) || getUserProfileById(Number(user.id));
+    } catch {
+      syncedUser = null;
+    }
+
+    const authSource = syncedUser || user;
+    const authUser = {
+      id: Number(authSource.id),
+      name: String(authSource.name),
+      email: String(authSource.email),
+      role: String(authSource.role || 'user'),
+      age: authSource.age ?? null,
+      gender: authSource.gender || '',
+      mobile: authSource.mobile || '',
+      avatarUrl: authSource.avatarUrl || '',
+      membershipStatus: authSource.membershipStatus || 'inactive',
+      membershipPlan: authSource.membershipPlan || '',
+      membershipStartedAt: authSource.membershipStartedAt || null,
+      membershipExpiresAt: authSource.membershipExpiresAt || null,
+      membershipPeopleCount: authSource.membershipPeopleCount ?? null,
+      membershipSubscriptionId: authSource.membershipSubscriptionId || null,
+    };
+
+    const token = setAuthCookie(req, res, authUser);
+    return res.json({ user: authUser, token });
+  } catch (error) {
+    console.error('Login route error:', String(error?.message || error));
+    return res.status(500).json({ message: 'Login failed due to a server configuration error. Check server logs.' });
   }
-
-  const normalizedEmail = String(email).trim().toLowerCase();
-  const user = db
-    .prepare(
-      `SELECT id, name, email, password_hash, role, age, gender, mobile, avatar_url AS avatarUrl,
-              membership_status AS membershipStatus, membership_plan AS membershipPlan,
-              membership_started_at AS membershipStartedAt, membership_expires_at AS membershipExpiresAt,
-              membership_people_count AS membershipPeopleCount,
-              membership_subscription_id AS membershipSubscriptionId
-       FROM users
-       WHERE email = ?`
-    )
-    .get(normalizedEmail);
-
-  if (!user) {
-    return res.status(404).json({ message: 'User not found. Please register.' });
-  }
-
-  const passwordHash = String(user.password_hash || '').trim();
-  if (!passwordHash) {
-    return res.status(500).json({
-      message: 'This account is missing a password. Please contact support or reseed the admin account.',
-    });
-  }
-
-  if (!bcrypt.compareSync(String(password), passwordHash)) {
-    return res.status(401).json({ message: 'Invalid password.' });
-  }
-
-  const syncedUser = syncMembershipForUser({ userId: Number(user.id), email: normalizedEmail }) || getUserProfileById(Number(user.id)) || user;
-  const authUser = {
-    id: Number(syncedUser.id),
-    name: String(syncedUser.name),
-    email: String(syncedUser.email),
-    role: String(syncedUser.role || 'user'),
-    age: syncedUser.age ?? null,
-    gender: syncedUser.gender || '',
-    mobile: syncedUser.mobile || '',
-    avatarUrl: syncedUser.avatarUrl || '',
-    membershipStatus: syncedUser.membershipStatus || 'inactive',
-    membershipPlan: syncedUser.membershipPlan || '',
-    membershipStartedAt: syncedUser.membershipStartedAt || null,
-    membershipExpiresAt: syncedUser.membershipExpiresAt || null,
-    membershipPeopleCount: syncedUser.membershipPeopleCount ?? null,
-    membershipSubscriptionId: syncedUser.membershipSubscriptionId || null,
-  };
-
-  const token = setAuthCookie(req, res, authUser);
-  return res.json({ user: authUser, token });
 });
 
 app.post('/api/auth/login/verify', (req, res) => {

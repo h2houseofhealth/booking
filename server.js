@@ -6108,6 +6108,9 @@ function getAdminRescheduleEligibility(booking) {
   if (status === 'completed' || status === 'cancelled') {
     return { eligible: false, message: 'completed or cancelled sessions cannot be rescheduled here' };
   }
+  if (String(booking?.notes || '').toLowerCase().includes('rescheduled by admin from')) {
+    return { eligible: false, message: 'this session was already rescheduled once and cannot be rescheduled again' };
+  }
   const slotStart = new Date(`${booking.bookingDate}T${normalizeSlotStartTime(booking.bookingTime) || booking.bookingTime}:00`).getTime();
   if (!Number.isFinite(slotStart)) {
     return { eligible: false, message: 'booking slot is invalid' };
@@ -6116,11 +6119,11 @@ function getAdminRescheduleEligibility(booking) {
   if (slotStart > now) {
     return { eligible: true, mode: 'upcoming' };
   }
-  const missedWindowMs = 20 * 60 * 1000;
+  const missedWindowMs = 15 * 60 * 1000;
   if (now <= slotStart + missedWindowMs) {
     return { eligible: true, mode: 'missed' };
   }
-  return { eligible: false, message: 'missed bookings can be rescheduled only within 20 minutes after the slot starts' };
+  return { eligible: false, message: 'missed bookings can be rescheduled only within 15 minutes after the slot starts' };
 }
 
 function loadBookingForAdminReschedule(bookingId) {
@@ -6201,8 +6204,9 @@ app.post('/api/admin/bookings/:id/reschedule-otp', requireAuth, requireAdmin, as
     return res.status(404).json({ message: 'booking not found' });
   }
 
+  const adminOverride = Boolean(req.body?.adminOverride);
   const eligibility = getAdminRescheduleEligibility(booking);
-  if (!eligibility.eligible) {
+  if (!eligibility.eligible && !adminOverride) {
     return res.status(409).json({ message: eligibility.message });
   }
 
@@ -6256,8 +6260,9 @@ app.patch('/api/admin/bookings/:id/reschedule-missed', requireAuth, requireAdmin
     return res.status(404).json({ message: 'booking not found' });
   }
 
+  const adminOverride = Boolean(req.body?.adminOverride);
   const eligibility = getAdminRescheduleEligibility(booking);
-  if (!eligibility.eligible) {
+  if (!eligibility.eligible && !adminOverride) {
     return res.status(409).json({ message: eligibility.message });
   }
 

@@ -10640,7 +10640,16 @@ function formatBookingCreatedAtIndia(value) {
 
 async function api(url, options = {}) {
   const targetUrl = buildApiUrl(url);
-  const response = await fetch(targetUrl, withApiCredentials(options));
+  let response;
+  try {
+    response = await fetch(targetUrl, withApiCredentials(options));
+  } catch (fetchError) {
+    const networkError = new Error(
+      `Network request failed for ${targetUrl}. Check API host, CORS, HTTPS, and server availability.`
+    );
+    networkError.cause = fetchError;
+    throw networkError;
+  }
 
   if (response.status === 204) {
     return null;
@@ -10657,7 +10666,13 @@ async function api(url, options = {}) {
   }
 
   if (!response.ok) {
-    const message = data?.message || 'Request failed';
+    let message = data?.message || '';
+    if (!message) {
+      const text = await response.text().catch(() => '');
+      const compact = String(text || '').replace(/\s+/g, ' ').trim();
+      const preview = compact ? ` Response: ${compact.slice(0, 180)}` : '';
+      message = `Request failed (${response.status}) for ${targetUrl}.${preview}`;
+    }
     const error = new Error(message);
     error.status = response.status;
     error.data = data;

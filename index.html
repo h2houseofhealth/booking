@@ -395,9 +395,8 @@
       <section id="adminTabNav" class="panel app-only admin-only user-tab-nav admin-tab-nav" aria-label="Admin navigation" hidden>
         <div class="user-tab-grid admin-tab-grid">
           <button id="adminTabCalendar" class="user-tab-btn" type="button">Calendar</button>
-          <button id="adminTabBookings" class="user-tab-btn" type="button">Bookings</button>
-          <button id="adminTabSessions" class="user-tab-btn" type="button">Session Tracking</button>
-          <button id="adminTabHistory" class="user-tab-btn" type="button">History</button>
+          <button id="adminTabBookings" class="user-tab-btn" type="button">History</button>
+          <button id="adminTabSessions" class="user-tab-btn" type="button">Users Tracking</button>
           <button id="adminTabCoupons" class="user-tab-btn" type="button">Coupons</button>
           <button id="adminTabMemberships" class="user-tab-btn" type="button">Memberships</button>
           <button id="adminTabRescheduled" class="user-tab-btn" type="button">Reschedule</button>
@@ -640,7 +639,7 @@
         <div class="panel-head admin-calendar-head">
           <div>
             <h2>Admin Calendar</h2>
-            <p class="membership-copy">View open slots, book for users, and track customer sessions.</p>
+            <p class="membership-copy">View open slots, book for users, and track customer history.</p>
           </div>
           <button id="adminCalendarRefreshBtn" class="btn btn-secondary" type="button">Refresh Slots</button>
         </div>
@@ -705,7 +704,7 @@
               <p id="adminCalendarStatus" class="membership-copy"></p>
             </div>
             <div id="adminCalendarSlots" class="admin-calendar-slots"></div>
-            <p id="adminCalendarEmpty" class="empty-state" hidden>No services available for this date and category.</p>
+            <p id="adminCalendarEmpty" class="empty-state" hidden>No available slots for this date and category.</p>
           </section>
         </div>
         <div id="adminCalendarTracker" class="admin-calendar-tracker"></div>
@@ -849,9 +848,9 @@
         </div>
       </section>
 
-      <section id="adminUserSessionsSection" class="panel app-only admin-only admin-user-session-panel" aria-label="Admin bookings" hidden>
+      <section id="adminUserSessionsSection" class="panel app-only admin-only admin-user-session-panel" aria-label="Users tracking" hidden>
         <div class="panel-head">
-          <h2>Session Tracking</h2>
+          <h2>Users Tracking</h2>
         </div>
         <div class="admin-section-toolbar">
           <p class="membership-copy">Search any user and open their session details from the cards below.</p>
@@ -864,7 +863,7 @@
         <p id="adminUserCardsEmpty" class="empty-state" hidden>No users found.</p>
       </section>
 
-      <section id="adminHistorySection" class="panel app-only admin-only" aria-label="Admin bookings">
+      <section id="adminHistorySection" class="panel app-only admin-only" aria-label="Admin bookings" hidden>
         <div class="panel-head">
           <h2 id="adminTableTitle">Today's Bookings</h2>
         </div>
@@ -907,25 +906,31 @@
       </section>
 
       <section id="adminAllBookingsSection" class="panel app-only admin-only" aria-label="Booking history" hidden>
-        <div class="panel-head">
-          <h2>History of All Bookings</h2>
+        <div class="panel-head admin-booking-history-head">
+          <div>
+            <h2 id="adminAllBookingTitle">History of All Bookings</h2>
+            <p id="adminAllBookingModeText" class="membership-copy">Paid bookings across all users.</p>
+          </div>
+          <button id="adminAllBookingModeToggleBtn" class="btn btn-secondary" type="button">Today's Bookings</button>
         </div>
         <div class="admin-section-toolbar admin-section-toolbar--filters">
-          <p class="membership-copy">All bookings across users. Use search to quickly find a user by name, phone, or email.</p>
           <label class="admin-inline-search admin-inline-search--date">
-            <span>From</span>
-            <input id="adminAllBookingStartDate" type="date" />
+            <span>Date</span>
+            <input id="adminAllBookingSlotDate" type="date" />
           </label>
           <label class="admin-inline-search admin-inline-search--date">
-            <span>To</span>
-            <input id="adminAllBookingEndDate" type="date" />
+            <span>Slot</span>
+            <select id="adminAllBookingSlotTime">
+              <option value="">All slots</option>
+            </select>
           </label>
-          <button id="adminAllBookingDateResetBtn" class="btn btn-secondary" type="button">Clear</button>
+          <button id="adminAllBookingSlotResetBtn" class="btn btn-secondary" type="button">Clear</button>
           <label class="admin-inline-search admin-inline-search--search">
             <span>Search</span>
             <input id="adminAllBookingSearch" type="text" placeholder="Search by name, email, phone number, service" />
           </label>
         </div>
+        <p id="adminAllBookingSlotSummary" class="membership-copy"></p>
         <div class="table-wrap">
           <table>
             <thead>
@@ -1181,7 +1186,7 @@
       <div class="admin-user-dialog">
         <div class="dialog-head">
           <div>
-            <h2 id="adminUserSessionTitle">Session Tracking</h2>
+            <h2 id="adminUserSessionTitle">Users Tracking</h2>
             <p id="adminUserSessionMeta" class="membership-copy"></p>
           </div>
           <button id="adminUserSessionCloseBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
@@ -1306,6 +1311,22 @@
         <div id="bookingEmailTimelineList" class="admin-notes-modal-list"></div>
         <p id="bookingEmailTimelineEmpty" class="empty-state" hidden>No payment-link email events yet.</p>
       </form>
+    </dialog>
+
+    <dialog id="adminPaymentChoiceDialog" class="booking-dialog">
+      <div class="admin-payment-choice">
+        <div class="dialog-head">
+          <div>
+            <h2>Payment?</h2>
+            <p id="adminPaymentChoiceMeta" class="membership-copy"></p>
+          </div>
+          <button id="adminPaymentChoiceCloseBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="dialog-actions admin-payment-choice-actions">
+          <button id="adminPaymentChoiceCashBtn" class="btn btn-secondary" type="button">Paid in cash</button>
+          <button id="adminPaymentChoiceLinkBtn" class="btn btn-primary" type="button">Send payment link to mobile / mail</button>
+        </div>
+      </div>
     </dialog>
 
     <dialog id="noticeDialog" class="notice-dialog">

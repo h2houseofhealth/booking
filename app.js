@@ -84,13 +84,14 @@ const state = {
   adminActiveTab: 'bookings',
   adminPendingBookingSearch: '',
   adminAllBookingSearch: '',
+  adminAllBookingViewMode: 'history',
   adminPendingBookingDateFilters: {
     startDate: '',
     endDate: '',
   },
-  adminAllBookingDateFilters: {
-    startDate: '',
-    endDate: '',
+  adminAllBookingSlotFilters: {
+    date: '',
+    time: '',
   },
   adminRescheduleSearch: '',
   adminRescheduleSelections: {},
@@ -173,7 +174,6 @@ const state = {
   adminCalendarMonth: '',
   adminCalendarMonthLoading: false,
   adminCalendarDayCache: {},
-  adminCalendarPaymentMode: 'link',
   filters: {
     search: '',
     status: 'all',
@@ -425,6 +425,11 @@ const elements = {
   bookingEmailTimelineList: document.getElementById('bookingEmailTimelineList'),
   bookingEmailTimelineEmpty: document.getElementById('bookingEmailTimelineEmpty'),
   bookingEmailTimelineResendBtn: document.getElementById('bookingEmailTimelineResendBtn'),
+  adminPaymentChoiceDialog: document.getElementById('adminPaymentChoiceDialog'),
+  adminPaymentChoiceMeta: document.getElementById('adminPaymentChoiceMeta'),
+  adminPaymentChoiceCashBtn: document.getElementById('adminPaymentChoiceCashBtn'),
+  adminPaymentChoiceLinkBtn: document.getElementById('adminPaymentChoiceLinkBtn'),
+  adminPaymentChoiceCloseBtn: document.getElementById('adminPaymentChoiceCloseBtn'),
 
   noticeDialog: document.getElementById('noticeDialog'),
   noticeDialogTitle: document.getElementById('noticeDialogTitle'),
@@ -529,9 +534,13 @@ const elements = {
   adminPendingBookingTableBody: document.getElementById('adminPendingBookingTableBody'),
   adminPendingEmptyState: document.getElementById('adminPendingEmptyState'),
   adminAllBookingsSection: document.getElementById('adminAllBookingsSection'),
-  adminAllBookingStartDate: document.getElementById('adminAllBookingStartDate'),
-  adminAllBookingEndDate: document.getElementById('adminAllBookingEndDate'),
-  adminAllBookingDateResetBtn: document.getElementById('adminAllBookingDateResetBtn'),
+  adminAllBookingTitle: document.getElementById('adminAllBookingTitle'),
+  adminAllBookingModeText: document.getElementById('adminAllBookingModeText'),
+  adminAllBookingModeToggleBtn: document.getElementById('adminAllBookingModeToggleBtn'),
+  adminAllBookingSlotDate: document.getElementById('adminAllBookingSlotDate'),
+  adminAllBookingSlotTime: document.getElementById('adminAllBookingSlotTime'),
+  adminAllBookingSlotResetBtn: document.getElementById('adminAllBookingSlotResetBtn'),
+  adminAllBookingSlotSummary: document.getElementById('adminAllBookingSlotSummary'),
   adminAllBookingSearch: document.getElementById('adminAllBookingSearch'),
   adminAllBookingTableBody: document.getElementById('adminAllBookingTableBody'),
   adminAllBookingEmptyState: document.getElementById('adminAllBookingEmptyState'),
@@ -1504,17 +1513,35 @@ function attachEvents() {
     render();
   });
 
-  const onAdminAllBookingDateFilterChange = () => {
-    state.adminAllBookingDateFilters.startDate = String(elements.adminAllBookingStartDate?.value || '').trim();
-    state.adminAllBookingDateFilters.endDate = String(elements.adminAllBookingEndDate?.value || '').trim();
+  elements.adminAllBookingModeToggleBtn?.addEventListener('click', () => {
+    const currentMode = String(state.adminAllBookingViewMode || 'history').trim().toLowerCase();
+    state.adminAllBookingViewMode = currentMode === 'today' ? 'history' : 'today';
+    if (state.adminAllBookingViewMode === 'today') {
+      state.adminAllBookingSlotFilters.date = getTodayIsoDate();
+      state.adminAllBookingSlotFilters.time = '';
+    } else {
+      clearAdminAllBookingSlotFilters();
+    }
+    state.adminActiveTab = 'bookings';
+    render();
+  });
+
+  const onAdminAllBookingSlotFilterChange = () => {
+    state.adminAllBookingSlotFilters.date = String(elements.adminAllBookingSlotDate?.value || '').trim();
+    state.adminAllBookingSlotFilters.time = String(elements.adminAllBookingSlotTime?.value || '').trim();
     render();
   };
-  elements.adminAllBookingStartDate?.addEventListener('change', onAdminAllBookingDateFilterChange);
-  elements.adminAllBookingEndDate?.addEventListener('change', onAdminAllBookingDateFilterChange);
-  elements.adminAllBookingDateResetBtn?.addEventListener('click', () => {
-    state.adminAllBookingDateFilters = { startDate: '', endDate: '' };
-    if (elements.adminAllBookingStartDate) elements.adminAllBookingStartDate.value = '';
-    if (elements.adminAllBookingEndDate) elements.adminAllBookingEndDate.value = '';
+  elements.adminAllBookingSlotDate?.addEventListener('change', () => {
+    state.adminAllBookingSlotFilters.date = String(elements.adminAllBookingSlotDate?.value || '').trim();
+    state.adminAllBookingSlotFilters.time = '';
+    if (elements.adminAllBookingSlotTime) elements.adminAllBookingSlotTime.value = '';
+    render();
+  });
+  elements.adminAllBookingSlotTime?.addEventListener('change', onAdminAllBookingSlotFilterChange);
+  elements.adminAllBookingSlotResetBtn?.addEventListener('click', () => {
+    state.adminAllBookingSlotFilters = { date: '', time: '' };
+    if (elements.adminAllBookingSlotDate) elements.adminAllBookingSlotDate.value = '';
+    if (elements.adminAllBookingSlotTime) elements.adminAllBookingSlotTime.value = '';
     render();
   });
 
@@ -1550,8 +1577,6 @@ function attachEvents() {
   });
   elements.adminCalendarPrevMonthBtn?.addEventListener('click', async () => {
     initializeAdminCalendarState();
-    const minMonth = getTodayIsoDate().slice(0, 7);
-    if (String(state.adminCalendarMonth || '').localeCompare(minMonth) <= 0) return;
     const [year, month] = String(state.adminCalendarMonth || getTodayIsoDate().slice(0, 7)).split('-').map(Number);
     const nextDate = new Date(year, (month || 1) - 2, 1);
     state.adminCalendarMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
@@ -1572,32 +1597,41 @@ function attachEvents() {
   });
   elements.adminCalendarRefreshBtn?.addEventListener('click', async () => {
     state.adminCalendarDayCache = {};
-    await loadAdminCalendarAvailability();
+    await loadAdminCalendarAvailability({ force: true });
   });
   elements.adminCalendarBookConsultationBtn?.addEventListener('click', () => {
     openAdminConsultationBookingFromCalendar();
   });
 
   elements.adminStatTotal?.addEventListener('click', () => {
-    state.adminActiveTab = 'today';
+    state.adminActiveTab = 'bookings';
+    state.adminAllBookingViewMode = 'today';
+    state.adminAllBookingSlotFilters.date = getTodayIsoDate();
+    state.adminAllBookingSlotFilters.time = '';
     render();
     requestAnimationFrame(() => {
-      elements.adminHistorySection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      elements.adminAllBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
 
   elements.adminHistoryCard?.addEventListener('click', () => {
-    state.adminActiveTab = 'history';
+    state.adminActiveTab = 'bookings';
+    state.adminAllBookingViewMode = 'history';
+    clearAdminAllBookingSlotFilters();
     render();
   });
 
   elements.adminTabBookings?.addEventListener('click', () => {
     state.adminActiveTab = 'bookings';
+    state.adminAllBookingViewMode = 'history';
+    clearAdminAllBookingSlotFilters();
     render();
   });
   elements.adminTabUserBookings?.remove();
   elements.adminTabHistory?.addEventListener('click', () => {
-    state.adminActiveTab = 'history';
+    state.adminActiveTab = 'bookings';
+    state.adminAllBookingViewMode = 'history';
+    clearAdminAllBookingSlotFilters();
     render();
   });
   elements.adminTabSessions?.addEventListener('click', () => {
@@ -2294,9 +2328,6 @@ function syncAdminCalendarDateToVisibleMonth() {
   if (maxAllowed && nextDate > maxAllowed) {
     nextDate = `${monthKey}-${String(daysInMonth).padStart(2, '0')}`;
   }
-  if (nextDate < todayKey) {
-    nextDate = todayKey;
-  }
   state.adminCalendarDate = nextDate;
 }
 
@@ -2334,13 +2365,11 @@ async function fetchAdminCalendarAvailabilityForDate(dateKey, { force = false } 
 async function preloadAdminCalendarMonth({ force = false } = {}) {
   initializeAdminCalendarState();
   const { year, monthIndex, daysInMonth } = getAdminCalendarMonthBounds();
-  const todayKey = getTodayIsoDate();
   const maxAllowed = String(getMaxBookingIsoDate() || '').trim();
   const datesToLoad = [];
 
   for (let day = 1; day <= daysInMonth; day += 1) {
     const dateKey = getCalendarDateKey(year, monthIndex, day);
-    if (dateKey < todayKey) continue;
     if (maxAllowed && dateKey > maxAllowed) continue;
     datesToLoad.push(dateKey);
   }
@@ -2379,7 +2408,7 @@ function getAdminCalendarSelectedServiceName() {
   return serviceNames[0] || '';
 }
 
-function openAdminCalendarBooking(serviceName, bookingTime = '', paymentMode = 'link') {
+function openAdminCalendarBooking(serviceName, bookingTime = '') {
   const normalizedService = String(serviceName || '').trim();
   if (!normalizedService) {
     showNotice({ title: 'Notice', body: 'Select a service first.' });
@@ -2389,7 +2418,6 @@ function openAdminCalendarBooking(serviceName, bookingTime = '', paymentMode = '
     showNotice({ title: 'Notice', body: 'Enter customer name, email, and contact number first.' });
     return;
   }
-  state.adminCalendarPaymentMode = paymentMode === 'cash' ? 'cash' : 'link';
   openDialog();
   elements.serviceName.value = normalizedService;
   elements.bookingDate.value = state.adminCalendarDate || getTodayIsoDate();
@@ -2485,7 +2513,16 @@ function getAdminCalendarDayData(dateKey) {
 
 function getAdminCalendarDaySummary(dateKey, serviceName) {
   const dayData = getAdminCalendarDayData(dateKey);
-  if (!dayData) return { hasData: false, openSeatCount: 0, hasAnyOpen: false };
+  if (!dayData) {
+    return {
+      hasData: false,
+      openSeatCount: 0,
+      bookedSeatCount: 0,
+      bookedSlotCount: 0,
+      hasAnyOpen: false,
+      hasAnyBooked: false,
+    };
+  }
 
   const availabilityByService = dayData.availability || {};
   const holdsByService = dayData.holds || {};
@@ -2494,15 +2531,19 @@ function getAdminCalendarDaySummary(dateKey, serviceName) {
   const enforceHydrogenCapacity = isHydrogenCategory(state.adminCalendarCategory);
 
   let openSeatCount = 0;
+  let bookedSeatCount = 0;
+  let bookedSlotCount = 0;
   for (const candidateServiceName of servicesToCheck) {
     const serviceAvailability = availabilityByService[candidateServiceName] || {};
     const serviceHolds = holdsByService[candidateServiceName] || {};
     const capacityRaw = Math.max(1, Number(dayData.slotCapacityByService?.[candidateServiceName] || 8));
     const capacity = enforceHydrogenCapacity ? Math.max(capacityRaw, HYDROGEN_SLOT_CAPACITY_PER_TIME_SLOT) : capacityRaw;
     for (const slot of SLOT_OPTIONS) {
-      if (isBookingSlotInPast(dateKey, slot.value)) continue;
       const booked = Number(serviceAvailability?.[slot.value] || 0);
       const held = Number(serviceHolds?.[slot.value] || 0);
+      bookedSeatCount += booked;
+      if (booked > 0) bookedSlotCount += 1;
+      if (isBookingSlotInPast(dateKey, slot.value)) continue;
       openSeatCount += Math.max(0, capacity - booked - held);
     }
   }
@@ -2510,7 +2551,10 @@ function getAdminCalendarDaySummary(dateKey, serviceName) {
   return {
     hasData: true,
     openSeatCount,
+    bookedSeatCount,
+    bookedSlotCount,
     hasAnyOpen: openSeatCount > 0,
+    hasAnyBooked: bookedSeatCount > 0,
   };
 }
 
@@ -2543,14 +2587,14 @@ function renderAdminCalendar() {
   if (elements.adminCalendarCustomerEmail) elements.adminCalendarCustomerEmail.value = state.adminCustomerForm.email || '';
   if (elements.adminCalendarCustomerPhone) elements.adminCalendarCustomerPhone.value = state.adminCustomerForm.phone || '';
 
-  elements.adminCalendarDate.min = getTodayIsoDate();
+  elements.adminCalendarDate.removeAttribute('min');
   elements.adminCalendarDate.max = getMaxBookingIsoDate();
   elements.adminCalendarDate.value = selectedDate;
   elements.adminCalendarCategory.value = state.adminCalendarCategory || 'HYDROGEN SESSION';
   elements.adminCalendarMonthLabel.textContent = getCalendarMonthLabel(firstOfMonth);
   elements.adminCalendarSelectedDateLabel.textContent = formatBookingDateLabel(selectedDate);
   if (elements.adminCalendarPrevMonthBtn) {
-    elements.adminCalendarPrevMonthBtn.disabled = String(state.adminCalendarMonth || '').localeCompare(getTodayIsoDate().slice(0, 7)) <= 0;
+    elements.adminCalendarPrevMonthBtn.disabled = false;
   }
   if (elements.adminCalendarNextMonthBtn) {
     elements.adminCalendarNextMonthBtn.disabled =
@@ -2576,7 +2620,11 @@ function renderAdminCalendar() {
   } else if (state.adminCalendarError) {
     elements.adminCalendarStatus.textContent = state.adminCalendarError;
   } else {
-    elements.adminCalendarStatus.textContent = `Open slots on ${formatBookingDateLabel(selectedDate)} ${customerLabel}.`;
+    const selectedDateIsPast = selectedDate < getTodayIsoDate();
+    const selectedSummary = getAdminCalendarDaySummary(selectedDate, selectedServiceName);
+    elements.adminCalendarStatus.textContent = selectedDateIsPast
+      ? `Booking summary on ${formatBookingDateLabel(selectedDate)} ${customerLabel}: ${selectedSummary.bookedSlotCount} slots booked, ${selectedSummary.bookedSeatCount} seats booked.`
+      : `Open slots on ${formatBookingDateLabel(selectedDate)} ${customerLabel}.`;
   }
 
   elements.adminCalendarGrid.innerHTML = '';
@@ -2595,10 +2643,24 @@ function renderAdminCalendar() {
     } else {
       const dateKey = getCalendarDateKey(year, monthIndex, dayNumber);
       const summary = getAdminCalendarDaySummary(dateKey, selectedServiceName);
-      const isDisabled = dateKey < todayKey || (maxAllowed && dateKey > maxAllowed);
+      const isDisabled = maxAllowed && dateKey > maxAllowed;
+      const isPastDate = dateKey < todayKey;
+      const summaryLabel = isDisabled
+        ? ''
+        : isPastDate
+          ? summary.hasAnyBooked
+            ? `${summary.bookedSeatCount} booked`
+            : summary.hasData
+              ? '0 booked'
+              : '...'
+          : summary.hasAnyOpen
+            ? `${summary.openSeatCount} open`
+            : summary.hasData
+              ? 'Full'
+              : '...';
       cell.innerHTML = `
         <strong>${escapeHtml(String(dayNumber))}</strong>
-        <small>${isDisabled ? '' : summary.hasAnyOpen ? `${summary.openSeatCount} open` : summary.hasData ? 'Full' : '...'}</small>
+        <small>${escapeHtml(summaryLabel)}</small>
       `;
       if (dateKey === todayKey) cell.classList.add('is-today');
       if (dateKey === selectedDate) cell.classList.add('is-selected');
@@ -2628,20 +2690,46 @@ function renderAdminCalendar() {
     const slotCapacity = isHydrogenCategory(state.adminCalendarCategory)
       ? Math.max(slotCapacityRaw, HYDROGEN_SLOT_CAPACITY_PER_TIME_SLOT)
       : slotCapacityRaw;
+    const selectedDateIsPast = selectedDate < getTodayIsoDate();
     const slotList = document.createElement('div');
     slotList.className = 'admin-calendar-slot-list';
 
+    let availableSlotCount = 0;
     SLOT_OPTIONS.forEach((slot) => {
       const booked = Number(serviceAvailability[slot.value] || 0);
       const holdCount = Number(serviceHolds[slot.value] || 0);
       const openSeats = Math.max(0, slotCapacity - booked - holdCount);
       const isPast = isBookingSlotInPast(selectedDate, slot.value);
+
+      if (selectedDateIsPast) {
+        availableSlotCount += 1;
+        const row = document.createElement('article');
+        row.className = booked > 0
+          ? 'admin-calendar-slot-row is-history is-booked'
+          : 'admin-calendar-slot-row is-history';
+        row.innerHTML = `
+          <div class="admin-calendar-slot-time">
+            <strong>${escapeHtml(slot.label)}</strong>
+            <span>${booked} seats booked</span>
+          </div>
+          <div class="admin-calendar-slot-meta">
+            <span>${booked > 0 ? 'Booked slot' : 'No bookings'}</span>
+            <span>${booked}/${slotCapacity} capacity</span>
+          </div>
+        `;
+        slotList.appendChild(row);
+        return;
+      }
+
+      if (isPast || openSeats <= 0) return;
+
+      availableSlotCount += 1;
       const row = document.createElement('article');
-      row.className = `admin-calendar-slot-row${openSeats <= 0 || isPast ? ' is-full' : ' is-open'}`;
+      row.className = 'admin-calendar-slot-row is-open';
       row.innerHTML = `
         <div class="admin-calendar-slot-time">
           <strong>${escapeHtml(slot.label)}</strong>
-          <span>${isPast ? 'Unavailable' : openSeats > 0 ? `${openSeats} seats open` : 'Fully booked'}</span>
+          <span>${openSeats} seats open</span>
         </div>
         <div class="admin-calendar-slot-meta">
           <span>${booked}/${slotCapacity} booked</span>
@@ -2651,37 +2739,33 @@ function renderAdminCalendar() {
       const actionBtn = document.createElement('button');
       actionBtn.type = 'button';
       actionBtn.className = 'btn btn-secondary admin-calendar-slot-btn';
-      actionBtn.textContent = isPast ? 'Unavailable' : 'Book Slot';
-      actionBtn.disabled = isPast || openSeats <= 0;
+      actionBtn.textContent = 'Book Slot';
       actionBtn.addEventListener('click', () => {
-        openAdminCalendarBooking(selectedServiceName, slot.value, 'link');
+        openAdminCalendarBooking(selectedServiceName, slot.value);
       });
       row.appendChild(actionBtn);
-      const cashBtn = document.createElement('button');
-      cashBtn.type = 'button';
-      cashBtn.className = 'btn btn-secondary admin-calendar-slot-btn';
-      cashBtn.textContent = 'Book Cash';
-      cashBtn.disabled = isPast || openSeats <= 0;
-      cashBtn.addEventListener('click', () => {
-        openAdminCalendarBooking(selectedServiceName, slot.value, 'cash');
-      });
-      row.appendChild(cashBtn);
       slotList.appendChild(row);
     });
 
     elements.adminCalendarSlots.appendChild(slotList);
+    elements.adminCalendarEmpty.hidden = availableSlotCount > 0;
+    if (selectedDateIsPast && elements.adminCalendarEmpty) {
+      elements.adminCalendarEmpty.textContent = 'No slot history for this date and category.';
+    } else if (elements.adminCalendarEmpty) {
+      elements.adminCalendarEmpty.textContent = 'No available slots for this date and category.';
+    }
   }
 
   const trackedUser = getAdminCalendarTrackedUser();
   if (!trackedUser) {
     elements.adminCalendarTracker.innerHTML =
-      '<p class="membership-copy">Enter customer details above to see session tracking for that user.</p>';
+      '<p class="membership-copy">Enter customer details above to see user tracking details.</p>';
     return;
   }
   const summary = buildAdminUserSessionSummary(trackedUser);
   elements.adminCalendarTracker.innerHTML = `
     <div class="admin-calendar-tracker-head">
-      <h3>${escapeHtml(trackedUser.name || 'User')} Session Tracking</h3>
+      <h3>${escapeHtml(trackedUser.name || 'User')} Users Tracking</h3>
       <p>${escapeHtml(trackedUser.email || trackedUser.mobile || '')}</p>
     </div>
     <div class="admin-calendar-tracker-grid">
@@ -3155,12 +3239,11 @@ async function upsertBooking() {
         const registeredMobile = String(result?.customer?.mobile || '').trim() || String(state.adminCustomerForm.phone || '').trim();
         closeDialog();
         render();
-        if ((state.adminActiveTab || '') === 'calendar' && state.adminCalendarPaymentMode === 'cash') {
-          await markBookingPaidInCash(bookingId);
+        if ((state.adminActiveTab || '') === 'calendar') {
+          await showAdminBookingPaymentChoiceDialog(bookingId, registeredEmail, registeredMobile);
         } else {
           await showAdminPaymentLinkDialog(bookingId, registeredEmail, registeredMobile);
         }
-        state.adminCalendarPaymentMode = 'link';
       } else {
         // User flow: add to cart and let checkout happen only from "Pay Now"
         closeDialog();
@@ -3195,6 +3278,70 @@ async function openPaymentWithBookingId(bookingId) {
   }
 }
 
+function showAdminBookingPaymentChoiceDialog(bookingId, customerEmail = '', customerPhone = '') {
+  const id = Number(bookingId);
+  if (!Number.isInteger(id)) return Promise.resolve();
+
+  const emailAddress = String(customerEmail || state.adminCustomerForm?.email || '').trim();
+  const phoneNumber = String(customerPhone || state.adminCustomerForm?.phone || '').trim();
+
+  if (!elements.adminPaymentChoiceDialog || typeof elements.adminPaymentChoiceDialog.showModal !== 'function') {
+    const paidInCash = confirm('Payment?\n\nOK = Paid in cash\nCancel = Send payment link to mobile / mail');
+    return paidInCash
+      ? markBookingPaidInCash(id, { skipConfirm: true })
+      : showAdminPaymentLinkDialog(id, emailAddress, phoneNumber);
+  }
+
+  return new Promise((resolve) => {
+    const dialog = elements.adminPaymentChoiceDialog;
+    const cashBtn = elements.adminPaymentChoiceCashBtn;
+    const linkBtn = elements.adminPaymentChoiceLinkBtn;
+    const closeBtn = elements.adminPaymentChoiceCloseBtn;
+
+    const cleanup = () => {
+      cashBtn?.removeEventListener('click', onCash);
+      linkBtn?.removeEventListener('click', onLink);
+      closeBtn?.removeEventListener('click', onClose);
+      dialog?.removeEventListener('cancel', onClose);
+      dialog?.removeEventListener('close', onDialogClose);
+    };
+
+    const finish = async (action) => {
+      cleanup();
+      if (dialog.open) dialog.close();
+      try {
+        if (action === 'cash') {
+          await markBookingPaidInCash(id, { skipConfirm: true });
+        } else if (action === 'link') {
+          await showAdminPaymentLinkDialog(id, emailAddress, phoneNumber);
+        }
+      } finally {
+        resolve();
+      }
+    };
+
+    const onCash = () => finish('cash');
+    const onLink = () => finish('link');
+    const onClose = () => finish('');
+    const onDialogClose = () => {
+      cleanup();
+      resolve();
+    };
+
+    if (elements.adminPaymentChoiceMeta) {
+      const target = emailAddress || phoneNumber || 'this customer';
+      elements.adminPaymentChoiceMeta.textContent = `Choose how to complete payment for ${target}.`;
+    }
+
+    cashBtn?.addEventListener('click', onCash);
+    linkBtn?.addEventListener('click', onLink);
+    closeBtn?.addEventListener('click', onClose);
+    dialog.addEventListener('cancel', onClose);
+    dialog.addEventListener('close', onDialogClose);
+    dialog.showModal();
+  });
+}
+
 async function showAdminPaymentLinkDialog(bookingId, customerEmail, customerPhone) {
   const result = await api(`/api/bookings/${bookingId}/payment-link`);
   const paymentLink = result.paymentLinkUrl || '';
@@ -3208,22 +3355,11 @@ async function showAdminPaymentLinkDialog(bookingId, customerEmail, customerPhon
 
   copyTextToClipboard(paymentLink);
   if (!emailAddress) {
-    showNotice({ title: 'Payment link', body: [paymentLink, '', 'No customer email found.', 'Link copied.'] });
-    return;
-  }
-  
-  const confirmSend = confirm(
-    `Send payment link to ${emailAddress}?\n\n${paymentLink}`
-  );
-  
-  if (confirmSend) {
-    await sendPaymentLinkViaEmail(bookingId, emailAddress, paymentLink, phoneNumber);
+    openPaymentLinkFallbackShare(paymentLink, phoneNumber, 'No customer email found.');
     return;
   }
 
-  if (phoneNumber) {
-    alert(`Payment link copied.\n\nTip: You can also share manually on phone ${phoneNumber}.`);
-  }
+  await sendPaymentLinkViaEmail(bookingId, emailAddress, paymentLink, phoneNumber);
 }
 
 function normalizePhoneForShare(phoneNumber = '') {
@@ -3348,11 +3484,13 @@ async function markBookingCompleted(bookingId) {
   await changeStatus(id, 'completed');
 }
 
-async function markBookingPaidInCash(bookingId) {
+async function markBookingPaidInCash(bookingId, { skipConfirm = false } = {}) {
   const id = Number(bookingId);
   if (!Number.isInteger(id)) return;
-  const confirmed = confirm('Mark this booking as PAID IN CASH and accept (confirm) the slot?');
-  if (!confirmed) return;
+  if (!skipConfirm) {
+    const confirmed = confirm('Mark this booking as PAID IN CASH and accept (confirm) the slot?');
+    if (!confirmed) return;
+  }
 
   const result = await api(`/api/bookings/${id}/mark-paid-cash`, {
     method: 'PATCH',
@@ -4529,6 +4667,12 @@ function getTodayAdminBookings(bookings = state.bookings) {
     .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
 }
 
+function isAdminPaidBookingVisible(booking) {
+  const status = String(booking?.status || '').trim().toLowerCase();
+  const paymentStatus = normalizePaymentStatusKey(booking?.paymentStatus);
+  return status !== 'cancelled' && paymentStatus === 'paid';
+}
+
 function isAdminDashboardBookingVisible(booking) {
   const status = String(booking?.status || '').trim().toLowerCase();
   const paymentStatus = normalizePaymentStatusKey(booking?.paymentStatus);
@@ -4544,7 +4688,7 @@ function getAdminDashboardVisibleBookings(bookings = state.bookings) {
 function getAdminHistoryBookings(bookings = state.bookings) {
   const normalized = Array.isArray(bookings) ? bookings : [];
   return normalized
-    .filter((booking) => String(booking?.status || '').trim().toLowerCase() !== 'cancelled')
+    .filter(isAdminPaidBookingVisible)
     .sort((a, b) => {
       const aCreated = a?.createdAt ? new Date(a.createdAt).getTime() : Number.NaN;
       const bCreated = b?.createdAt ? new Date(b.createdAt).getTime() : Number.NaN;
@@ -4552,6 +4696,10 @@ function getAdminHistoryBookings(bookings = state.bookings) {
       const bTs = Number.isFinite(bCreated) ? bCreated : getBookingStartTime(b);
       return (Number(bTs) || 0) - (Number(aTs) || 0);
     });
+}
+
+function getAdminPaidTodayBookings(bookings = state.bookings) {
+  return getTodayAdminBookings(bookings).filter(isAdminPaidBookingVisible);
 }
 
 function getAdminPaymentPendingBookings(bookings = state.bookings) {
@@ -4602,16 +4750,23 @@ function getFilteredAdminPaymentPendingBookings(bookings = state.bookings) {
   });
 }
 
+function clearAdminAllBookingSlotFilters() {
+  state.adminAllBookingSlotFilters = { date: '', time: '' };
+  if (elements.adminAllBookingSlotDate) elements.adminAllBookingSlotDate.value = '';
+  if (elements.adminAllBookingSlotTime) elements.adminAllBookingSlotTime.value = '';
+}
+
 function getFilteredAdminAllBookings(bookings = state.bookings) {
   const query = String(state.adminAllBookingSearch || '').trim().toLowerCase();
-  const history = getAdminHistoryBookings(bookings)
-    .filter((booking) =>
-      isIsoDateWithinRange(
-        booking?.bookingDate,
-        state.adminAllBookingDateFilters?.startDate,
-        state.adminAllBookingDateFilters?.endDate
-      )
-    );
+  const mode = String(state.adminAllBookingViewMode || 'history').trim().toLowerCase();
+  const selectedDate = mode === 'today' ? getTodayIsoDate() : String(state.adminAllBookingSlotFilters?.date || '').trim();
+  const selectedTime = String(state.adminAllBookingSlotFilters?.time || '').trim();
+  const baseBookings = mode === 'today' ? getAdminPaidTodayBookings(bookings) : getAdminHistoryBookings(bookings);
+  const history = baseBookings.filter((booking) => {
+    if (selectedDate && String(booking?.bookingDate || '').trim() !== selectedDate) return false;
+    if (selectedTime && normalizeSlotStartTime(booking?.bookingTime) !== selectedTime) return false;
+    return true;
+  });
   if (!query) return history.length > 300 ? history.slice(0, 10) : history;
   return history.filter((booking) => {
     const haystack = [booking?.clientName, booking?.clientEmail, booking?.clientMobile, booking?.serviceName]
@@ -4619,6 +4774,87 @@ function getFilteredAdminAllBookings(bookings = state.bookings) {
       .toLowerCase();
     return haystack.includes(query);
   });
+}
+
+function getAdminAllBookingBaseBookings(bookings = state.bookings) {
+  const mode = String(state.adminAllBookingViewMode || 'history').trim().toLowerCase();
+  return mode === 'today' ? getAdminPaidTodayBookings(bookings) : getAdminHistoryBookings(bookings);
+}
+
+function getAdminAllBookingSlotCounts(bookings = state.bookings) {
+  const mode = String(state.adminAllBookingViewMode || 'history').trim().toLowerCase();
+  const selectedDate = mode === 'today' ? getTodayIsoDate() : String(state.adminAllBookingSlotFilters?.date || '').trim();
+  if (!selectedDate) return new Map();
+  const counts = new Map();
+  getAdminAllBookingBaseBookings(bookings)
+    .filter((booking) => String(booking?.bookingDate || '').trim() === selectedDate)
+    .forEach((booking) => {
+      const slot = normalizeSlotStartTime(booking?.bookingTime);
+      if (!slot) return;
+      counts.set(slot, (counts.get(slot) || 0) + 1);
+  });
+  return counts;
+}
+
+function renderAdminAllBookingControls(bookings = state.bookings) {
+  const mode = String(state.adminAllBookingViewMode || 'history').trim().toLowerCase();
+  const isTodayMode = mode === 'today';
+  const selectedDate = isTodayMode ? getTodayIsoDate() : String(state.adminAllBookingSlotFilters?.date || '').trim();
+  const selectedTime = String(state.adminAllBookingSlotFilters?.time || '').trim();
+  if (isTodayMode && state.adminAllBookingSlotFilters?.date !== selectedDate) {
+    state.adminAllBookingSlotFilters.date = selectedDate;
+  }
+
+  if (elements.adminAllBookingTitle) {
+    elements.adminAllBookingTitle.textContent = isTodayMode ? "Today's Bookings" : 'History of All Bookings';
+  }
+  if (elements.adminAllBookingModeText) {
+    elements.adminAllBookingModeText.textContent = isTodayMode
+      ? "Paid bookings scheduled for today."
+      : 'Paid bookings across all users.';
+  }
+  if (elements.adminAllBookingModeToggleBtn) {
+    elements.adminAllBookingModeToggleBtn.textContent = isTodayMode ? 'History' : "Today's Bookings";
+  }
+  if (elements.adminAllBookingSlotDate && elements.adminAllBookingSlotDate.value !== selectedDate) {
+    elements.adminAllBookingSlotDate.value = selectedDate;
+  }
+
+  const slotCounts = getAdminAllBookingSlotCounts(bookings);
+  if (elements.adminAllBookingSlotTime) {
+    const currentValue = slotCounts.has(selectedTime) ? selectedTime : '';
+    elements.adminAllBookingSlotTime.innerHTML = '';
+    const allOption = document.createElement('option');
+    allOption.value = '';
+    const totalForDate = Array.from(slotCounts.values()).reduce((sum, count) => sum + count, 0);
+    allOption.textContent = selectedDate ? `All slots (${totalForDate})` : 'Select date first';
+    elements.adminAllBookingSlotTime.appendChild(allOption);
+
+    for (const slot of SLOT_OPTIONS) {
+      const count = slotCounts.get(slot.value) || 0;
+      const option = document.createElement('option');
+      option.value = slot.value;
+      option.textContent = `${slot.label} (${count})`;
+      option.disabled = selectedDate ? count === 0 : false;
+      elements.adminAllBookingSlotTime.appendChild(option);
+    }
+    elements.adminAllBookingSlotTime.disabled = !selectedDate;
+    elements.adminAllBookingSlotTime.value = currentValue;
+    if (selectedTime && !currentValue) state.adminAllBookingSlotFilters.time = '';
+  }
+
+  if (elements.adminAllBookingSlotSummary) {
+    if (!selectedDate) {
+      elements.adminAllBookingSlotSummary.textContent = 'Choose a date to see paid booking counts by slot.';
+    } else if (!slotCounts.size) {
+      elements.adminAllBookingSlotSummary.textContent = `No paid bookings found on ${formatBookingDateLabel(selectedDate)}.`;
+    } else {
+      const slotLines = SLOT_OPTIONS
+        .filter((slot) => slotCounts.has(slot.value))
+        .map((slot) => `${slot.label}: ${slotCounts.get(slot.value)}`);
+      elements.adminAllBookingSlotSummary.textContent = `Slot bookings on ${formatBookingDateLabel(selectedDate)}: ${slotLines.join(' | ')}`;
+    }
+  }
 }
 
 function getRescheduleWindowExpiresAt(booking) {
@@ -4835,16 +5071,20 @@ function render() {
   if (isAdmin) {
     let activeAdminTab = state.adminActiveTab || 'bookings';
     if (activeAdminTab === 'userbookings') {
-      activeAdminTab = 'history';
-      state.adminActiveTab = 'history';
+      activeAdminTab = 'bookings';
+      state.adminActiveTab = 'bookings';
     }
-    const todayBookings = getTodayAdminBookings(state.bookings);
+    if (activeAdminTab === 'history' || activeAdminTab === 'today') {
+      if (activeAdminTab === 'today') state.adminAllBookingViewMode = 'today';
+      activeAdminTab = 'bookings';
+      state.adminActiveTab = 'bookings';
+    }
     renderAdminUserCards();
 
     if (elements.adminTabNav) elements.adminTabNav.hidden = false;
-    elements.adminTabBookings?.classList.toggle('is-active', activeAdminTab === 'bookings' || activeAdminTab === 'today');
+    elements.adminTabBookings?.classList.toggle('is-active', activeAdminTab === 'bookings');
     elements.adminTabUserBookings?.classList.toggle('is-active', false);
-    elements.adminTabHistory?.classList.toggle('is-active', activeAdminTab === 'history');
+    elements.adminTabHistory?.classList.toggle('is-active', false);
     elements.adminTabSessions?.classList.toggle('is-active', activeAdminTab === 'sessions');
     elements.adminTabCalendar?.classList.toggle('is-active', activeAdminTab === 'calendar');
     elements.adminTabMemberships?.classList.toggle('is-active', activeAdminTab === 'memberships');
@@ -4852,25 +5092,19 @@ function render() {
     elements.adminTabRescheduled?.classList.toggle('is-active', activeAdminTab === 'rescheduled');
 
     if (elements.adminHistoryToggleBtnWrap) elements.adminHistoryToggleBtnWrap.hidden = true;
-    if (elements.adminHistorySection) elements.adminHistorySection.hidden = !(activeAdminTab === 'bookings' || activeAdminTab === 'today');
+    if (elements.adminHistorySection) elements.adminHistorySection.hidden = true;
     if (elements.adminUserBookingsSection) elements.adminUserBookingsSection.hidden = true;
-    if (elements.adminAllBookingsSection) elements.adminAllBookingsSection.hidden = activeAdminTab !== 'history';
+    if (elements.adminAllBookingsSection) elements.adminAllBookingsSection.hidden = activeAdminTab !== 'bookings';
     if (elements.adminUserSessionsSection) elements.adminUserSessionsSection.hidden = activeAdminTab !== 'sessions';
     if (elements.adminCalendarSection) elements.adminCalendarSection.hidden = activeAdminTab !== 'calendar';
     if (elements.adminMembershipSection) elements.adminMembershipSection.hidden = activeAdminTab !== 'memberships';
     if (elements.adminCouponsSection) elements.adminCouponsSection.hidden = activeAdminTab !== 'coupons';
     if (elements.adminRescheduledSection) elements.adminRescheduledSection.hidden = activeAdminTab !== 'rescheduled';
     if (elements.servicesSection) elements.servicesSection.hidden = true;
-    if (elements.bookingFiltersSection) elements.bookingFiltersSection.hidden = activeAdminTab !== 'bookings';
+    if (elements.bookingFiltersSection) elements.bookingFiltersSection.hidden = true;
 
-    if (activeAdminTab === 'bookings' || activeAdminTab === 'today') {
-      if (elements.adminTableTitle) elements.adminTableTitle.textContent = "Today's Bookings";
-      syncAdminEmailAnalyticsFilterInputs();
-      renderAdminPaymentLinkAnalytics();
-      renderAdminRows(todayBookings);
-    }
-
-    if (activeAdminTab === 'history') {
+    if (activeAdminTab === 'bookings') {
+      renderAdminAllBookingControls(state.bookings);
       renderAdminAllBookingRows(getFilteredAdminAllBookings(state.bookings));
     }
     renderAdminCalendar();
@@ -8008,15 +8242,16 @@ function renderStats(bookings) {
   }
   const isAdmin = state.user?.role === 'admin';
   if (isAdmin) {
-    const todayCount = getTodayAdminBookings(bookings).length;
+    const todayCount = getAdminPaidTodayBookings(bookings).length;
     const totalBookingsTillDate = Array.isArray(bookings)
-      ? bookings.filter((booking) => String(booking?.status || '').trim().toLowerCase() !== 'cancelled').length
+      ? bookings.filter(isAdminPaidBookingVisible).length
       : 0;
     elements.totalCount.textContent = String(todayCount);
     if (elements.historyCount) elements.historyCount.textContent = String(totalBookingsTillDate);
     const activeAdminTab = state.adminActiveTab || 'bookings';
-    elements.adminStatTotal?.classList.toggle('is-active', activeAdminTab === 'bookings' || activeAdminTab === 'today');
-    elements.adminHistoryCard?.classList.toggle('is-active', (state.adminActiveTab || 'bookings') === 'history');
+    const activeMode = String(state.adminAllBookingViewMode || 'history').trim().toLowerCase();
+    elements.adminStatTotal?.classList.toggle('is-active', activeAdminTab === 'bookings' && activeMode === 'today');
+    elements.adminHistoryCard?.classList.toggle('is-active', activeAdminTab === 'bookings' && activeMode !== 'today');
     return;
   }
 
@@ -8167,7 +8402,7 @@ function renderAdminUserSessionDialog() {
   );
 
   if (!selectedUser) {
-    elements.adminUserSessionTitle.textContent = 'Session Tracking';
+    elements.adminUserSessionTitle.textContent = 'Users Tracking';
     elements.adminUserSessionMeta.textContent = '';
     elements.adminUserSessionKpis.innerHTML = '';
     elements.adminUserSessionList.innerHTML = '';
@@ -8176,7 +8411,7 @@ function renderAdminUserSessionDialog() {
   }
 
   const summary = buildAdminUserSessionSummary(selectedUser);
-  elements.adminUserSessionTitle.textContent = selectedUser.name || 'Session Tracking';
+  elements.adminUserSessionTitle.textContent = selectedUser.name || 'Users Tracking';
   elements.adminUserSessionMeta.textContent = [selectedUser.email, selectedUser.mobile ? `ID ${selectedUser.id} • ${selectedUser.mobile}` : `ID ${selectedUser.id}`]
     .filter(Boolean)
     .join(' • ');

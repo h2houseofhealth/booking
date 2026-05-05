@@ -1332,7 +1332,7 @@ app.get('/api/services/availability', requireAuth, (req, res) => {
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  if (selectedDate < today) {
+  if (selectedDate < today && req.user.role !== 'admin') {
     return res.status(400).json({ message: 'bookingDate cannot be in the past' });
   }
 

@@ -6269,6 +6269,8 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
         bookingDate: slot?.bookingDate || getTodayIsoDate(),
         bookingTime: slot?.bookingTime || SLOT_OPTIONS[0].value,
       }));
+      const packageSessions = Math.max(1, Number(getHydrogenSessionCountFromServiceName(selectedService.name) || 1));
+      const computedExtraSessions = Math.max(0, requiredSlots - packageSessions);
       const addOnServiceName = state.selectedHydrogenAddOnServiceName || '';
       const addOnSessionIndex = addOnServiceName ? Math.max(0, Number(state.selectedHydrogenAddOnSessionIndex || 0)) : null;
       if (addOnServiceName) {
@@ -6287,7 +6289,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
         await updateHydrogenPackBookings({
           bookingGroupId: state.hydrogenEditingGroupId,
           serviceName: selectedService.name,
-          extraSessions: 0,
+          extraSessions: computedExtraSessions,
           slots,
           addOnServiceName,
           addOnSessionIndex,
@@ -6295,7 +6297,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
       } else {
         await saveHydrogenPackBookings({
           serviceName: selectedService.name,
-          extraSessions: 0,
+          extraSessions: computedExtraSessions,
           slots,
           addOnServiceName,
           addOnSessionIndex,

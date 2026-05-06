@@ -117,7 +117,7 @@ const state = {
   selectedSingleSessionServiceName: '',
   singleSessionEditingBookingId: '',
   selectedHydrogenServiceName: '',
-  selectedHydrogenFlow: 'included',
+  selectedHydrogenFlow: 'schedule',
   selectedHydrogenExtraSessions: 0,
   selectedHydrogenSlots: [],
   selectedHydrogenAddOnServiceName: '',
@@ -394,6 +394,8 @@ const elements = {
   membershipCalendarDetails: document.getElementById('membershipCalendarDetails'),
   membershipNextSessionTitle: document.getElementById('membershipNextSessionTitle'),
   membershipNextSessionMeta: document.getElementById('membershipNextSessionMeta'),
+  membershipCardScheduleBtn: document.getElementById('membershipCardScheduleBtn'),
+  membershipCardTopUpBtn: document.getElementById('membershipCardTopUpBtn'),
   membershipQuickBookBtn: document.getElementById('membershipQuickBookBtn'),
   membershipQuickAddPersonBtn: document.getElementById('membershipQuickAddPersonBtn'),
   membershipQuickHistoryBtn: document.getElementById('membershipQuickHistoryBtn'),
@@ -1132,9 +1134,9 @@ function attachEvents() {
       elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
-  elements.membershipQuickBookBtn?.addEventListener('click', () => {
+  const openHydrogenServicesFlow = ({ flow = 'schedule', target = 'hydrogen' } = {}) => {
     resetServiceBrowserState();
-    state.selectedHydrogenFlow = 'included';
+    state.selectedHydrogenFlow = flow;
     state.activeUserTab = 'services';
     state.expandedServiceCategories = {
       'HYDROGEN SESSION': true,
@@ -1143,37 +1145,37 @@ function attachEvents() {
     };
     window.location.hash = '#services';
     render();
-    requestAnimationFrame(() => {
+
+    const scrollToTarget = (attempt = 0) => {
+      const topOffset = Math.max(64, Number(document.querySelector('.top-nav')?.offsetHeight || 0) + 12);
       const hydrogenSection = document.querySelector('#service-category-details-hydrogen-session');
-      if (hydrogenSection) {
-        hydrogenSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else {
-        elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const topUpAnchor = document.querySelector('#hydrogen-topup-anchor');
+      const targetElement = target === 'topup' ? topUpAnchor || hydrogenSection : hydrogenSection;
+      if (targetElement) {
+        const y = window.scrollY + targetElement.getBoundingClientRect().top - topOffset;
+        window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+        return;
       }
-    });
+      if (attempt >= 8) {
+        elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      window.setTimeout(() => scrollToTarget(attempt + 1), 120);
+    };
+    requestAnimationFrame(() => scrollToTarget(0));
+  };
+
+  elements.membershipQuickBookBtn?.addEventListener('click', () => {
+    openHydrogenServicesFlow({ flow: 'schedule', target: 'hydrogen' });
+  });
+  elements.membershipCardScheduleBtn?.addEventListener('click', () => {
+    openHydrogenServicesFlow({ flow: 'schedule', target: 'hydrogen' });
+  });
+  elements.membershipCardTopUpBtn?.addEventListener('click', () => {
+    openHydrogenServicesFlow({ flow: 'topup', target: 'topup' });
   });
   elements.membershipTopUpCard?.addEventListener('click', () => {
-    resetServiceBrowserState();
-    state.selectedHydrogenFlow = 'topup';
-    state.activeUserTab = 'services';
-    state.expandedServiceCategories = {
-      'HYDROGEN SESSION': true,
-      'IV THERAPIES': false,
-      'IV SHOTS': false,
-    };
-    window.location.hash = '#services';
-    render();
-    requestAnimationFrame(() => {
-      const topUpSection = document.querySelector('#hydrogen-buy-additional-section');
-      const hydrogenSection = document.querySelector('#service-category-details-hydrogen-session');
-      if (topUpSection) {
-        topUpSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else if (hydrogenSection) {
-        hydrogenSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else {
-        elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    });
+    openHydrogenServicesFlow({ flow: 'topup', target: 'topup' });
   });
   elements.membershipQuickAddPersonBtn?.addEventListener('click', () => {
     state.activeUserTab = 'membership';
@@ -4473,7 +4475,7 @@ async function saveSingleSessionServiceBooking(serviceName) {
 function resetHydrogenComposer({ keepCategory = false, keepFlow = false } = {}) {
   state.selectedHydrogenServiceName = '';
   if (!keepFlow) {
-    state.selectedHydrogenFlow = 'included';
+    state.selectedHydrogenFlow = 'schedule';
   }
   state.selectedHydrogenExtraSessions = 0;
   state.selectedHydrogenSlots = [];
@@ -5688,11 +5690,26 @@ function createServiceDetailItem(service, options = {}) {
 
 function renderHydrogenUnifiedComposer({ detailsContainer, services, category, ivTherapyOptions, ivShotOptions }) {
   const isEditingHydrogenGroup = Boolean(state.hydrogenEditingGroupId);
-  const preferredSessions = [1, 4, 8, 16, 32];
-  let planOptions = getHydrogenPlanOptions(services).filter((opt) => preferredSessions.includes(Number(opt.sessions || 0)));
-  if (!planOptions.length) {
-    planOptions = getHydrogenPlanOptions(services);
-  }
+  const allPlanOptions = getHydrogenPlanOptions(services);
+  const topUpPreferredSessions = [1, 4, 16, 32, 90];
+  const inferTopUpSessionCount = (service) => {
+    const rawName = String(service?.name || '').trim();
+    const rawDescription = String(service?.description || '').trim();
+    const combined = `${rawName} ${rawDescription}`.toLowerCase();
+    const fromStandardParser = Number(getHydrogenSessionCountFromServiceName(rawName));
+    if (Number.isFinite(fromStandardParser) && fromStandardParser > 0) return fromStandardParser;
+    const exactMatch = combined.match(/\b(1|4|16|32|90)\b/);
+    return exactMatch ? Number(exactMatch[1]) : 0;
+  };
+  const topUpPlanOptions = topUpPreferredSessions
+    .map((targetSessions) => {
+      const matchedService = services.find((service) => inferTopUpSessionCount(service) === targetSessions);
+      return matchedService ? { sessions: targetSessions, service: matchedService } : null;
+    })
+    .filter(Boolean);
+  const resolvedTopUpPlanOptions = topUpPlanOptions.length ? topUpPlanOptions : allPlanOptions;
+  const isTopUpFlow = String(state.selectedHydrogenFlow || 'schedule') === 'topup';
+  const planOptions = isTopUpFlow ? resolvedTopUpPlanOptions : allPlanOptions;
   if (!planOptions.length) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
@@ -5703,57 +5720,39 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
 
   const detailSelection = state.serviceDetailSelections[category] || {};
   const hydrogenSummary = getMembershipHydrogenSessionSummary();
-  const isMembershipActiveNow = isCurrentUserMembershipActive();
-  const usedMembershipSessions = isMembershipActiveNow ? getHydrogenSessionsUsedThisMembership() : 0;
-  const inferredTotalFromUsage = isMembershipActiveNow
-    ? usedMembershipSessions + getHydrogenFreeSessionsRemainingClient()
-    : 0;
-  const totalMembershipSessions = Math.max(0, Number(hydrogenSummary.totalSessions || 0), inferredTotalFromUsage);
-  const remainingMembershipSessions = Math.max(0, totalMembershipSessions - usedMembershipSessions);
-  const membershipBatchSize = 4;
-  const singleSessionPlan = planOptions.find((opt) => Number(opt.sessions || 0) === 1) || planOptions[0];
-  const membershipBatchStarts = [];
-  if (isMembershipActiveNow && totalMembershipSessions > 0) {
-    for (let start = 1; start <= totalMembershipSessions; start += membershipBatchSize) {
-      membershipBatchStarts.push(start);
-    }
-  }
-  const useMembershipBatchMode = membershipBatchStarts.length > 0;
-  const selectableBatchStarts = [...membershipBatchStarts];
+  const singleSessionPlan = allPlanOptions.find((opt) => Number(opt.sessions || 0) === 1) || allPlanOptions[0];
+  const scheduleBlocks = [
+    { start: 1, end: 4 },
+    { start: 5, end: 8 },
+    { start: 9, end: 12 },
+    { start: 13, end: 16 },
+  ];
+  const defaultScheduleBlockStart = scheduleBlocks[0].start;
+  const selectedScheduleBlockStart = isTopUpFlow
+    ? null
+    : scheduleBlocks.some((block) => Number(block.start) === Number(detailSelection.selectedScheduleBlockStart))
+      ? Number(detailSelection.selectedScheduleBlockStart)
+      : defaultScheduleBlockStart;
 
   if (!state.selectedHydrogenServiceName || !planOptions.some((opt) => opt.service.name === state.selectedHydrogenServiceName)) {
     const fromDetail = planOptions.find((opt) => opt.service.name === detailSelection.selectedPlanName);
-    state.selectedHydrogenServiceName = useMembershipBatchMode
-      ? singleSessionPlan.service.name
-      : fromDetail?.service?.name || planOptions[0].service.name;
+    state.selectedHydrogenServiceName = isTopUpFlow
+      ? fromDetail?.service?.name || planOptions[0].service.name
+      : singleSessionPlan.service.name;
   }
-  if (useMembershipBatchMode) {
+  if (!isTopUpFlow) {
     state.selectedHydrogenServiceName = singleSessionPlan.service.name;
   }
   state.selectedHydrogenExtraSessions = 0;
-  const selectedUpcomingSessionBlockStart = useMembershipBatchMode
-    ? Math.max(
-        selectableBatchStarts[0],
-        Math.min(
-          Number(detailSelection.selectedUpcomingSessionBlockStart || selectableBatchStarts[0]),
-          selectableBatchStarts[selectableBatchStarts.length - 1]
-        )
-      )
-    : null;
-  const selectedUpcomingSessionBlockEnd = useMembershipBatchMode
-    ? Math.min(totalMembershipSessions, Number(selectedUpcomingSessionBlockStart || 1) + membershipBatchSize - 1)
-    : null;
   state.serviceDetailSelections[category] = {
     ...detailSelection,
     selectedPlanName: state.selectedHydrogenServiceName,
-    ...(useMembershipBatchMode ? { selectedUpcomingSessionBlockStart } : {}),
+    ...(!isTopUpFlow ? { selectedScheduleBlockStart } : {}),
   };
 
   const selectedPlan = planOptions.find((opt) => opt.service.name === state.selectedHydrogenServiceName) || planOptions[0];
   const selectedService = selectedPlan.service;
-  const requiredSlots = useMembershipBatchMode
-    ? Math.max(1, Number(selectedUpcomingSessionBlockEnd || 1) - Number(selectedUpcomingSessionBlockStart || 1) + 1)
-    : Math.max(1, Number(selectedPlan.sessions || 1));
+  const requiredSlots = isTopUpFlow ? Math.max(1, Number(selectedPlan.sessions || 1)) : 4;
   if (state.selectedHydrogenSlots.length > requiredSlots) {
     state.selectedHydrogenSlots = state.selectedHydrogenSlots.slice(0, requiredSlots);
   }
@@ -5780,44 +5779,45 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
 
   const layout = document.createElement('div');
   layout.className = 'hydrogen-layout hydrogen-unified-layout';
+  if (isTopUpFlow) {
+    layout.id = 'hydrogen-topup-anchor';
+  }
 
   const controls = document.createElement('aside');
   controls.className = 'hydrogen-sidebar hydrogen-unified-controls';
   controls.innerHTML = `
     <div class="hydrogen-plan-controls">
       <label>
-        ${useMembershipBatchMode ? 'Choose Package' : 'Hydrogen Sessions'}
+        ${isTopUpFlow ? 'Choose Package' : 'Hydrogen Sessions'}
         <select class="hydrogen-plan-select"></select>
       </label>
     </div>
   `;
 
   const planSelect = controls.querySelector('.hydrogen-plan-select');
-  if (useMembershipBatchMode) {
-    for (const batchStart of selectableBatchStarts) {
-      const batchEnd = Math.min(totalMembershipSessions, batchStart + membershipBatchSize - 1);
-      const batchCount = batchEnd - batchStart + 1;
+  if (!isTopUpFlow) {
+    for (const block of scheduleBlocks) {
       const option = document.createElement('option');
-      option.value = String(batchStart);
-      option.textContent = `Sessions ${batchStart}-${batchEnd} (${batchCount})`;
+      option.value = String(block.start);
+      option.textContent = `Sessions ${block.start}-${block.end}`;
       planSelect.appendChild(option);
     }
   } else {
     for (const optionData of planOptions) {
       const option = document.createElement('option');
       option.value = optionData.service.name;
-      option.textContent = formatSessionLabel(Number(optionData.sessions || 1));
+      option.textContent = `${Number(optionData.sessions || 1)} Session${Number(optionData.sessions || 1) === 1 ? '' : 's'}`;
       planSelect.appendChild(option);
     }
   }
-  planSelect.value = useMembershipBatchMode ? String(selectedUpcomingSessionBlockStart) : state.selectedHydrogenServiceName;
+  planSelect.value = !isTopUpFlow ? String(selectedScheduleBlockStart) : state.selectedHydrogenServiceName;
   planSelect.disabled = isEditingHydrogenGroup;
   planSelect.addEventListener('change', () => {
-    if (useMembershipBatchMode) {
+    if (!isTopUpFlow) {
       state.serviceDetailSelections[category] = {
         ...(state.serviceDetailSelections[category] || {}),
         selectedPlanName: singleSessionPlan.service.name,
-        selectedUpcomingSessionBlockStart: Number(planSelect.value || selectableBatchStarts[0] || 1),
+        selectedScheduleBlockStart: Number(planSelect.value || defaultScheduleBlockStart),
       };
     } else {
       state.selectedHydrogenServiceName = planSelect.value;
@@ -5834,32 +5834,6 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     clearHydrogenComposerNotice();
     renderServices();
   });
-  if (useMembershipBatchMode) {
-    const nextBatchButton = document.createElement('button');
-    nextBatchButton.type = 'button';
-    nextBatchButton.className = 'btn btn-secondary';
-    nextBatchButton.textContent = 'Next';
-    const selectedBatchIndex = selectableBatchStarts.indexOf(Number(selectedUpcomingSessionBlockStart || selectableBatchStarts[0]));
-    const hasNextBatch = selectedBatchIndex >= 0 && selectedBatchIndex < selectableBatchStarts.length - 1;
-    nextBatchButton.disabled = isEditingHydrogenGroup || !hasNextBatch;
-    nextBatchButton.addEventListener('click', () => {
-      const currentIndex = selectableBatchStarts.indexOf(Number(planSelect.value || selectableBatchStarts[0]));
-      const nextStart = selectableBatchStarts[Math.min(selectableBatchStarts.length - 1, Math.max(0, currentIndex) + 1)];
-      state.serviceDetailSelections[category] = {
-        ...(state.serviceDetailSelections[category] || {}),
-        selectedPlanName: singleSessionPlan.service.name,
-        selectedUpcomingSessionBlockStart: Number(nextStart || selectableBatchStarts[0] || 1),
-      };
-      state.selectedHydrogenSlots = [];
-      state.selectedHydrogenAddOnSessionIndex = 0;
-      state.activeHydrogenSessionIndex = 0;
-      state.activeHydrogenSessionDate = '';
-      state.activeHydrogenSessionTime = '';
-      clearHydrogenComposerNotice();
-      renderServices();
-    });
-    controls.querySelector('.hydrogen-plan-controls')?.appendChild(nextBatchButton);
-  }
 
   const addOnPanel = document.createElement('section');
   addOnPanel.className = 'hydrogen-addon-panel';
@@ -5944,7 +5918,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   const scheduleList = document.createElement('div');
   scheduleList.className = 'hydrogen-schedule-list';
   for (let idx = 0; idx < requiredSlots; idx += 1) {
-    const sessionDisplayNumber = useMembershipBatchMode ? Number(selectedUpcomingSessionBlockStart || 1) + idx : idx + 1;
+    const sessionDisplayNumber = !isTopUpFlow ? Number(selectedScheduleBlockStart || 1) + idx : idx + 1;
     const existing = state.selectedHydrogenSlots[idx] || {};
     const bookingDate = String(existing.bookingDate || state.selectedServiceDate || getTodayIsoDate());
     const bookingTime = String(existing.bookingTime || SLOT_OPTIONS[0].value);
@@ -6032,9 +6006,10 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     hydrogenSessionSummary.active &&
     includedSessionsRemaining >= requiredSlots &&
     selectedAddOnPriceInr <= 0;
-  const isTopUpFlow = String(state.selectedHydrogenFlow || 'included') === 'topup';
   const stickyPriceText =
-    hydrogenSessionSummary.active && includedSessionsRemaining > 0
+    isTopUpFlow
+      ? `₹${selectedServicePrice.toLocaleString('en-IN')}`
+      : hydrogenSessionSummary.active && includedSessionsRemaining > 0
       ? `${includedSessionsRemaining} hydrogen session${includedSessionsRemaining === 1 ? '' : 's'} left in membership`
       : selectedServiceIsMembershipOnly
         ? selectedServiceHasMemberAccess
@@ -6112,8 +6087,33 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   const stickyActions = document.createElement('div');
   stickyActions.className = 'service-sticky-actions';
   stickyActions.appendChild(stickyButton);
+  if (!isTopUpFlow) {
+    const nextScheduleBtn = document.createElement('button');
+    nextScheduleBtn.type = 'button';
+    nextScheduleBtn.className = 'btn btn-secondary service-sticky-book-btn';
+    nextScheduleBtn.textContent = 'Next';
+    const scheduleBlockStarts = [1, 5, 9, 13];
+    const currentIndex = scheduleBlockStarts.indexOf(Number(selectedScheduleBlockStart || 1));
+    const hasNext = currentIndex >= 0 && currentIndex < scheduleBlockStarts.length - 1;
+    nextScheduleBtn.disabled = isEditingHydrogenGroup || !hasNext;
+    nextScheduleBtn.addEventListener('click', () => {
+      const nextStart = scheduleBlockStarts[Math.min(scheduleBlockStarts.length - 1, Math.max(0, currentIndex) + 1)];
+      state.serviceDetailSelections[category] = {
+        ...(state.serviceDetailSelections[category] || {}),
+        selectedPlanName: singleSessionPlan.service.name,
+        selectedScheduleBlockStart: Number(nextStart || 1),
+      };
+      state.selectedHydrogenSlots = [];
+      state.selectedHydrogenAddOnSessionIndex = 0;
+      state.activeHydrogenSessionIndex = 0;
+      state.activeHydrogenSessionDate = '';
+      state.activeHydrogenSessionTime = '';
+      clearHydrogenComposerNotice();
+      renderServices();
+    });
+    stickyActions.appendChild(nextScheduleBtn);
+  }
   stickyWrap.appendChild(stickyActions);
-  stickyWrap.id = 'hydrogen-buy-additional-section';
   schedulePanel.appendChild(stickyWrap);
 
   layout.appendChild(schedulePanel);

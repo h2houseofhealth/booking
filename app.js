@@ -2309,9 +2309,6 @@ async function loadServiceAvailability() {
     bookingDate: state.selectedServiceDate,
     category: state.selectedServiceCategory,
   });
-  if (state.user?.role === 'admin' && isAdminCustomerFormReady()) {
-    params.set('customerEmail', state.adminCustomerForm.email);
-  }
   const url = `${buildApiUrl('/api/services/availability')}?${params.toString()}`;
 
   fetch(url, withApiCredentials())
@@ -2380,8 +2377,7 @@ function initializeAdminCalendarState() {
 
 function getAdminCalendarCacheKey(dateKey) {
   const category = String(state.adminCalendarCategory || 'HYDROGEN SESSION').trim().toUpperCase();
-  const email = isAdminCustomerFormReady() ? String(state.adminCustomerForm?.email || '').trim().toLowerCase() : '';
-  return `${category}|${email}|${dateKey}`;
+  return `${category}|${dateKey}`;
 }
 
 function getAdminCalendarMonthBounds() {
@@ -2429,9 +2425,6 @@ async function fetchAdminCalendarAvailabilityForDate(dateKey, { force = false } 
     bookingDate: normalizedDate,
     category: state.adminCalendarCategory || 'HYDROGEN SESSION',
   });
-  if (isAdminCustomerFormReady() && String(state.adminCustomerForm.email || '').trim()) {
-    params.set('customerEmail', String(state.adminCustomerForm.email || '').trim());
-  }
 
   const availabilityResult = await api(`/api/services/availability?${params.toString()}`);
   const dayPayload = {
@@ -3528,7 +3521,7 @@ function buildPaymentLinkShareMessage(paymentLink = '') {
 
 function openPaymentLinkFallbackShare(paymentLink = '', phoneNumber = '', reason = '') {
   const link = String(paymentLink || '').trim();
-  if (!link) return;
+  if (!link) return 'unavailable';
 
   const normalizedPhone = normalizePhoneForShare(phoneNumber);
   const shareMessage = buildPaymentLinkShareMessage(link);
@@ -3536,25 +3529,20 @@ function openPaymentLinkFallbackShare(paymentLink = '', phoneNumber = '', reason
   const whatsappUrl = normalizedPhone
     ? `https://wa.me/${normalizedPhone}?text=${encodedMessage}`
     : `https://wa.me/?text=${encodedMessage}`;
-  const smsUrl = normalizedPhone
-    ? `sms:${normalizedPhone}?body=${encodedMessage}`
-    : '';
 
   copyTextToClipboard(link);
   const contextLine = reason ? `Reason: ${reason}\n\n` : '';
   const promptLine = normalizedPhone
-    ? `Open fallback share now?\n\nYes = WhatsApp\nNo = SMS\nCancel = only keep copied link`
+    ? `Payment link is copied. Open WhatsApp now?\n\nOK = WhatsApp\nCancel = keep copied link`
     : `Open WhatsApp share with the copied link now?`;
   const proceedWhatsapp = confirm(
-    `${contextLine}Payment link copied.\n\n${promptLine}`
+    `${contextLine}${promptLine}`
   );
   if (proceedWhatsapp) {
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-    return;
+    return 'whatsapp';
   }
-  if (normalizedPhone && smsUrl) {
-    window.location.href = smsUrl;
-  }
+  return 'copied';
 }
 
 async function sendPaymentLinkViaEmail(bookingId, email, paymentLink = '', phoneNumber = '') {
@@ -3562,7 +3550,7 @@ async function sendPaymentLinkViaEmail(bookingId, email, paymentLink = '', phone
     const response = await fetch(buildApiUrl(`/api/bookings/${bookingId}/send-payment-link-email`), withApiCredentials({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phoneNumber }),
+      body: JSON.stringify({ email, phoneNumber }),
     }));
 
     let result = null;
@@ -3604,8 +3592,8 @@ async function sendPaymentLinkViaEmail(bookingId, email, paymentLink = '', phone
     const message = error?.message || 'Unable to send payment link via email.';
     const fallbackLink = String(paymentLink || '').trim();
     if (fallbackLink) {
-      openPaymentLinkFallbackShare(fallbackLink, phoneNumber, message);
-      showNotice({ title: 'Email failed', type: 'error', body: `${message}\n\nFallback share opened. Payment link copied.` });
+      copyTextToClipboard(fallbackLink);
+      showNotice({ title: 'Email failed', type: 'error', body: `${message}\n\nPayment link copied as fallback.` });
       return;
     }
 
@@ -5141,9 +5129,6 @@ async function loadAdminRescheduleAvailability(booking) {
       bookingDate: selection.bookingDate,
       category: selection.category || 'HYDROGEN SESSION',
     });
-    if (String(booking.clientEmail || '').trim()) {
-      params.set('customerEmail', String(booking.clientEmail || '').trim());
-    }
     const result = await api(`/api/services/availability?${params.toString()}`);
     state.adminRescheduleAvailability = {
       ...(state.adminRescheduleAvailability || {}),

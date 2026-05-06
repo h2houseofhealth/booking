@@ -1369,11 +1369,11 @@ app.get('/api/services/availability', requireAuth, (req, res) => {
       .prepare(
         `SELECT service_name AS serviceName,
                 booking_time AS bookingTime,
-                SUM(CASE WHEN ${activeBookingSql()} THEN 1 ELSE 0 END) AS total,
+                SUM(CASE WHEN ${calendarBookedBookingSql()} THEN 1 ELSE 0 END) AS total,
                 SUM(CASE WHEN ${holdBookingSql()} THEN 1 ELSE 0 END) AS holdTotal
          FROM bookings
          WHERE booking_date = ?
-           AND status IN ('pending', 'booked', 'confirmed')
+           AND status IN ('pending', 'booked', 'confirmed', 'completed')
            AND service_name IN (${placeholders})
          GROUP BY service_name, booking_time`
       )
@@ -2427,6 +2427,7 @@ app.get('/api/bookings', requireAuth, (req, res) => {
            b.status,
            b.payment_status AS paymentStatus,
            b.payment_reference AS paymentReference,
+           b.payment_method AS paymentMethod,
            b.paid_at AS paidAt,
            b.payment_link_recipient_email AS paymentLinkRecipientEmail,
            b.payment_link_emailed_at AS paymentLinkEmailedAt,
@@ -3558,7 +3559,7 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
   }
 });
 
-app.post('/api/hydrogen/verify', requireAuth, (req, res) => {
+app.post('/api/hydrogen/verify', requireAuth, async (req, res) => {
   if (req.user.role !== 'user') {
     return res.status(403).json({ message: 'only users can verify hydrogen payment' });
   }
@@ -3581,6 +3582,8 @@ app.post('/api/hydrogen/verify', requireAuth, (req, res) => {
     return res.status(400).json({ message: 'Invalid payment signature' });
   }
 
+  const paymentMethod = await getRazorpayPaymentMethod(razorpayPaymentId);
+
   const bookings = db
     .prepare(
       `SELECT id
@@ -3598,10 +3601,11 @@ app.post('/api/hydrogen/verify', requireAuth, (req, res) => {
      SET payment_status = 'paid',
          paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
          payment_reference = ?,
+         payment_method = CASE WHEN ? <> '' THEN ? ELSE payment_method END,
          status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
      WHERE user_id = ?
        AND payment_order_id = ?`
-  ).run(razorpayPaymentId, req.user.id, razorpayOrderId);
+  ).run(razorpayPaymentId, paymentMethod, paymentMethod, req.user.id, razorpayOrderId);
 
   return res.json({ paid: true, bookingCount: bookings.length });
 });
@@ -4336,7 +4340,13 @@ app.get('/api/bookings/:id/invoice-link', requireAuth, (req, res) => {
     .prepare(
       `SELECT id,
               user_id AS userId,
-              payment_status AS paymentStatus
+              booking_group_id AS bookingGroupId,
+              service_name AS serviceName,
+              booking_date AS bookingDate,
+              booking_time AS bookingTime,
+              status,
+              payment_status AS paymentStatus,
+              payment_reference AS paymentReference
        FROM bookings
        WHERE id = ?`
     )
@@ -4353,6 +4363,43 @@ app.get('/api/bookings/:id/invoice-link', requireAuth, (req, res) => {
     return res
       .status(409)
       .json({ message: `invoice is available only for paid bookings (paymentStatus=${booking.paymentStatus ?? ''})` });
+  }
+
+  const bookingOwner = getUserById(booking.userId);
+  const pricingUser = {
+    membershipStatus: bookingOwner?.membershipStatus || 'inactive',
+    membershipStartedAt: bookingOwner?.membershipStartedAt || null,
+    membershipExpiresAt: bookingOwner?.membershipExpiresAt || null,
+    mobile: bookingOwner?.mobile || '',
+  };
+  const groupBookings = booking.bookingGroupId
+    ? db
+        .prepare(
+          `SELECT id,
+                  user_id AS userId,
+                  booking_group_id AS bookingGroupId,
+                  service_name AS serviceName,
+                  booking_date AS bookingDate,
+                  booking_time AS bookingTime,
+                  status,
+                  payment_status AS paymentStatus,
+                  payment_reference AS paymentReference
+           FROM bookings
+           WHERE booking_group_id = ?
+           ORDER BY booking_date, booking_time, id`
+        )
+        .all(booking.bookingGroupId)
+    : [booking];
+  const activeBookings = groupBookings.filter((entry) => String(entry.status || '').toLowerCase() !== 'cancelled');
+  let summary = null;
+  try {
+    summary = buildBookingInvoiceSummary(activeBookings, pricingUser);
+  } catch {
+    summary = null;
+  }
+  const amountInr = Number(summary?.totalAmountInr ?? summary?.amountInr ?? 0);
+  if (amountInr <= 0) {
+    return res.status(409).json({ message: 'invoice is available only for paid bookings with amount greater than 0' });
   }
 
   const token = createInvoiceAccessToken({
@@ -5148,7 +5195,7 @@ app.post('/api/public/payments/create-order', async (req, res) => {
   }
 });
 
-app.post('/api/public/payments/verify', (req, res) => {
+app.post('/api/public/payments/verify', async (req, res) => {
   const access = verifyPaymentAccessToken(req.body?.token);
   const razorpayOrderId = String(req.body?.razorpay_order_id || '');
   const razorpayPaymentId = String(req.body?.razorpay_payment_id || '');
@@ -5185,6 +5232,8 @@ app.post('/api/public/payments/verify', (req, res) => {
     return res.status(400).json({ message: 'Invalid payment signature' });
   }
 
+  const paymentMethod = await getRazorpayPaymentMethod(razorpayPaymentId);
+
   if (booking.bookingGroupId) {
     const groupBookings = db
       .prepare(
@@ -5202,16 +5251,17 @@ app.post('/api/public/payments/verify', (req, res) => {
            paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
            payment_order_id = CASE WHEN ? <> '' THEN ? ELSE payment_order_id END,
            payment_reference = CASE WHEN ? <> '' THEN ? ELSE payment_reference END,
+           payment_method = CASE WHEN ? <> '' THEN ? ELSE payment_method END,
            status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
        WHERE booking_group_id = ?
          AND status <> 'cancelled'
          AND payment_status <> 'paid'`
-    ).run(razorpayOrderId, razorpayOrderId, razorpayPaymentId, razorpayPaymentId, booking.bookingGroupId);
+    ).run(razorpayOrderId, razorpayOrderId, razorpayPaymentId, razorpayPaymentId, paymentMethod, paymentMethod, booking.bookingGroupId);
 
     return res.json({ bookingId: access.bookingId, paid: true, bookingCount: groupBookings.length });
   }
 
-  markBookingPaid(access.bookingId, razorpayOrderId, razorpayPaymentId);
+  markBookingPaid(access.bookingId, razorpayOrderId, razorpayPaymentId, paymentMethod);
   return res.json({ bookingId: access.bookingId, paid: true });
 });
 
@@ -5594,6 +5644,9 @@ app.get('/invoice/booking', (req, res) => {
   }
 
   const amountInr = Number(summary?.totalAmountInr ?? summary?.amountInr ?? 0);
+  if (amountInr <= 0) {
+    return res.status(409).send('Invoice is available only for paid bookings with amount greater than 0');
+  }
   const invoiceNo = `BK-${booking.id}`;
   const paidAtLabel = booking.paidAt ? new Date(booking.paidAt).toLocaleString() : '';
   const bookingDateTimeLabel = booking.bookingDate
@@ -5830,7 +5883,7 @@ app.get('/invoice/membership', (req, res) => {
 </html>`);
 });
 
-app.post('/api/payments/verify', requireAuth, (req, res) => {
+app.post('/api/payments/verify', requireAuth, async (req, res) => {
   const bookingId = Number(req.body?.bookingId);
   const razorpayOrderId = String(req.body?.razorpay_order_id || '');
   const razorpayPaymentId = String(req.body?.razorpay_payment_id || '');
@@ -5871,6 +5924,8 @@ app.post('/api/payments/verify', requireAuth, (req, res) => {
     return res.status(400).json({ message: 'Invalid payment signature' });
   }
 
+  const paymentMethod = await getRazorpayPaymentMethod(razorpayPaymentId);
+
   if (booking.bookingGroupId) {
     const groupBookings = db
       .prepare(
@@ -5888,20 +5943,21 @@ app.post('/api/payments/verify', requireAuth, (req, res) => {
            paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
            payment_order_id = CASE WHEN ? <> '' THEN ? ELSE payment_order_id END,
            payment_reference = CASE WHEN ? <> '' THEN ? ELSE payment_reference END,
+           payment_method = CASE WHEN ? <> '' THEN ? ELSE payment_method END,
            status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
        WHERE booking_group_id = ?
          AND status <> 'cancelled'
          AND payment_status <> 'paid'`
-    ).run(razorpayOrderId, razorpayOrderId, razorpayPaymentId, razorpayPaymentId, booking.bookingGroupId);
+    ).run(razorpayOrderId, razorpayOrderId, razorpayPaymentId, razorpayPaymentId, paymentMethod, paymentMethod, booking.bookingGroupId);
 
     return res.json({ bookingId, paid: true, bookingCount: groupBookings.length });
   }
 
-  markBookingPaid(bookingId, razorpayOrderId, razorpayPaymentId);
+  markBookingPaid(bookingId, razorpayOrderId, razorpayPaymentId, paymentMethod);
   return res.json({ bookingId, paid: true });
 });
 
-app.post('/api/payments/verify-cart', requireAuth, (req, res) => {
+app.post('/api/payments/verify-cart', requireAuth, async (req, res) => {
   const razorpayOrderId = String(req.body?.razorpay_order_id || '');
   const razorpayPaymentId = String(req.body?.razorpay_payment_id || '');
   const razorpaySignature = String(req.body?.razorpay_signature || '');
@@ -5924,6 +5980,8 @@ app.post('/api/payments/verify-cart', requireAuth, (req, res) => {
   if (expectedSignature !== razorpaySignature) {
     return res.status(400).json({ message: 'Invalid payment signature' });
   }
+
+  const paymentMethod = await getRazorpayPaymentMethod(razorpayPaymentId);
 
   const cartOrder = db
     .prepare(
@@ -5971,12 +6029,13 @@ app.post('/api/payments/verify-cart', requireAuth, (req, res) => {
          paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
          payment_order_id = CASE WHEN ? <> '' THEN ? ELSE payment_order_id END,
          payment_reference = CASE WHEN ? <> '' THEN ? ELSE payment_reference END,
+         payment_method = CASE WHEN ? <> '' THEN ? ELSE payment_method END,
          status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
      WHERE user_id = ?
        AND payment_order_id = ?
        AND status <> 'cancelled'
        AND payment_status <> 'paid'`
-  ).run(razorpayOrderId, razorpayOrderId, razorpayPaymentId, razorpayPaymentId, req.user.id, razorpayOrderId);
+  ).run(razorpayOrderId, razorpayOrderId, razorpayPaymentId, razorpayPaymentId, paymentMethod, paymentMethod, req.user.id, razorpayOrderId);
 
   db.prepare(
     `UPDATE cart_payment_orders
@@ -6080,6 +6139,7 @@ app.patch('/api/bookings/:id/mark-paid-cash', requireAuth, requireAdmin, (req, r
        SET payment_status = 'paid',
            paid_at = datetime('now'),
            payment_reference = 'cash',
+           payment_method = 'cash',
            status = CASE
              WHEN status IN ('cancelled','completed') THEN status
              ELSE 'confirmed'
@@ -6093,6 +6153,7 @@ app.patch('/api/bookings/:id/mark-paid-cash', requireAuth, requireAdmin, (req, r
        SET payment_status = 'paid',
            paid_at = datetime('now'),
            payment_reference = 'cash',
+           payment_method = 'cash',
            status = CASE
              WHEN status IN ('cancelled','completed') THEN status
              ELSE 'confirmed'
@@ -6214,9 +6275,8 @@ app.post('/api/admin/bookings/:id/reschedule-otp', requireAuth, requireAdmin, as
     return res.status(404).json({ message: 'booking not found' });
   }
 
-  const adminOverride = Boolean(req.body?.adminOverride);
   const eligibility = getAdminRescheduleEligibility(booking);
-  if (!eligibility.eligible && !adminOverride) {
+  if (!eligibility.eligible) {
     return res.status(409).json({ message: eligibility.message });
   }
 
@@ -6270,9 +6330,8 @@ app.patch('/api/admin/bookings/:id/reschedule-missed', requireAuth, requireAdmin
     return res.status(404).json({ message: 'booking not found' });
   }
 
-  const adminOverride = Boolean(req.body?.adminOverride);
   const eligibility = getAdminRescheduleEligibility(booking);
-  if (!eligibility.eligible && !adminOverride) {
+  if (!eligibility.eligible) {
     return res.status(409).json({ message: eligibility.message });
   }
 
@@ -6926,6 +6985,11 @@ function activeBookingSql(alias = '') {
 function holdBookingSql(alias = '') {
   const prefix = alias ? `${alias}.` : '';
   return `(${prefix}status = 'pending' AND COALESCE(${prefix}payment_status, '') <> 'paid' AND ${prefix}created_at >= ${BOOKING_HOLD_CUTOFF_SQL})`;
+}
+
+function calendarBookedBookingSql(alias = '') {
+  const prefix = alias ? `${alias}.` : '';
+  return `(${prefix}status IN ('booked', 'confirmed', 'completed') OR (${prefix}status = 'pending' AND (${prefix}payment_status = 'paid' OR ${prefix}created_at >= ${BOOKING_HOLD_CUTOFF_SQL})))`;
 }
 
 function buildHoldSlotMessage() {
@@ -7664,20 +7728,35 @@ function buildAggregatePaymentSummary(bookings, user) {
   };
 }
 
-function markBookingPaid(bookingId, paymentOrderId, paymentRef) {
+async function getRazorpayPaymentMethod(paymentId) {
+  const id = String(paymentId || '').trim();
+  if (!id || !razorpay?.payments?.fetch) return '';
+
+  try {
+    const payment = await razorpay.payments.fetch(id);
+    return String(payment?.method || '').trim().toLowerCase();
+  } catch (error) {
+    console.warn('Unable to fetch Razorpay payment method:', error?.message || error);
+    return '';
+  }
+}
+
+function markBookingPaid(bookingId, paymentOrderId, paymentRef, paymentMethod = '') {
   if (!Number.isInteger(Number(bookingId))) return;
 
   const orderId = String(paymentOrderId || '');
   const paymentId = String(paymentRef || '');
+  const method = String(paymentMethod || '').trim().toLowerCase();
   db.prepare(
     `UPDATE bookings
      SET payment_status = 'paid',
          paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
          payment_order_id = CASE WHEN ? <> '' THEN ? ELSE payment_order_id END,
          payment_reference = CASE WHEN ? <> '' THEN ? ELSE payment_reference END,
+         payment_method = CASE WHEN ? <> '' THEN ? ELSE payment_method END,
          status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
      WHERE id = ?`
-  ).run(orderId, orderId, paymentId, paymentId, Number(bookingId));
+  ).run(orderId, orderId, paymentId, paymentId, method, method, Number(bookingId));
 }
 
 const USER_PROFILE_SELECT = `SELECT id, name, email, role, age, gender, mobile, avatar_url AS avatarUrl,
@@ -9218,6 +9297,7 @@ function migrate() {
       paid_at TEXT,
       payment_order_id TEXT,
       payment_reference TEXT,
+      payment_method TEXT,
       notes TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -9547,6 +9627,10 @@ function migrate() {
 
   if (!hasColumn('bookings', 'payment_reference')) {
     db.exec('ALTER TABLE bookings ADD COLUMN payment_reference TEXT');
+  }
+
+  if (!hasColumn('bookings', 'payment_method')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN payment_method TEXT');
   }
 
   if (!hasColumn('bookings', 'payment_order_id')) {

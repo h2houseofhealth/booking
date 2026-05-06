@@ -475,6 +475,27 @@ function buildMarketingHeaders() {
   };
 }
 
+function uniqueValidEmails(values = []) {
+  const seen = new Set();
+  const emails = [];
+  for (const value of values) {
+    const email = String(value || '').trim().toLowerCase();
+    if (!email || seen.has(email) || !isValidEmail(email)) continue;
+    seen.add(email);
+    emails.push(email);
+  }
+  return emails;
+}
+
+function getSendGridBookingSenderCandidates() {
+  return uniqueValidEmails([
+    SENDGRID_BOOKING_FROM_EMAIL,
+    SENDGRID_BOOKING_VERIFIED_SENDER,
+    SENDGRID_FROM_EMAIL,
+    SENDGRID_OTP_FROM_EMAIL,
+  ]);
+}
+
 function extractSendGridErrorDetails(error) {
   const statusCode = Number(error?.code || error?.response?.statusCode || 500);
   const body = error?.response?.body;
@@ -9014,77 +9035,76 @@ async function sendBookingPaymentLinkEmail({
     </div>
   `;
 
-  if (SENDGRID_API_KEY && SENDGRID_BOOKING_FROM_EMAIL) {
-    if (!isValidEmail(SENDGRID_BOOKING_FROM_EMAIL)) {
-      return { ok: false, statusCode: 500, message: 'SENDGRID_BOOKING_FROM_EMAIL is invalid.' };
-    }
-    if (
-      SENDGRID_BOOKING_VERIFIED_SENDER &&
-      SENDGRID_BOOKING_FROM_EMAIL.toLowerCase() !== SENDGRID_BOOKING_VERIFIED_SENDER.toLowerCase()
-    ) {
-      return {
-        ok: false,
-        statusCode: 500,
-        message: 'SENDGRID_BOOKING_FROM_EMAIL does not match SENDGRID_BOOKING_VERIFIED_SENDER.',
-      };
+  if (SENDGRID_API_KEY) {
+    const senderCandidates = getSendGridBookingSenderCandidates();
+    if (!senderCandidates.length) {
+      return { ok: false, statusCode: 500, message: 'SendGrid booking sender email is not configured.' };
     }
 
-    try {
-      const [sendGridResponse] = await sgMail.send({
-        to: normalizedToEmail,
-        from: SENDGRID_BOOKING_FROM_EMAIL,
-        subject,
-        text,
-        html,
-        customArgs: {
-          context: 'booking_payment_link',
-          bookingId: String(bookingId || ''),
-          userId: String(userId || ''),
-        },
-        categories: ['booking_payment_link'],
-      });
-      const statusCode = Number(sendGridResponse?.statusCode || 0);
-      const headers = sendGridResponse?.headers || {};
-      const messageId = String(
-        (typeof headers.get === 'function' ? headers.get('x-message-id') : headers['x-message-id'] || headers['X-Message-Id']) || ''
-      ).trim();
+    let lastSendGridError = null;
+    for (const fromEmail of senderCandidates) {
+      try {
+        const [sendGridResponse] = await sgMail.send({
+          to: normalizedToEmail,
+          from: fromEmail,
+          subject,
+          text,
+          html,
+          customArgs: {
+            context: 'booking_payment_link',
+            bookingId: String(bookingId || ''),
+            userId: String(userId || ''),
+          },
+          categories: ['booking_payment_link'],
+        });
+        const statusCode = Number(sendGridResponse?.statusCode || 0);
+        const headers = sendGridResponse?.headers || {};
+        const messageId = String(
+          (typeof headers.get === 'function' ? headers.get('x-message-id') : headers['x-message-id'] || headers['X-Message-Id']) || ''
+        ).trim();
 
-      console.log('Payment link email send attempt result (SendGrid):', {
-        to: normalizedToEmail,
-        from: SENDGRID_BOOKING_FROM_EMAIL,
-        subject,
-        statusCode,
-        messageId,
-      });
+        console.log('Payment link email send attempt result (SendGrid):', {
+          to: normalizedToEmail,
+          from: fromEmail,
+          subject,
+          statusCode,
+          messageId,
+        });
 
-      if (statusCode !== 202) {
-        return {
-          ok: false,
-          statusCode: statusCode || 502,
-          message: `SendGrid did not return 202 accepted. Received ${statusCode || 'unknown'}.`,
-        };
+        if (statusCode !== 202) {
+          lastSendGridError = {
+            statusCode: statusCode || 502,
+            detail: `SendGrid did not return 202 accepted. Received ${statusCode || 'unknown'}.`,
+          };
+          continue;
+        }
+
+        return { ok: true, delivery: 'sendgrid', statusCode, messageId };
+      } catch (error) {
+        const sendGridError = extractSendGridErrorDetails(error);
+        lastSendGridError = sendGridError;
+        console.error('Failed to send booking payment link email via SendGrid:', {
+          to: normalizedToEmail,
+          from: fromEmail,
+          subject,
+          statusCode: sendGridError.statusCode,
+          detail: sendGridError.detail,
+          responseBody: sendGridError.responseBody,
+        });
+        if (![401, 403].includes(Number(sendGridError.statusCode || 0))) {
+          break;
+        }
       }
-
-      return { ok: true, delivery: 'sendgrid', statusCode, messageId };
-    } catch (error) {
-      const sendGridError = extractSendGridErrorDetails(error);
-      console.error('Failed to send booking payment link email via SendGrid:', {
-        to: normalizedToEmail,
-        from: SENDGRID_BOOKING_FROM_EMAIL,
-        subject,
-        statusCode: sendGridError.statusCode,
-        detail: sendGridError.detail,
-        responseBody: sendGridError.responseBody,
-      });
-      return {
-        ok: false,
-        statusCode: sendGridError.statusCode || 500,
-        message:
-          sendGridError.statusCode === 403
-            ? 'SendGrid rejected the sender identity. Verify the configured FROM email or authenticated domain.'
-            : 'Unable to send payment link email. Please try again.',
-      };
     }
+
+    return {
+      ok: false,
+      statusCode: lastSendGridError?.statusCode || 500,
+      message:
+        Number(lastSendGridError?.statusCode || 0) === 403
+          ? 'SendGrid rejected all configured sender identities. Verify SENDGRID_BOOKING_FROM_EMAIL or authenticate the sender domain.'
+          : 'Unable to send payment link email. Please try again.',
+    };
   }
 
   const transporter = getTransporter();

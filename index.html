@@ -429,7 +429,6 @@
             </div>
             <div class="dashboard-actions membership-quick-actions">
               <button id="membershipTakeMembershipBtn" class="btn btn-secondary" type="button" hidden>Become a member</button>
-              <button id="membershipQuickBookBtn" class="btn btn-primary" type="button">Book Hydrogen Session</button>
               <button id="membershipQuickAddPersonBtn" class="btn btn-secondary" type="button">Add Person</button>
               <button id="membershipQuickHistoryBtn" class="btn btn-secondary" type="button">View History</button>
             </div>
@@ -440,7 +439,7 @@
             />
           </div>
           <div class="membership-stat-grid">
-            <button id="membershipTopUpCard" class="membership-stat-card" type="button">
+            <div class="membership-stat-card">
               <span class="stat-icon stat-icon-session" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
                   <path d="M12 2.75c2.08 3.02 5.54 6.8 5.54 10.42A5.54 5.54 0 1 1 6.46 13.17C6.46 9.55 9.92 5.77 12 2.75Z" />
@@ -450,7 +449,7 @@
               <span id="membershipStatSessionsLabel" class="stat-label">Hydrogen Sessions</span>
               <strong id="membershipStatSessions">0</strong>
               <small id="membershipStatSessionsMeta">Included</small>
-            </button>
+            </div>
             <button class="membership-stat-card" type="button">
               <span class="stat-icon stat-icon-members" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
@@ -694,6 +693,7 @@
             <select id="adminCalendarService"></select>
           </label>
           <button id="adminCalendarBookConsultationBtn" class="btn btn-primary" type="button">Book Consultation</button>
+          <button id="adminCalendarClearDetailsBtn" class="btn btn-secondary" type="button">Clear</button>
         </div>
         <div class="admin-calendar-shell">
           <section class="admin-calendar-month-panel" aria-label="Availability calendar">
@@ -990,14 +990,23 @@
       <section id="adminRescheduledSection" class="panel app-only admin-only" aria-label="Missed session rescheduling" hidden>
         <div class="panel-head">
           <h2>Reschedule</h2>
+          <button id="adminRescheduleViewToggleBtn" class="btn btn-secondary" type="button">Rescheduled</button>
         </div>
         <div class="admin-section-toolbar">
-          <p class="membership-copy">Bookings can be rescheduled before the slot starts, or within 15 minutes after a missed slot. Reschedule is allowed only once per booking. Customer OTP verification is required. Admin can enable override when needed.</p>
+          <p class="membership-copy">Bookings can be rescheduled before the slot starts, or within 15 minutes after a missed slot. Reschedule is allowed only once per booking. Customer OTP verification is required.</p>
+          <div class="admin-reschedule-date-filter">
+            <label class="admin-inline-search">
+              <span>Date</span>
+              <input id="adminRescheduleDate" type="date" />
+            </label>
+            <button id="adminRescheduleDateClearBtn" class="btn btn-secondary" type="button">Clear</button>
+          </div>
           <label class="admin-inline-search">
             <span>Search</span>
             <input id="adminRescheduleSearch" type="text" placeholder="Search by name, email, phone number, service" />
           </label>
         </div>
+        <div id="adminRescheduleSlotFilters" class="admin-reschedule-slot-filters" aria-label="Filter reschedule bookings by slot"></div>
         <div id="adminRescheduleList" class="admin-reschedule-list"></div>
         <p id="adminRescheduleEmptyState" class="empty-state">No bookings to reschedule or track.</p>
       </section>

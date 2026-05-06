@@ -81,7 +81,7 @@ const state = {
   showAuthCard: false,
   activeUserTab: 'services',
   userBookingsFilter: 'all',
-  adminActiveTab: 'bookings',
+  adminActiveTab: 'calendar',
   adminPendingBookingSearch: '',
   adminAllBookingSearch: '',
   adminAllBookingViewMode: 'history',
@@ -98,7 +98,9 @@ const state = {
   adminRescheduleAvailability: {},
   adminRescheduleLoading: {},
   adminRescheduleOtpRequested: {},
-  adminRescheduleOverrides: {},
+  adminRescheduleDateFilter: '',
+  adminRescheduleSlotFilter: '',
+  adminRescheduleView: 'queue',
   returnUserTabAfterEdit: '',
   membership: {
     plans: [],
@@ -383,7 +385,6 @@ const elements = {
   membershipStatExtraLabel: document.getElementById('membershipStatExtraLabel'),
   membershipStatExtra: document.getElementById('membershipStatExtra'),
   membershipStatExtraMeta: document.getElementById('membershipStatExtraMeta'),
-  membershipTopUpCard: document.getElementById('membershipTopUpCard'),
   membershipUsageTitle: document.getElementById('membershipUsageTitle'),
   membershipUsageLabel: document.getElementById('membershipUsageLabel'),
   membershipUsageCount: document.getElementById('membershipUsageCount'),
@@ -396,7 +397,6 @@ const elements = {
   membershipNextSessionMeta: document.getElementById('membershipNextSessionMeta'),
   membershipCardScheduleBtn: document.getElementById('membershipCardScheduleBtn'),
   membershipCardTopUpBtn: document.getElementById('membershipCardTopUpBtn'),
-  membershipQuickBookBtn: document.getElementById('membershipQuickBookBtn'),
   membershipQuickAddPersonBtn: document.getElementById('membershipQuickAddPersonBtn'),
   membershipQuickHistoryBtn: document.getElementById('membershipQuickHistoryBtn'),
   membershipBackBtn: document.getElementById('membershipBackBtn'),
@@ -555,6 +555,10 @@ const elements = {
   adminCouponsSection: document.getElementById('adminCouponsSection'),
   adminRescheduledSection: document.getElementById('adminRescheduledSection'),
   adminRescheduleSearch: document.getElementById('adminRescheduleSearch'),
+  adminRescheduleDate: document.getElementById('adminRescheduleDate'),
+  adminRescheduleDateClearBtn: document.getElementById('adminRescheduleDateClearBtn'),
+  adminRescheduleViewToggleBtn: document.getElementById('adminRescheduleViewToggleBtn'),
+  adminRescheduleSlotFilters: document.getElementById('adminRescheduleSlotFilters'),
   adminRescheduleList: document.getElementById('adminRescheduleList'),
   adminRescheduleEmptyState: document.getElementById('adminRescheduleEmptyState'),
 
@@ -571,6 +575,7 @@ const elements = {
   adminCalendarSelectedDateLabel: document.getElementById('adminCalendarSelectedDateLabel'),
   adminCalendarRefreshBtn: document.getElementById('adminCalendarRefreshBtn'),
   adminCalendarBookConsultationBtn: document.getElementById('adminCalendarBookConsultationBtn'),
+  adminCalendarClearDetailsBtn: document.getElementById('adminCalendarClearDetailsBtn'),
   adminCalendarStatus: document.getElementById('adminCalendarStatus'),
   adminCalendarSlots: document.getElementById('adminCalendarSlots'),
   adminCalendarEmpty: document.getElementById('adminCalendarEmpty'),
@@ -652,6 +657,10 @@ function ensurePostLoginDashboardChoice() {
 
 function routeAfterAuthSuccess() {
   ensurePostLoginDashboardChoice();
+  if (state.user?.role === 'admin') {
+    state.adminActiveTab = 'calendar';
+    return;
+  }
   state.membershipBrowseVisible = false;
   state.activeUserTab = 'membership';
   window.location.hash = '#membership';
@@ -876,7 +885,9 @@ function attachEvents() {
     state.adminRescheduleAvailability = {};
     state.adminRescheduleLoading = {};
     state.adminRescheduleOtpRequested = {};
-    state.adminRescheduleOverrides = {};
+    state.adminRescheduleDateFilter = '';
+    state.adminRescheduleSlotFilter = '';
+    state.adminRescheduleView = 'queue';
     state.adminCalendarDate = '';
     state.adminCalendarCategory = 'HYDROGEN SESSION';
     state.adminCalendarServiceName = '';
@@ -934,6 +945,9 @@ function attachEvents() {
     if (field === 'name' && target.value !== value) target.value = value;
     if (field === 'phone' && target.value !== value) target.value = value;
     state.adminCustomerForm[field] = value;
+    if (elements.adminCalendarClearDetailsBtn) {
+      elements.adminCalendarClearDetailsBtn.disabled = !hasAdminCustomerDetails();
+    }
     if (state.user?.role === 'admin') {
       clearTimeout(adminCustomerRefreshTimer);
       adminCustomerRefreshTimer = window.setTimeout(() => {
@@ -1165,16 +1179,10 @@ function attachEvents() {
     requestAnimationFrame(() => scrollToTarget(0));
   };
 
-  elements.membershipQuickBookBtn?.addEventListener('click', () => {
-    openHydrogenServicesFlow({ flow: 'schedule', target: 'hydrogen' });
-  });
   elements.membershipCardScheduleBtn?.addEventListener('click', () => {
     openHydrogenServicesFlow({ flow: 'schedule', target: 'hydrogen' });
   });
   elements.membershipCardTopUpBtn?.addEventListener('click', () => {
-    openHydrogenServicesFlow({ flow: 'topup', target: 'topup' });
-  });
-  elements.membershipTopUpCard?.addEventListener('click', () => {
     openHydrogenServicesFlow({ flow: 'topup', target: 'topup' });
   });
   elements.membershipQuickAddPersonBtn?.addEventListener('click', () => {
@@ -1592,6 +1600,24 @@ function attachEvents() {
     state.adminRescheduleSearch = String(event.target.value || '').trim().toLowerCase();
     render();
   });
+  elements.adminRescheduleDate?.addEventListener('change', (event) => {
+    state.adminRescheduleDateFilter = String(event.target.value || '').trim();
+    state.adminRescheduleSlotFilter = '';
+    state.adminRescheduleOtpRequested = {};
+    render();
+  });
+  elements.adminRescheduleDateClearBtn?.addEventListener('click', () => {
+    state.adminRescheduleDateFilter = '';
+    state.adminRescheduleSlotFilter = '';
+    state.adminRescheduleOtpRequested = {};
+    if (elements.adminRescheduleDate) elements.adminRescheduleDate.value = '';
+    render();
+  });
+  elements.adminRescheduleViewToggleBtn?.addEventListener('click', () => {
+    state.adminRescheduleView = state.adminRescheduleView === 'rescheduled' ? 'queue' : 'rescheduled';
+    state.adminRescheduleOtpRequested = {};
+    render();
+  });
   elements.adminCalendarDate?.addEventListener('change', async (event) => {
     state.adminCalendarDate = String(event.target.value || '').trim() || getTodayIsoDate();
     state.adminCalendarMonth = state.adminCalendarDate.slice(0, 7);
@@ -1633,6 +1659,9 @@ function attachEvents() {
   });
   elements.adminCalendarBookConsultationBtn?.addEventListener('click', () => {
     openAdminConsultationBookingFromCalendar();
+  });
+  elements.adminCalendarClearDetailsBtn?.addEventListener('click', async () => {
+    await clearAdminCalendarCustomerDetails();
   });
 
   elements.adminStatTotal?.addEventListener('click', () => {
@@ -2083,11 +2112,34 @@ function isAdminCustomerFormReady() {
   );
 }
 
+function hasAdminCustomerDetails() {
+  return [state.adminCustomerForm.name, state.adminCustomerForm.email, state.adminCustomerForm.phone].some((value) =>
+    String(value || '').trim()
+  );
+}
+
 function setAdminCustomerMessage(message = '') {
   if (!elements.adminCustomerMessage) return;
   const text = String(message || '').trim();
   elements.adminCustomerMessage.textContent = text;
   elements.adminCustomerMessage.hidden = !text;
+}
+
+async function clearAdminCalendarCustomerDetails() {
+  clearTimeout(adminCustomerRefreshTimer);
+  state.adminCustomerForm = { name: '', email: '', phone: '' };
+  state.adminResolvedCustomer = null;
+  state.adminCalendarServiceName = '';
+  state.adminCalendarDayCache = {};
+
+  if (elements.adminCustomerName) elements.adminCustomerName.value = '';
+  if (elements.adminCustomerEmail) elements.adminCustomerEmail.value = '';
+  if (elements.adminCustomerPhone) elements.adminCustomerPhone.value = '';
+  if (elements.adminCalendarCustomerName) elements.adminCalendarCustomerName.value = '';
+  if (elements.adminCalendarCustomerEmail) elements.adminCalendarCustomerEmail.value = '';
+  if (elements.adminCalendarCustomerPhone) elements.adminCalendarCustomerPhone.value = '';
+
+  await refreshAdminCustomerContext();
 }
 
 async function refreshAdminCustomerContext() {
@@ -2503,7 +2555,7 @@ function openAdminConsultationBookingFromCalendar() {
   openAdminCalendarBooking(consultationService.name, nextOpenSlot);
 }
 
-async function loadAdminCalendarAvailability({ silent = false } = {}) {
+async function loadAdminCalendarAvailability({ silent = false, force = false } = {}) {
   if (state.user?.role !== 'admin') return;
   initializeAdminCalendarState();
   syncAdminCalendarDateToVisibleMonth();
@@ -2513,8 +2565,8 @@ async function loadAdminCalendarAvailability({ silent = false } = {}) {
   try {
     const selectedDate = state.adminCalendarDate || getTodayIsoDate();
     const [dayAvailability] = await Promise.all([
-      fetchAdminCalendarAvailabilityForDate(selectedDate),
-      preloadAdminCalendarMonth(),
+      fetchAdminCalendarAvailabilityForDate(selectedDate, { force }),
+      preloadAdminCalendarMonth({ force }),
     ]);
     state.adminCalendarAvailability = dayAvailability.availability || {};
     state.adminCalendarHoldCounts = dayAvailability.holds || {};
@@ -2536,23 +2588,79 @@ async function refreshAdminCalendarCacheForDate(dateKey) {
   if (state.user?.role !== 'admin') return;
   const normalizedDate = String(dateKey || '').trim();
   if (!normalizedDate) return;
-  await fetchAdminCalendarAvailabilityForDate(normalizedDate, { force: true });
+  const dayAvailability = await fetchAdminCalendarAvailabilityForDate(normalizedDate, { force: true });
+  if (normalizedDate === String(state.adminCalendarDate || '').trim()) {
+    state.adminCalendarAvailability = dayAvailability.availability || {};
+    state.adminCalendarHoldCounts = dayAvailability.holds || {};
+    state.adminCalendarCapacityByService = dayAvailability.slotCapacityByService || {};
+    state.adminCalendarServiceName = getAdminCalendarSelectedServiceName();
+  }
 }
 
 function getAdminCalendarDayData(dateKey) {
   return state.adminCalendarDayCache?.[getAdminCalendarCacheKey(dateKey)] || null;
 }
 
+function isAdminCalendarCountedBooking(booking) {
+  const status = String(booking?.status || '').trim().toLowerCase();
+  if (status === 'cancelled') return false;
+  if (['booked', 'confirmed', 'completed'].includes(status)) return true;
+  return status === 'pending' && normalizePaymentStatusKey(booking?.paymentStatus) === 'paid';
+}
+
+function isAdminCalendarBookingInScope(booking, serviceName = '') {
+  const selectedCategory = String(state.adminCalendarCategory || 'HYDROGEN SESSION').trim().toUpperCase();
+  const bookingCategory = getBookingCategory(booking?.serviceName || '');
+  if (selectedCategory === 'HYDROGEN SESSION') {
+    return bookingCategory === 'HYDROGEN SESSION';
+  }
+
+  const targetServiceName = String(serviceName || '').trim().toLowerCase();
+  const bookingServiceName = String(booking?.serviceName || '').trim().toLowerCase();
+  if (targetServiceName) return bookingServiceName === targetServiceName;
+  return bookingCategory === selectedCategory;
+}
+
+function getAdminCalendarBookingCounts(dateKey, serviceName = '') {
+  const normalizedDate = String(dateKey || '').trim();
+  const countsBySlot = {};
+  let bookedSeatCount = 0;
+  let bookedSlotCount = 0;
+
+  if (!normalizedDate) {
+    return { countsBySlot, bookedSeatCount, bookedSlotCount };
+  }
+
+  for (const booking of Array.isArray(state.bookings) ? state.bookings : []) {
+    if (String(booking?.bookingDate || '').trim() !== normalizedDate) continue;
+    if (!isAdminCalendarCountedBooking(booking)) continue;
+    if (!isAdminCalendarBookingInScope(booking, serviceName)) continue;
+
+    const slot = normalizeSlotStartTime(booking.bookingTime || '');
+    if (!slot) continue;
+    countsBySlot[slot] = Number(countsBySlot[slot] || 0) + 1;
+  }
+
+  for (const count of Object.values(countsBySlot)) {
+    const value = Number(count || 0);
+    bookedSeatCount += value;
+    if (value > 0) bookedSlotCount += 1;
+  }
+
+  return { countsBySlot, bookedSeatCount, bookedSlotCount };
+}
+
 function getAdminCalendarDaySummary(dateKey, serviceName) {
   const dayData = getAdminCalendarDayData(dateKey);
   if (!dayData) {
+    const bookingCounts = getAdminCalendarBookingCounts(dateKey, serviceName);
     return {
-      hasData: false,
+      hasData: bookingCounts.bookedSeatCount > 0,
       openSeatCount: 0,
-      bookedSeatCount: 0,
-      bookedSlotCount: 0,
+      bookedSeatCount: bookingCounts.bookedSeatCount,
+      bookedSlotCount: bookingCounts.bookedSlotCount,
       hasAnyOpen: false,
-      hasAnyBooked: false,
+      hasAnyBooked: bookingCounts.bookedSeatCount > 0,
     };
   }
 
@@ -2561,6 +2669,8 @@ function getAdminCalendarDaySummary(dateKey, serviceName) {
   const targetServiceName = String(serviceName || '').trim();
   const servicesToCheck = targetServiceName && availabilityByService[targetServiceName] ? [targetServiceName] : Object.keys(availabilityByService);
   const enforceHydrogenCapacity = isHydrogenCategory(state.adminCalendarCategory);
+  const bookingCounts = getAdminCalendarBookingCounts(dateKey, serviceName);
+  const slotsWithBookingCounts = Object.keys(bookingCounts.countsBySlot || {}).filter((slot) => Number(bookingCounts.countsBySlot[slot] || 0) > 0);
 
   let openSeatCount = 0;
   let bookedSeatCount = 0;
@@ -2571,7 +2681,7 @@ function getAdminCalendarDaySummary(dateKey, serviceName) {
     const capacityRaw = Math.max(1, Number(dayData.slotCapacityByService?.[candidateServiceName] || 8));
     const capacity = enforceHydrogenCapacity ? Math.max(capacityRaw, HYDROGEN_SLOT_CAPACITY_PER_TIME_SLOT) : capacityRaw;
     for (const slot of SLOT_OPTIONS) {
-      const booked = Number(serviceAvailability?.[slot.value] || 0);
+      const booked = Math.max(Number(serviceAvailability?.[slot.value] || 0), Number(bookingCounts.countsBySlot[slot.value] || 0));
       const held = Number(serviceHolds?.[slot.value] || 0);
       bookedSeatCount += booked;
       if (booked > 0) bookedSlotCount += 1;
@@ -2580,13 +2690,18 @@ function getAdminCalendarDaySummary(dateKey, serviceName) {
     }
   }
 
+  if (!servicesToCheck.length && slotsWithBookingCounts.length) {
+    bookedSeatCount = bookingCounts.bookedSeatCount;
+    bookedSlotCount = bookingCounts.bookedSlotCount;
+  }
+
   return {
     hasData: true,
     openSeatCount,
-    bookedSeatCount,
-    bookedSlotCount,
+    bookedSeatCount: Math.max(bookedSeatCount, bookingCounts.bookedSeatCount),
+    bookedSlotCount: Math.max(bookedSlotCount, bookingCounts.bookedSlotCount),
     hasAnyOpen: openSeatCount > 0,
-    hasAnyBooked: bookedSeatCount > 0,
+    hasAnyBooked: Math.max(bookedSeatCount, bookingCounts.bookedSeatCount) > 0,
   };
 }
 
@@ -2618,6 +2733,9 @@ function renderAdminCalendar() {
   if (elements.adminCalendarCustomerName) elements.adminCalendarCustomerName.value = state.adminCustomerForm.name || '';
   if (elements.adminCalendarCustomerEmail) elements.adminCalendarCustomerEmail.value = state.adminCustomerForm.email || '';
   if (elements.adminCalendarCustomerPhone) elements.adminCalendarCustomerPhone.value = state.adminCustomerForm.phone || '';
+  if (elements.adminCalendarClearDetailsBtn) {
+    elements.adminCalendarClearDetailsBtn.disabled = !hasAdminCustomerDetails();
+  }
 
   elements.adminCalendarDate.removeAttribute('min');
   elements.adminCalendarDate.max = getMaxBookingIsoDate();
@@ -2654,9 +2772,10 @@ function renderAdminCalendar() {
   } else {
     const selectedDateIsPast = selectedDate < getTodayIsoDate();
     const selectedSummary = getAdminCalendarDaySummary(selectedDate, selectedServiceName);
-    elements.adminCalendarStatus.textContent = selectedDateIsPast
-      ? `Booking summary on ${formatBookingDateLabel(selectedDate)} ${customerLabel}: ${selectedSummary.bookedSlotCount} slots booked, ${selectedSummary.bookedSeatCount} seats booked.`
-      : `Open slots on ${formatBookingDateLabel(selectedDate)} ${customerLabel}.`;
+    elements.adminCalendarStatus.textContent =
+      `Booking summary on ${formatBookingDateLabel(selectedDate)} ${customerLabel}: ` +
+      `${selectedSummary.bookedSlotCount} slots booked, ${selectedSummary.bookedSeatCount} seats booked` +
+      `${selectedDateIsPast ? '.' : `, ${selectedSummary.openSeatCount} seats open.`}`;
   }
 
   elements.adminCalendarGrid.innerHTML = '';
@@ -2723,17 +2842,18 @@ function renderAdminCalendar() {
       ? Math.max(slotCapacityRaw, HYDROGEN_SLOT_CAPACITY_PER_TIME_SLOT)
       : slotCapacityRaw;
     const selectedDateIsPast = selectedDate < getTodayIsoDate();
+    const bookingCounts = getAdminCalendarBookingCounts(selectedDate, selectedServiceName);
     const slotList = document.createElement('div');
     slotList.className = 'admin-calendar-slot-list';
 
     let availableSlotCount = 0;
     SLOT_OPTIONS.forEach((slot) => {
-      const booked = Number(serviceAvailability[slot.value] || 0);
+      const booked = Math.max(Number(serviceAvailability[slot.value] || 0), Number(bookingCounts.countsBySlot[slot.value] || 0));
       const holdCount = Number(serviceHolds[slot.value] || 0);
       const openSeats = Math.max(0, slotCapacity - booked - holdCount);
       const isPast = isBookingSlotInPast(selectedDate, slot.value);
 
-      if (selectedDateIsPast) {
+      if (selectedDateIsPast || (isPast && booked > 0)) {
         availableSlotCount += 1;
         const row = document.createElement('article');
         row.className = booked > 0
@@ -4915,23 +5035,74 @@ function isAdminRescheduledBooking(booking) {
   return String(booking?.notes || '').toLowerCase().includes('rescheduled by admin from');
 }
 
+function getAdminRescheduleHistory(booking) {
+  const notes = String(booking?.notes || '');
+  const matches = [...notes.matchAll(/Rescheduled by admin from\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/gi)];
+  const latest = matches[matches.length - 1];
+  if (!latest) {
+    return {
+      originalDate: '',
+      originalTime: '',
+      rescheduledDate: booking?.bookingDate || '',
+      rescheduledTime: booking?.bookingTime || '',
+    };
+  }
+  return {
+    originalDate: latest[1],
+    originalTime: latest[2],
+    rescheduledDate: latest[3],
+    rescheduledTime: latest[4],
+  };
+}
+
 function getFilteredAdminRescheduleBookings(bookings = state.bookings) {
   const query = String(state.adminRescheduleSearch || '').trim().toLowerCase();
+  const selectedDate = String(state.adminRescheduleDateFilter || '').trim();
+  const selectedSlot = String(state.adminRescheduleSlotFilter || '').trim();
+  const view = state.adminRescheduleView === 'rescheduled' ? 'rescheduled' : 'queue';
   const queue = (Array.isArray(bookings) ? bookings : [])
     .filter((booking) => String(booking?.paymentStatus || '').trim().toLowerCase() === 'paid')
     .filter((booking) => {
       const status = String(booking?.status || '').trim().toLowerCase();
-      return !['completed', 'cancelled'].includes(status);
+      return view === 'rescheduled' || !['completed', 'cancelled'].includes(status);
+    })
+    .filter((booking) => {
+      const wasRescheduled = isAdminRescheduledBooking(booking);
+      return view === 'rescheduled' ? wasRescheduled : !wasRescheduled && isAdminRescheduleEligible(booking);
+    })
+    .filter((booking) => {
+      if (!selectedDate) return true;
+      const history = getAdminRescheduleHistory(booking);
+      const dateToCompare = view === 'rescheduled' ? history.originalDate || booking.bookingDate : booking.bookingDate;
+      return String(dateToCompare || '').trim() === selectedDate;
+    })
+    .filter((booking) => {
+      if (!selectedSlot) return true;
+      const history = getAdminRescheduleHistory(booking);
+      const slotToCompare = view === 'rescheduled' ? history.originalTime || booking.bookingTime : booking.bookingTime;
+      return normalizeSlotStartTime(slotToCompare) === selectedSlot;
     })
     .sort((a, b) => {
-      const aEligible = isAdminRescheduleEligible(a) ? 0 : 1;
-      const bEligible = isAdminRescheduleEligible(b) ? 0 : 1;
-      if (aEligible !== bEligible) return aEligible - bEligible;
+      if (view === 'rescheduled') {
+        const aHistory = getAdminRescheduleHistory(a);
+        const bHistory = getAdminRescheduleHistory(b);
+        return getBookingStartTime({ bookingDate: bHistory.rescheduledDate, bookingTime: bHistory.rescheduledTime })
+          - getBookingStartTime({ bookingDate: aHistory.rescheduledDate, bookingTime: aHistory.rescheduledTime });
+      }
       return getBookingStartTime(a) - getBookingStartTime(b);
     });
   if (!query) return queue;
   return queue.filter((booking) => {
-    const haystack = [booking?.clientName, booking?.clientEmail, booking?.clientMobile, booking?.serviceName, booking?.notes]
+    const history = getAdminRescheduleHistory(booking);
+    const haystack = [
+      booking?.clientName,
+      booking?.clientEmail,
+      booking?.clientMobile,
+      booking?.serviceName,
+      booking?.notes,
+      formatDateTime(history.originalDate, history.originalTime),
+      formatDateTime(history.rescheduledDate, history.rescheduledTime),
+    ]
       .join(' ')
       .toLowerCase();
     return haystack.includes(query);
@@ -5008,10 +5179,14 @@ function getAvailableAdminRescheduleSlots(booking) {
 async function openAdminRescheduleForBooking(booking) {
   if (!booking?.id) return;
   state.adminActiveTab = 'rescheduled';
+  state.adminRescheduleView = 'queue';
+  state.adminRescheduleDateFilter = String(booking.bookingDate || '').trim();
+  state.adminRescheduleSlotFilter = normalizeSlotStartTime(booking.bookingTime || '');
   state.adminRescheduleSearch = String(booking.clientMobile || booking.clientEmail || booking.clientName || booking.id || '')
     .trim()
     .toLowerCase();
   if (elements.adminRescheduleSearch) elements.adminRescheduleSearch.value = state.adminRescheduleSearch;
+  if (elements.adminRescheduleDate) elements.adminRescheduleDate.value = state.adminRescheduleDateFilter;
   state.adminRescheduleSelections = {
     ...(state.adminRescheduleSelections || {}),
     [String(booking.id)]: {
@@ -5023,6 +5198,57 @@ async function openAdminRescheduleForBooking(booking) {
   requestAnimationFrame(() => {
     elements.adminRescheduledSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+}
+
+function renderAdminRescheduleSlotFilters() {
+  if (!elements.adminRescheduleSlotFilters) return;
+  const selectedDate = String(state.adminRescheduleDateFilter || '').trim();
+  const selectedSlot = String(state.adminRescheduleSlotFilter || '').trim();
+  const view = state.adminRescheduleView === 'rescheduled' ? 'rescheduled' : 'queue';
+  const source = (Array.isArray(state.bookings) ? state.bookings : [])
+    .filter((booking) => String(booking?.paymentStatus || '').trim().toLowerCase() === 'paid')
+    .filter((booking) => {
+      const status = String(booking?.status || '').trim().toLowerCase();
+      if (view !== 'rescheduled' && ['completed', 'cancelled'].includes(status)) return false;
+      const wasRescheduled = isAdminRescheduledBooking(booking);
+      return view === 'rescheduled' ? wasRescheduled : !wasRescheduled && isAdminRescheduleEligible(booking);
+    })
+    .filter((booking) => {
+      if (!selectedDate) return true;
+      const history = getAdminRescheduleHistory(booking);
+      const dateToCompare = view === 'rescheduled' ? history.originalDate || booking.bookingDate : booking.bookingDate;
+      return String(dateToCompare || '').trim() === selectedDate;
+    });
+  const counts = new Map(SLOT_OPTIONS.map((slot) => [slot.value, 0]));
+  for (const booking of source) {
+    const history = getAdminRescheduleHistory(booking);
+    const slotValue = normalizeSlotStartTime(view === 'rescheduled' ? history.originalTime || booking.bookingTime : booking.bookingTime);
+    if (counts.has(slotValue)) counts.set(slotValue, Number(counts.get(slotValue) || 0) + 1);
+  }
+
+  elements.adminRescheduleSlotFilters.innerHTML = '';
+  const allBtn = document.createElement('button');
+  allBtn.className = `admin-slot-filter-btn${selectedSlot ? '' : ' is-active'}`;
+  allBtn.type = 'button';
+  allBtn.innerHTML = `<span>All slots</span><strong>${source.length}</strong>`;
+  allBtn.addEventListener('click', () => {
+    state.adminRescheduleSlotFilter = '';
+    renderAdminRescheduleQueue();
+  });
+  elements.adminRescheduleSlotFilters.appendChild(allBtn);
+
+  for (const slot of SLOT_OPTIONS) {
+    const btn = document.createElement('button');
+    const count = Number(counts.get(slot.value) || 0);
+    btn.className = `admin-slot-filter-btn${selectedSlot === slot.value ? ' is-active' : ''}`;
+    btn.type = 'button';
+    btn.innerHTML = `<span>${escapeHtml(slot.label)}</span><strong>${escapeHtml(String(count))}</strong>`;
+    btn.addEventListener('click', () => {
+      state.adminRescheduleSlotFilter = selectedSlot === slot.value ? '' : slot.value;
+      renderAdminRescheduleQueue();
+    });
+    elements.adminRescheduleSlotFilters.appendChild(btn);
+  }
 }
 
 function render() {
@@ -8411,6 +8637,7 @@ function getAdminUserBookings(userId) {
   const normalizedId = String(userId || '');
   return (Array.isArray(state.bookings) ? state.bookings : [])
     .filter((booking) => String(booking?.userId || '') === normalizedId)
+    .filter((booking) => String(booking?.paymentStatus || '').trim().toLowerCase() === 'paid')
     .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
 }
 
@@ -8635,8 +8862,7 @@ function renderUserRows(bookings) {
     actions.className = 'action-row';
 
     const canEdit = !['completed', 'cancelled'].includes(String(row.status || '').toLowerCase());
-    const isPaid = String(row.paymentStatus || 'unpaid').toLowerCase() === 'paid';
-    if (isPaid) {
+    if (canShowBookingInvoice(row)) {
       actions.append(createActionButton('Invoice', () => openBookingInvoice(row.booking?.id || row.id)));
     }
     if (canEdit) {
@@ -9323,7 +9549,7 @@ function renderAdminRows(bookings) {
     tr.appendChild(multilineCell(formatAdminBookingDateTime(booking.bookingDate, booking.bookingTime)));
     tr.appendChild(cell(formatBookingCreatedAtIndia(booking.createdAt)));
     tr.appendChild(statusCell(derivedStatus));
-    tr.appendChild(paymentCell(booking.paymentStatus || 'unpaid'));
+    tr.appendChild(paymentCell(booking));
     const emailStatus = String(booking.paymentLinkEmailStatus || '').trim().toLowerCase();
     const emailRecipient = String(booking.paymentLinkRecipientEmail || '').trim();
     const emailSentAt = booking.paymentLinkEmailedAt ? formatDateOnly(booking.paymentLinkEmailedAt) : '';
@@ -9362,7 +9588,7 @@ function renderAdminRows(bookings) {
       actions.append(createActionButton('Paid in Cash', () => markBookingPaidInCash(booking.id)));
       actions.append(createActionButton('Copy Payment Link', () => copyBookingPaymentLink(booking.id)));
     }
-    if (bookingPaid) {
+    if (canShowBookingInvoice(booking)) {
       actions.append(createActionButton('Invoice', () => openBookingInvoice(booking.id)));
     }
     if (
@@ -9422,10 +9648,24 @@ function renderAdminMembershipOrders() {
 function renderAdminRescheduleQueue() {
   if (!elements.adminRescheduleList || !elements.adminRescheduleEmptyState) return;
 
+  const isRescheduledView = state.adminRescheduleView === 'rescheduled';
+  if (elements.adminRescheduleDate) {
+    elements.adminRescheduleDate.value = String(state.adminRescheduleDateFilter || '').trim();
+  }
+  if (elements.adminRescheduleViewToggleBtn) {
+    elements.adminRescheduleViewToggleBtn.textContent = isRescheduledView ? 'Reschedule Queue' : 'Rescheduled';
+  }
+  renderAdminRescheduleSlotFilters();
+
   const bookings = getFilteredAdminRescheduleBookings(state.bookings);
   elements.adminRescheduleList.innerHTML = '';
   if (!bookings.length) {
     elements.adminRescheduleEmptyState.hidden = false;
+    elements.adminRescheduleEmptyState.textContent = isRescheduledView
+      ? 'No rescheduled bookings found for this filter.'
+      : state.adminRescheduleDateFilter
+        ? 'No eligible bookings found for this date and slot filter.'
+        : 'Choose a date or search to find eligible bookings.';
     return;
   }
 
@@ -9433,9 +9673,8 @@ function renderAdminRescheduleQueue() {
   for (const booking of bookings) {
     const id = String(booking.id || '');
     const canReschedule = isAdminRescheduleEligible(booking);
-    const overrideEnabled = Boolean(state.adminRescheduleOverrides?.[id]);
-    const canOperate = canReschedule || overrideEnabled;
     const wasRescheduled = isAdminRescheduledBooking(booking);
+    const history = getAdminRescheduleHistory(booking);
     const selection = getAdminRescheduleSelection(booking);
     const expiresAt = getRescheduleWindowExpiresAt(booking);
     const slots = getAvailableAdminRescheduleSlots(booking);
@@ -9451,19 +9690,23 @@ function renderAdminRescheduleQueue() {
         <h3>${escapeHtml(booking.clientName || 'User')}</h3>
         <p>${escapeHtml([booking.clientMobile, booking.clientEmail].filter(Boolean).join(' • ') || '-')}</p>
         <p><strong>${escapeHtml(booking.serviceName || 'Session')}</strong></p>
-        <p>${isBookingMissed(booking) ? 'Missed' : 'Current slot'}: ${escapeHtml(formatDateTime(booking.bookingDate, booking.bookingTime))}</p>
+        ${
+          isRescheduledView
+            ? `<p>Actual booked slot: ${escapeHtml(formatDateTime(history.originalDate, history.originalTime))}</p>
+               <p>Rescheduled slot: ${escapeHtml(formatDateTime(history.rescheduledDate, history.rescheduledTime))}</p>`
+            : `<p>${isBookingMissed(booking) ? 'Missed' : 'Current slot'}: ${escapeHtml(formatDateTime(booking.bookingDate, booking.bookingTime))}</p>`
+        }
         <p>Payment: ${escapeHtml(formatPaymentStatusLabel(booking.paymentStatus))}</p>
         ${
-          canOperate
+          canReschedule && !isRescheduledView
             ? isBookingMissed(booking)
               ? `<p>Reschedule by: ${Number.isFinite(expiresAt) ? escapeHtml(new Date(expiresAt).toLocaleString()) : '-'}</p>`
               : '<p>Reschedule allowed before the slot starts.</p>'
             : `<p>Status: ${wasRescheduled ? 'Already rescheduled' : escapeHtml(getDerivedBookingStatus(booking))}</p>`
         }
-        ${overrideEnabled ? '<p><strong>Admin Override: Enabled</strong></p>' : ''}
       </div>
       ${
-        canOperate
+        canReschedule && !isRescheduledView
           ? `<div class="admin-reschedule-controls">
               <label>
                 New date
@@ -9485,9 +9728,7 @@ function renderAdminRescheduleQueue() {
               }</button>
               <button class="btn btn-primary admin-reschedule-confirm" type="button">Confirm Reschedule</button>
             </div>`
-          : `<div class="admin-reschedule-controls">
-              <button class="btn btn-secondary admin-reschedule-override" type="button">Enable Override</button>
-            </div>`
+          : ''
       }
     `;
 
@@ -9497,9 +9738,8 @@ function renderAdminRescheduleQueue() {
     const otpInput = card.querySelector('.admin-reschedule-otp');
     const requestOtpBtn = card.querySelector('.admin-reschedule-request-otp');
     const confirmBtn = card.querySelector('.admin-reschedule-confirm');
-    const overrideBtn = card.querySelector('.admin-reschedule-override');
 
-    if (canOperate && timeSelect) {
+    if (canReschedule && !isRescheduledView && timeSelect) {
       timeSelect.innerHTML = '';
       const placeholder = document.createElement('option');
       placeholder.value = '';
@@ -9521,16 +9761,16 @@ function renderAdminRescheduleQueue() {
       timeSelect.disabled = !hasCheckedAvailability || isLoading || !slots.length;
     }
 
-    if (canOperate && confirmBtn) {
+    if (canReschedule && !isRescheduledView && confirmBtn) {
       confirmBtn.disabled = !timeSelect?.value || isLoading || !otpRequested;
     }
-    if (canOperate && checkBtn) {
+    if (canReschedule && !isRescheduledView && checkBtn) {
       checkBtn.disabled = isLoading;
     }
-    if (canOperate && requestOtpBtn) {
+    if (canReschedule && !isRescheduledView && requestOtpBtn) {
       requestOtpBtn.disabled = !timeSelect?.value || isLoading;
     }
-    if (canOperate && otpInput) {
+    if (canReschedule && !isRescheduledView && otpInput) {
       otpInput.disabled = !otpRequested || isLoading;
     }
 
@@ -9567,14 +9807,6 @@ function renderAdminRescheduleQueue() {
     confirmBtn?.addEventListener('click', async () => {
       await confirmAdminRescheduleBooking(booking, String(otpInput?.value || '').trim());
     });
-    overrideBtn?.addEventListener('click', () => {
-      state.adminRescheduleOverrides = {
-        ...(state.adminRescheduleOverrides || {}),
-        [id]: true,
-      };
-      renderAdminRescheduleQueue();
-      showNotice({ title: 'Override enabled', body: 'Admin override enabled for this booking. You can proceed with OTP flow.' });
-    });
 
     elements.adminRescheduleList.appendChild(card);
   }
@@ -9598,7 +9830,6 @@ async function requestAdminRescheduleOtp(booking) {
     body: JSON.stringify({
       bookingDate: selection.bookingDate,
       bookingTime: selection.bookingTime,
-      adminOverride: Boolean(state.adminRescheduleOverrides?.[String(id)]),
     }),
   });
   state.adminRescheduleOtpRequested = {
@@ -9630,12 +9861,10 @@ async function confirmAdminRescheduleBooking(booking, otpValue = '') {
       bookingDate: selection.bookingDate,
       bookingTime: selection.bookingTime,
       otp,
-      adminOverride: Boolean(state.adminRescheduleOverrides?.[String(id)]),
     }),
   });
   delete state.adminRescheduleSelections[String(id)];
   delete state.adminRescheduleOtpRequested[String(id)];
-  delete state.adminRescheduleOverrides[String(id)];
   state.adminRescheduleAvailability = {};
   await loadDashboardData();
   render();
@@ -10491,6 +10720,11 @@ function getBookingDisplayAmountInr(booking) {
   return Number(getDisplayedServicePriceInr(booking?.serviceName || '') || 0);
 }
 
+function canShowBookingInvoice(booking) {
+  const bookingPaid = String(booking?.paymentStatus || 'unpaid').trim().toLowerCase() === 'paid';
+  return bookingPaid && Number(getBookingRowAmountInr(booking) || 0) > 0;
+}
+
 function normalizeDiscountPhoneKey(phone) {
   const digits = String(phone || '').replace(/\D+/g, '');
   if (digits.length < 7) return '';
@@ -10669,6 +10903,41 @@ function formatPaymentStatusLabel(value) {
   return String(value || normalized || '').trim() || 'Unpaid';
 }
 
+function formatPaymentMethodLabel(booking = {}) {
+  const rawMethod = String(booking?.paymentMethod || '').trim().toLowerCase();
+  const rawReference = String(booking?.paymentReference || '').trim().toLowerCase();
+  const method = rawMethod || rawReference;
+
+  if (!method) {
+    const service = getServiceCatalogEntry(booking?.serviceName || '');
+    return service && getBookingDisplayAmountInr(booking) <= 0 ? 'Included' : '';
+  }
+  if (method === 'cash') return 'Cash';
+  if (method === 'upi') return 'UPI';
+  if (method === 'card') return 'Card';
+  if (method === 'netbanking') return 'Net banking';
+  if (method === 'wallet') return 'Wallet';
+  if (method === 'emi') return 'EMI';
+  if (method === 'paylater') return 'Pay later';
+  if (method === 'membership') return 'Membership';
+  if (method === 'buy_extra') return 'Online';
+  if (method.startsWith('pay_') || method.startsWith('order_')) return 'Online';
+
+  return method
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function formatPaymentDisplayLabel(bookingOrStatus) {
+  const booking = bookingOrStatus && typeof bookingOrStatus === 'object' ? bookingOrStatus : { paymentStatus: bookingOrStatus };
+  const statusLabel = formatPaymentStatusLabel(booking.paymentStatus);
+  const normalized = normalizePaymentStatusKey(booking.paymentStatus);
+  const methodLabel = normalized === 'paid' ? formatPaymentMethodLabel(booking) : '';
+  return methodLabel ? `${statusLabel}/${methodLabel}` : statusLabel;
+}
+
 function summarizeGroupPaymentStatus(bookings) {
   const paymentStatuses = bookings.map((booking) => normalizePaymentStatusKey(booking.paymentStatus));
   if (paymentStatuses.every((status) => status === 'paid')) return 'paid';
@@ -10682,10 +10951,11 @@ function statusCell(status, label = 'Status') {
   return td;
 }
 
-function paymentCell(paymentStatus) {
+function paymentCell(bookingOrStatus) {
   const td = document.createElement('td');
-  const normalized = normalizePaymentStatusKey(paymentStatus);
-  td.innerHTML = `<span class="status-chip payment-${normalized}">${escapeHtml(formatPaymentStatusLabel(paymentStatus))}</span>`;
+  const booking = bookingOrStatus && typeof bookingOrStatus === 'object' ? bookingOrStatus : { paymentStatus: bookingOrStatus };
+  const normalized = normalizePaymentStatusKey(booking.paymentStatus);
+  td.innerHTML = `<span class="status-chip payment-${normalized}">${escapeHtml(formatPaymentDisplayLabel(booking))}</span>`;
   return td;
 }
 
@@ -10801,7 +11071,7 @@ function renderAdminHistoryRows(bookings) {
     tr.appendChild(multilineCell(formatAdminBookingDateTime(booking.bookingDate, booking.bookingTime)));
     tr.appendChild(cell(formatBookingCreatedAtIndia(booking.createdAt)));
     tr.appendChild(statusCell(derivedStatus));
-    tr.appendChild(paymentCell(booking.paymentStatus || 'unpaid'));
+    tr.appendChild(paymentCell(booking));
 
     const emailStatus = String(booking.paymentLinkEmailStatus || '').trim().toLowerCase();
     const emailRecipient = String(booking.paymentLinkRecipientEmail || '').trim();
@@ -10840,18 +11110,19 @@ function renderAdminHistoryRows(bookings) {
     const bookingCancelled = String(booking.status || '').toLowerCase() === 'cancelled';
     const bookingCompleted = String(booking.status || '').toLowerCase() === 'completed';
     const bookingConfirmed = String(booking.status || '').toLowerCase() === 'confirmed';
+    const bookingMissed = isBookingMissed(booking);
 
     if (!bookingCancelled) {
       if (!bookingPaid) {
         actions.append(createActionButton('Paid in Cash', () => markBookingPaidInCash(booking.id)));
         actions.append(createActionButton('Copy Payment Link', () => copyBookingPaymentLink(booking.id)));
-      } else if (!bookingConfirmed && !bookingCompleted) {
+      } else if (!bookingConfirmed && !bookingCompleted && !bookingMissed) {
         actions.append(createActionButton('Accept', () => changeStatus(booking.id, 'confirmed')));
       }
 
     }
 
-    if (bookingPaid) {
+    if (canShowBookingInvoice(booking)) {
       actions.append(createActionButton('Invoice', () => openBookingInvoice(booking.id)));
     }
 
@@ -10884,7 +11155,7 @@ function renderAdminAllBookingRows(bookings) {
     tr.appendChild(multilineCell(formatAdminBookingDateTime(booking.bookingDate, booking.bookingTime)));
     tr.appendChild(cell(formatBookingCreatedAtIndia(booking.createdAt)));
     tr.appendChild(statusCell(derivedStatus));
-    tr.appendChild(paymentCell(booking.paymentStatus || 'unpaid'));
+    tr.appendChild(paymentCell(booking));
 
     const emailStatus = String(booking.paymentLinkEmailStatus || '').trim().toLowerCase();
     const emailRecipient = String(booking.paymentLinkRecipientEmail || '').trim();
@@ -10923,21 +11194,22 @@ function renderAdminAllBookingRows(bookings) {
     const bookingCancelled = String(booking.status || '').toLowerCase() === 'cancelled';
     const bookingCompleted = String(booking.status || '').toLowerCase() === 'completed';
     const bookingConfirmed = String(booking.status || '').toLowerCase() === 'confirmed';
+    const bookingMissed = isBookingMissed(booking);
 
     if (!bookingCancelled) {
       if (!bookingPaid) {
         actions.append(createActionButton('Paid in Cash', () => markBookingPaidInCash(booking.id)));
         actions.append(createActionButton('Copy Payment Link', () => copyBookingPaymentLink(booking.id)));
-      } else if (!bookingConfirmed && !bookingCompleted) {
+      } else if (!bookingConfirmed && !bookingCompleted && !bookingMissed) {
         actions.append(createActionButton('Accept', () => changeStatus(booking.id, 'confirmed')));
       }
     }
 
-    if (bookingPaid) {
+    if (canShowBookingInvoice(booking)) {
       actions.append(createActionButton('Invoice', () => openBookingInvoice(booking.id)));
     }
 
-    if (bookingPaid && bookingConfirmed && !bookingCompleted && !bookingCancelled) {
+    if (bookingPaid && bookingConfirmed && !bookingCompleted && !bookingCancelled && !bookingMissed) {
       actions.append(createActionButton('Complete', () => markBookingCompleted(booking.id)));
     }
 

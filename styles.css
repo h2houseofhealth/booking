@@ -2328,7 +2328,7 @@ h1, h2, h3 {
 }
 
 .admin-tab-grid {
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .user-tab-btn {
@@ -6005,7 +6005,7 @@ th {
 }
 
 .booking-dialog {
-  width: min(620px, 94vw);
+  width: min(720px, 94vw);
   max-height: 92vh;
   border: 0;
   border-radius: 16px;
@@ -7238,6 +7238,25 @@ table tbody td {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.72rem;
+}
+
+.form-grid > label {
+  min-width: 0;
+}
+
+.form-grid input,
+.form-grid select,
+.form-grid textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+#bookingDialog .form-grid {
+  gap: 0.9rem 1rem;
+}
+
+#bookingDialog #serviceName {
+  text-overflow: ellipsis;
 }
 
 .weekday-grid {
@@ -12253,6 +12272,10 @@ img {
   border-bottom: 4px solid rgba(var(--brand-deep-rgb), 0.88);
 }
 
+.admin-tab-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .user-tab-btn {
   border: 0;
   border-radius: 0;
@@ -12851,6 +12874,53 @@ img {
   gap: 1rem;
 }
 
+.admin-reschedule-date-filter {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.admin-reschedule-date-filter .admin-inline-search {
+  min-width: 168px;
+}
+
+.admin-reschedule-slot-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+}
+
+.admin-slot-filter-btn {
+  display: grid;
+  min-height: 54px;
+  gap: 0.15rem;
+  align-content: center;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid rgba(201, 106, 45, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 251, 246, 0.96);
+  color: #6c584d;
+  cursor: pointer;
+  text-align: left;
+}
+
+.admin-slot-filter-btn span {
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.admin-slot-filter-btn strong {
+  color: #9b4d2b;
+  font-size: 1.05rem;
+}
+
+.admin-slot-filter-btn.is-active {
+  border-color: rgba(201, 106, 45, 0.62);
+  background: #fff4ea;
+  box-shadow: inset 0 0 0 1px rgba(201, 106, 45, 0.2);
+}
+
 .admin-reschedule-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.85fr);
@@ -12884,6 +12954,21 @@ img {
 
 @media (max-width: 760px) {
   .admin-reschedule-card {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-reschedule-date-filter {
+    width: 100%;
+  }
+
+  .admin-reschedule-date-filter .admin-inline-search {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 680px) {
+  #bookingDialog .form-grid {
     grid-template-columns: 1fr;
   }
 }

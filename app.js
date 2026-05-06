@@ -6844,6 +6844,7 @@ function getHydrogenPlanOptions(services) {
       state.activeHydrogenSessionTime = '';
       renderServices();
     });
+    const membershipSessionOffset = isCurrentUserMembershipActive() ? getHydrogenSessionsUsedThisMembership() : 0;
     let addOnSelect = null;
     let addOnSessionSelect = null;
     if (!isAdmin) {
@@ -6869,7 +6870,7 @@ function getHydrogenPlanOptions(services) {
       for (let idx = 0; idx < requiredSlots; idx += 1) {
         const option = document.createElement('option');
         option.value = String(idx);
-        option.textContent = `Hydrogen Session ${idx + 1}`;
+        option.textContent = `Hydrogen Session ${membershipSessionOffset + idx + 1}`;
         addOnSessionSelect.appendChild(option);
       }
       addOnSessionSelect.value = String(state.selectedHydrogenAddOnSessionIndex || 0);
@@ -6894,7 +6895,7 @@ function getHydrogenPlanOptions(services) {
       sessionBtn.className = `hydrogen-session-item${idx === state.activeHydrogenSessionIndex ? ' is-active' : ''}${
         assigned ? ' is-assigned' : ''
       }`;
-      sessionBtn.textContent = `Hydrogen Session ${idx + 1}${assigned ? ' âœ“' : ''}`;
+      sessionBtn.textContent = `Hydrogen Session ${membershipSessionOffset + idx + 1}${assigned ? ' (Done)' : ''}`;
       sessionBtn.addEventListener('click', () => {
         state.activeHydrogenSessionIndex = idx;
         state.activeHydrogenSessionDate = state.selectedHydrogenSlots[idx]?.bookingDate || getTodayIsoDate();
@@ -6966,7 +6967,7 @@ function getHydrogenPlanOptions(services) {
     const editor = document.createElement('div');
     editor.className = 'hydrogen-session-editor';
     editor.innerHTML = `
-      <h4>Hydrogen Session ${state.activeHydrogenSessionIndex + 1}</h4>
+      <h4>Hydrogen Session ${membershipSessionOffset + state.activeHydrogenSessionIndex + 1}</h4>
       <div class="hydrogen-editor-grid">
         <label>
           Date
@@ -7022,13 +7023,18 @@ function getHydrogenPlanOptions(services) {
       const slot = state.selectedHydrogenSlots[idx];
       const summaryItem = document.createElement('span');
       summaryItem.className = 'hydrogen-selected-item';
-      summaryItem.textContent = slot ? `S${idx + 1}: ${slot.bookingDate} ${slot.bookingTime}` : `S${idx + 1}: Pending`;
+      const displaySessionNumber = membershipSessionOffset + idx + 1;
+      summaryItem.textContent = slot
+        ? `Session ${displaySessionNumber}: ${slot.bookingDate} ${slot.bookingTime}`
+        : `Session ${displaySessionNumber}: Pending`;
       selectedSummary.appendChild(summaryItem);
     }
     if (selectedAddOnService) {
       const addOnSummary = document.createElement('span');
       addOnSummary.className = 'hydrogen-selected-item';
-      addOnSummary.textContent = `IV Add-on: ${selectedAddOnService.name} (Hydrogen Session ${state.selectedHydrogenAddOnSessionIndex + 1})`;
+      addOnSummary.textContent = `IV Add-on: ${selectedAddOnService.name} (Hydrogen Session ${
+        membershipSessionOffset + state.selectedHydrogenAddOnSessionIndex + 1
+      })`;
       selectedSummary.appendChild(addOnSummary);
     }
     card.appendChild(selectedSummary);

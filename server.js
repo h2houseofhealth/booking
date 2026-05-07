@@ -2448,6 +2448,7 @@ app.get('/api/bookings', requireAuth, (req, res) => {
            b.status,
            b.payment_status AS paymentStatus,
            b.payment_reference AS paymentReference,
+           b.is_topup_session AS isTopUpSession,
            b.payment_method AS paymentMethod,
            b.paid_at AS paidAt,
            b.payment_link_recipient_email AS paymentLinkRecipientEmail,
@@ -2867,8 +2868,8 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
     const insertBooking = db.prepare(
       `INSERT INTO bookings (
         user_id, doctor_id, client_name, client_email, client_phone,
-        service_name, booking_date, booking_time, assigned_staff, status, payment_status, paid_at, payment_reference, booking_group_id, notes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        service_name, booking_date, booking_time, assigned_staff, status, payment_status, paid_at, payment_reference, is_topup_session, booking_group_id, notes, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const countActiveForSlot = db.prepare(
       `SELECT
@@ -2914,6 +2915,7 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
           entryPaymentStatus,
           isMembershipCovered ? getCurrentSqliteTimestamp() : null,
           paymentReference,
+          forceChargeable ? 1 : 0,
           bookingGroupId,
           `Hydrogen package ${packageSessions} + extra ${extraSessions}`,
           getCurrentSqliteTimestamp()
@@ -2959,6 +2961,7 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
           addOnPaymentStatus,
           addOnPaymentStatus === 'paid' ? getCurrentSqliteTimestamp() : null,
           null,
+          0,
           bookingGroupId,
           `IV add-on for ${service.name} (Session ${addOnSessionIndex + 1})`,
           getCurrentSqliteTimestamp()
@@ -3093,8 +3096,8 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
     const insertBooking = db.prepare(
       `INSERT INTO bookings (
         user_id, doctor_id, client_name, client_email, client_phone,
-        service_name, booking_date, booking_time, assigned_staff, status, payment_status, paid_at, payment_reference, booking_group_id, notes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        service_name, booking_date, booking_time, assigned_staff, status, payment_status, paid_at, payment_reference, is_topup_session, booking_group_id, notes, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const countActiveForSlot = db.prepare(
       `SELECT
@@ -3140,6 +3143,7 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
           entryPaymentStatus,
           isMembershipCovered ? getCurrentSqliteTimestamp() : null,
           paymentReference,
+          forceChargeable ? 1 : 0,
           bookingGroupId,
           `Hydrogen package ${packageSessions} + extra ${extraSessions} (booked by admin)`,
           getCurrentSqliteTimestamp()
@@ -3185,6 +3189,7 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
           addOnPaymentStatus,
           addOnPaymentStatus === 'paid' ? getCurrentSqliteTimestamp() : null,
           null,
+          0,
           bookingGroupId,
           `IV add-on for ${service.name} (Session ${addOnSessionIndex + 1}) (booked by admin)`,
           getCurrentSqliteTimestamp()
@@ -9364,6 +9369,7 @@ function migrate() {
       payment_order_id TEXT,
       payment_reference TEXT,
       payment_method TEXT,
+      is_topup_session INTEGER NOT NULL DEFAULT 0,
       reschedule_count INTEGER NOT NULL DEFAULT 0,
       notes TEXT,
       created_at TEXT NOT NULL,
@@ -9703,6 +9709,9 @@ function migrate() {
   if (!hasColumn('bookings', 'payment_order_id')) {
     db.exec('ALTER TABLE bookings ADD COLUMN payment_order_id TEXT');
   }
+  if (!hasColumn('bookings', 'is_topup_session')) {
+    db.exec("ALTER TABLE bookings ADD COLUMN is_topup_session INTEGER NOT NULL DEFAULT 0");
+  }
   if (!hasColumn('bookings', 'reschedule_count')) {
     db.exec("ALTER TABLE bookings ADD COLUMN reschedule_count INTEGER NOT NULL DEFAULT 0");
   }
@@ -9731,6 +9740,10 @@ function migrate() {
     db.exec('ALTER TABLE bookings ADD COLUMN payment_link_email_event_at TEXT');
   }
   db.exec(`
+    UPDATE bookings
+    SET is_topup_session = 1
+    WHERE LOWER(COALESCE(payment_reference, '')) = 'buy_extra';
+
     UPDATE bookings
     SET reschedule_count = CASE
       WHEN LOWER(COALESCE(notes, '')) LIKE '%rescheduled by user from%' THEN 1

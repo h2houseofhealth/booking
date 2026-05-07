@@ -2458,6 +2458,7 @@ app.get('/api/bookings', requireAuth, (req, res) => {
            b.payment_link_delivery_detail AS paymentLinkDeliveryDetail,
            b.payment_link_email_event AS paymentLinkEmailEvent,
            b.payment_link_email_event_at AS paymentLinkEmailEventAt,
+           b.reschedule_count AS rescheduleCount,
            b.notes,
            b.created_at AS createdAt
     FROM bookings b
@@ -3638,7 +3639,19 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
   }
 
   const existing = db
-    .prepare('SELECT id, user_id AS userId, status, booking_group_id AS bookingGroupId, service_name AS serviceName FROM bookings WHERE id = ?')
+    .prepare(
+      `SELECT id,
+              user_id AS userId,
+              status,
+              booking_group_id AS bookingGroupId,
+              service_name AS serviceName,
+              booking_date AS bookingDate,
+              booking_time AS bookingTime,
+              reschedule_count AS rescheduleCount,
+              notes
+       FROM bookings
+       WHERE id = ?`
+    )
     .get(bookingId);
 
   if (!existing) {
@@ -3670,6 +3683,30 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
 
   const payload = validateBookingPayload(req.body, bookingOwner || req.user);
   if (payload.error) return res.status(400).json({ message: payload.error });
+
+  const isUser = req.user.role === 'user';
+  const isRescheduleAttempt =
+    isUser &&
+    (String(payload.data.bookingDate || '').trim() !== String(existing.bookingDate || '').trim() ||
+      String(payload.data.bookingTime || '').trim() !== String(existing.bookingTime || '').trim());
+  if (isRescheduleAttempt) {
+    if (Number(existing.rescheduleCount || 0) >= 1) {
+      return res.status(409).json({
+        message: 'You can reschedule only once. Please contact admin for further reschedule changes.',
+      });
+    }
+    const normalizedExistingTime = normalizeSlotStartTime(String(existing.bookingTime || '').trim()) || String(existing.bookingTime || '').trim();
+    const slotStart = new Date(`${String(existing.bookingDate || '').trim()}T${normalizedExistingTime}:00`).getTime();
+    if (!Number.isFinite(slotStart)) {
+      return res.status(409).json({ message: 'Current booking slot is invalid for reschedule.' });
+    }
+    const rescheduleWindowMs = 15 * 60 * 1000;
+    if (Date.now() > slotStart + rescheduleWindowMs) {
+      return res.status(409).json({
+        message: 'Reschedule is allowed only until 15 minutes after slot start time. Please contact admin.',
+      });
+    }
+  }
 
   if (existing.bookingGroupId && payload.data.serviceName !== existing.serviceName) {
     return res.status(400).json({ message: 'Grouped hydrogen bookings can only update date, time, and notes.' });
@@ -3739,6 +3776,12 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
     return res.status(400).json({ message: 'invalid status' });
   }
 
+  let nextNotes = String(payload.data.notes || '').trim();
+  if (isRescheduleAttempt) {
+    const userRescheduleNote = `Rescheduled by user from ${existing.bookingDate} ${existing.bookingTime} to ${payload.data.bookingDate} ${payload.data.bookingTime}`;
+    nextNotes = [nextNotes, userRescheduleNote].filter(Boolean).join('\n');
+  }
+
   db.prepare(
     `UPDATE bookings SET
       doctor_id = NULL,
@@ -3747,6 +3790,7 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
       booking_time = ?,
       assigned_staff = 'H2 House Of Health',
       notes = ?,
+      reschedule_count = CASE WHEN ? = 1 THEN COALESCE(reschedule_count, 0) + 1 ELSE COALESCE(reschedule_count, 0) END,
       payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
       status = ?
     WHERE id = ?`
@@ -3754,7 +3798,8 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
     payload.data.serviceName,
     payload.data.bookingDate,
     payload.data.bookingTime,
-    payload.data.notes,
+    nextNotes,
+    isRescheduleAttempt ? 1 : 0,
     selectedService?.membershipOnly ? 1 : 0,
     nextStatus,
     bookingId
@@ -3774,6 +3819,7 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
               b.status,
               b.payment_status AS paymentStatus,
               b.paid_at AS paidAt,
+              b.reschedule_count AS rescheduleCount,
               b.notes,
               b.created_at AS createdAt
        FROM bookings b
@@ -9318,6 +9364,7 @@ function migrate() {
       payment_order_id TEXT,
       payment_reference TEXT,
       payment_method TEXT,
+      reschedule_count INTEGER NOT NULL DEFAULT 0,
       notes TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -9656,6 +9703,9 @@ function migrate() {
   if (!hasColumn('bookings', 'payment_order_id')) {
     db.exec('ALTER TABLE bookings ADD COLUMN payment_order_id TEXT');
   }
+  if (!hasColumn('bookings', 'reschedule_count')) {
+    db.exec("ALTER TABLE bookings ADD COLUMN reschedule_count INTEGER NOT NULL DEFAULT 0");
+  }
   if (!hasColumn('bookings', 'payment_link_recipient_email')) {
     db.exec('ALTER TABLE bookings ADD COLUMN payment_link_recipient_email TEXT');
   }
@@ -9680,6 +9730,14 @@ function migrate() {
   if (!hasColumn('bookings', 'payment_link_email_event_at')) {
     db.exec('ALTER TABLE bookings ADD COLUMN payment_link_email_event_at TEXT');
   }
+  db.exec(`
+    UPDATE bookings
+    SET reschedule_count = CASE
+      WHEN LOWER(COALESCE(notes, '')) LIKE '%rescheduled by user from%' THEN 1
+      ELSE COALESCE(reschedule_count, 0)
+    END
+    WHERE COALESCE(reschedule_count, 0) = 0;
+  `);
   if (hasTable('booking_email_events') && !hasColumn('booking_email_events', 'dedupe_key')) {
     db.exec('ALTER TABLE booking_email_events ADD COLUMN dedupe_key TEXT');
   }

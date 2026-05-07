@@ -8642,6 +8642,29 @@ function getBookingStartTime(booking) {
   return Number.isFinite(timestamp) ? timestamp : Number.NaN;
 }
 
+function getUserRescheduleEligibility(row) {
+  const booking = row?.booking || row;
+  const status = String(booking?.status || '').trim().toLowerCase();
+  if (status === 'completed' || status === 'cancelled') {
+    return { allowed: false, message: 'Completed or cancelled bookings cannot be rescheduled.' };
+  }
+  const notesLower = String(booking?.notes || '').toLowerCase();
+  const rescheduleCount = Number(booking?.rescheduleCount || 0);
+  const hasUserRescheduleHistory = rescheduleCount > 0 || notesLower.includes('rescheduled by user from');
+  if (hasUserRescheduleHistory) {
+    return { allowed: false, message: 'Reschedule limit reached. Further rescheduling can be done only by admin.' };
+  }
+  const slotStart = getBookingStartTime(booking);
+  if (!Number.isFinite(slotStart)) {
+    return { allowed: false, message: 'This booking slot is invalid for rescheduling.' };
+  }
+  const rescheduleWindowMs = 15 * 60 * 1000;
+  if (Date.now() > slotStart + rescheduleWindowMs) {
+    return { allowed: false, message: 'Reschedule window closed. Allowed only until 15 minutes after slot start.' };
+  }
+  return { allowed: true, message: '' };
+}
+
 function isBookingMissed(booking) {
   const status = String(booking?.status || '').trim().toLowerCase();
   if (status === 'missed') return true;
@@ -8855,10 +8878,11 @@ function renderUserRows(bookings) {
     actions.className = 'action-row';
 
     const canEdit = !['completed', 'cancelled'].includes(String(row.status || '').toLowerCase());
+    const rescheduleEligibility = !row.isGroupedHydrogen ? getUserRescheduleEligibility(row) : { allowed: canEdit, message: '' };
     if (canShowBookingInvoice(row)) {
       actions.append(createActionButton('Invoice', () => openBookingInvoice(row.booking?.id || row.id)));
     }
-    if (canEdit) {
+    if (canEdit && rescheduleEligibility.allowed) {
       actions.append(
         createActionButton(row.isGroupedHydrogen ? 'Edit Package' : 'Edit', () => {
           if (row.isGroupedHydrogen) {
@@ -8868,6 +8892,12 @@ function renderUserRows(bookings) {
           openSingleSessionBookingEditor(row.booking);
         })
       );
+    }
+    if (canEdit && !row.isGroupedHydrogen && !rescheduleEligibility.allowed && rescheduleEligibility.message) {
+      const actionHint = document.createElement('span');
+      actionHint.className = 'form-hint';
+      actionHint.textContent = rescheduleEligibility.message;
+      actions.appendChild(actionHint);
     }
     if (String(row.status || '').toLowerCase() !== 'cancelled') {
       actions.append(createActionButton('Cancel', () => changeStatus(row.id, 'cancelled')));
@@ -8920,7 +8950,8 @@ function renderCartRows(cartBookings) {
     actions.className = 'action-row';
 
     const canEdit = !['completed', 'cancelled'].includes(String(row.status || '').toLowerCase());
-    if (canEdit) {
+    const rescheduleEligibility = !row.isGroupedHydrogen ? getUserRescheduleEligibility(row) : { allowed: canEdit, message: '' };
+    if (canEdit && rescheduleEligibility.allowed) {
       actions.append(
         createActionButton(row.isGroupedHydrogen ? 'Edit Package' : 'Edit', () => {
           if (row.isGroupedHydrogen) {
@@ -8930,6 +8961,12 @@ function renderCartRows(cartBookings) {
           openSingleSessionBookingEditor(row.booking);
         })
       );
+    }
+    if (canEdit && !row.isGroupedHydrogen && !rescheduleEligibility.allowed && rescheduleEligibility.message) {
+      const actionHint = document.createElement('span');
+      actionHint.className = 'form-hint';
+      actionHint.textContent = rescheduleEligibility.message;
+      actions.appendChild(actionHint);
     }
     actions.append(createDangerButton('Remove', () => deleteBooking(row.booking)));
     actionCell.appendChild(actions);

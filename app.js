@@ -4667,6 +4667,14 @@ function openHydrogenPackageEditor(row) {
       )
     : 0;
 
+  const baseServiceName = String(row.baseServiceName || hydrogenEntries[0].serviceName || '').trim();
+  const basePackageSessions = Math.max(1, Number(getHydrogenSessionCountFromServiceName(baseServiceName) || 1));
+  const totalHydrogenSessions = hydrogenEntries.length;
+  const inferredExtraSessions = Math.max(0, Number(row.extraSessions || totalHydrogenSessions - basePackageSessions));
+  const isScheduleFlowBooking =
+    basePackageSessions === 1 && totalHydrogenSessions === 4 && inferredExtraSessions === 3;
+  const inferredHydrogenFlow = isScheduleFlowBooking ? 'schedule' : 'topup';
+
   state.returnUserTabAfterEdit = state.activeUserTab || 'services';
   state.activeUserTab = 'services';
   window.location.hash = '#services';
@@ -4676,8 +4684,9 @@ function openHydrogenPackageEditor(row) {
     'IV SHOTS': false,
   };
   state.selectedServiceCategory = 'HYDROGEN SESSION';
-  state.selectedHydrogenServiceName = row.baseServiceName || hydrogenEntries[0].serviceName;
-  state.selectedHydrogenExtraSessions = Math.max(0, Number(row.extraSessions || 0));
+  state.selectedHydrogenFlow = inferredHydrogenFlow;
+  state.selectedHydrogenServiceName = baseServiceName;
+  state.selectedHydrogenExtraSessions = inferredExtraSessions;
   state.selectedHydrogenSlots = hydrogenEntries.map((entry) => ({
     bookingDate: entry.bookingDate,
     bookingTime: entry.bookingTime,
@@ -4693,6 +4702,7 @@ function openHydrogenPackageEditor(row) {
   render();
   requestAnimationFrame(() => {
     const target =
+      (inferredHydrogenFlow === 'topup' ? document.querySelector('#hydrogen-topup-anchor') : null) ||
       document.querySelector('[data-hydrogen-editor="true"]') ||
       document.getElementById('service-category-details-hydrogen-session') ||
       document.querySelector('.service-category-card[data-category="HYDROGEN SESSION"]');

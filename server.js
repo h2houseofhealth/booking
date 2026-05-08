@@ -736,11 +736,15 @@ app.post('/api/auth/register/start', async (req, res) => {
     return res.status(mailResult.statusCode || 500).json({ message: mailResult.message });
   }
 
-  return res.status(200).json({
+  const responsePayload = {
     message: mailResult.message || `Signup OTP sent to ${email}. It expires in ${OTP_TTL_MINUTES} minutes.`,
     otpRequired: true,
     verificationRequired: true,
-  });
+  };
+  if (!IS_PRODUCTION && ALLOW_DEV_OTP_FALLBACK && mailResult.delivery === 'console') {
+    responsePayload.devOtp = otp;
+  }
+  return res.status(200).json(responsePayload);
 });
 
 app.post('/api/auth/register', async (_req, res) => {
@@ -1019,9 +1023,13 @@ app.post('/api/auth/password/forgot', async (req, res) => {
     return res.status(mailResult.statusCode || 500).json({ message: mailResult.message });
   }
 
-  return res.json({
+  const responsePayload = {
     message: mailResult.message || `Password reset OTP sent to ${email}. It expires in ${OTP_TTL_MINUTES} minutes.`,
-  });
+  };
+  if (!IS_PRODUCTION && ALLOW_DEV_OTP_FALLBACK && mailResult.delivery === 'console') {
+    responsePayload.devOtp = otp;
+  }
+  return res.json(responsePayload);
 });
 
 app.post('/api/auth/password/verify', (req, res) => {
@@ -9305,6 +9313,16 @@ async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
       responseBody: sendGridError.responseBody,
     });
     const statusCode = sendGridError.statusCode;
+    if (ALLOW_DEV_OTP_FALLBACK && !IS_PRODUCTION) {
+      console.warn(
+        `[DEV OTP FALLBACK] ${flowLabel} OTP for ${normalizedToEmail}: ${otpValue}. SendGrid request failed, using local fallback.`
+      );
+      return {
+        ok: true,
+        delivery: 'console',
+        message: `OTP generated for ${normalizedToEmail}. SendGrid failed, so OTP fallback is active in development.`,
+      };
+    }
     const isUnauthorized = statusCode === 401 || statusCode === 403;
 
     return {

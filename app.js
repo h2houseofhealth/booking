@@ -6016,7 +6016,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     })
     .filter(Boolean);
   const resolvedTopUpPlanOptions = topUpPlanOptions.length ? topUpPlanOptions : allPlanOptions;
-  const isTopUpFlow = isCurrentUserMembershipActive() && String(state.selectedHydrogenFlow || 'schedule') === 'topup';
+  const isTopUpFlow = !isCurrentUserMembershipActive() || String(state.selectedHydrogenFlow || 'schedule') === 'topup';
   const planOptions = isTopUpFlow ? resolvedTopUpPlanOptions : allPlanOptions;
   if (!planOptions.length) {
     const empty = document.createElement('p');
@@ -6155,17 +6155,35 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
       planSelect.appendChild(option);
     }
   } else {
+    const nonMemberPackageLabelBySessions = {
+      1: '1 Session',
+      4: '1 Week (4 Session)',
+      8: '2 Week (8 Session)',
+      16: '1 Months (16 Session)',
+      30: '1 Month (30 Session)',
+      90: '3 Month (90 Session)',
+    };
     for (const optionData of planOptions) {
       const option = document.createElement('option');
       option.value = optionData.service.name;
       const sessionsCount = Number(optionData.sessions || 1);
-      const memberPriceInr = Number(
-        optionData.service?.effectivePriceInr ??
-          optionData.service?.memberPriceInr ??
-          optionData.service?.priceInr ??
-          0
+      const isMember = isCurrentUserMembershipActive();
+      const packagePriceInr = Number(
+        isMember
+          ? optionData.service?.memberPriceInr ?? optionData.service?.effectivePriceInr ?? optionData.service?.priceInr
+          : optionData.service?.nonMemberPriceInr ?? optionData.service?.effectivePriceInr ?? optionData.service?.priceInr
       );
-      option.textContent = `${sessionsCount} Session${sessionsCount === 1 ? '' : 's'} - Rs. ${memberPriceInr.toLocaleString('en-IN')}`;
+      const safePriceInr = Number.isFinite(packagePriceInr)
+        ? packagePriceInr
+        : Number(
+            optionData.service?.effectivePriceInr ??
+              optionData.service?.priceInr ??
+              0
+          );
+      const packageLabel = isMember
+        ? `${sessionsCount} Session${sessionsCount === 1 ? '' : 's'}`
+        : nonMemberPackageLabelBySessions[sessionsCount] || `${sessionsCount} Session${sessionsCount === 1 ? '' : 's'}`;
+      option.textContent = `${packageLabel} - Rs. ${safePriceInr.toLocaleString('en-IN')}`;
       planSelect.appendChild(option);
     }
   }
@@ -6399,7 +6417,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   stickyButton.textContent = isEditingHydrogenGroup
     ? 'Apply Changes'
     : isTopUpFlow
-      ? 'Buy Additional'
+      ? (isCurrentUserMembershipActive() ? 'Buy Additional' : 'Add to Cart')
       : canScheduleWithoutCart
         ? 'Schedule'
         : 'Add to Cart';

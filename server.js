@@ -114,11 +114,11 @@ const SERVICE_CATALOG = [
     category: 'HYDROGEN SESSION',
     name: 'H2 Single Session',
     priceInr: 4800,
-    nonMemberPriceInr: 9500,
+    nonMemberPriceInr: 4800,
     memberPriceInr: 4800,
     includes: '1 Hydrogen Session',
     description:
-      'Single hydrogen session for immediate recovery and cellular wellness support. Non-member pricing: Rs. 9,500.',
+      'Single hydrogen session for immediate recovery and cellular wellness support. Non-member pricing: Rs. 4,800.',
   },
   {
     category: 'HYDROGEN SESSION',

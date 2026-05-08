@@ -5999,14 +5999,14 @@ function createServiceDetailItem(service, options = {}) {
 function renderHydrogenUnifiedComposer({ detailsContainer, services, category, ivTherapyOptions, ivShotOptions }) {
   const isEditingHydrogenGroup = Boolean(state.hydrogenEditingGroupId);
   const allPlanOptions = getHydrogenPlanOptions(services);
-  const topUpPreferredSessions = [1, 4, 16, 32, 90];
+  const topUpPreferredSessions = [1, 4, 8, 16, 30, 90];
   const inferTopUpSessionCount = (service) => {
     const rawName = String(service?.name || '').trim();
     const rawDescription = String(service?.description || '').trim();
     const combined = `${rawName} ${rawDescription}`.toLowerCase();
     const fromStandardParser = Number(getHydrogenSessionCountFromServiceName(rawName));
     if (Number.isFinite(fromStandardParser) && fromStandardParser > 0) return fromStandardParser;
-    const exactMatch = combined.match(/\b(1|4|16|32|90)\b/);
+    const exactMatch = combined.match(/\b(1|4|8|16|30|90)\b/);
     return exactMatch ? Number(exactMatch[1]) : 0;
   };
   const topUpPlanOptions = topUpPreferredSessions
@@ -6158,7 +6158,14 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     for (const optionData of planOptions) {
       const option = document.createElement('option');
       option.value = optionData.service.name;
-      option.textContent = `${Number(optionData.sessions || 1)} Session${Number(optionData.sessions || 1) === 1 ? '' : 's'}`;
+      const sessionsCount = Number(optionData.sessions || 1);
+      const memberPriceInr = Number(
+        optionData.service?.effectivePriceInr ??
+          optionData.service?.memberPriceInr ??
+          optionData.service?.priceInr ??
+          0
+      );
+      option.textContent = `${sessionsCount} Session${sessionsCount === 1 ? '' : 's'} - Rs. ${memberPriceInr.toLocaleString('en-IN')}`;
       planSelect.appendChild(option);
     }
   }
@@ -7952,7 +7959,7 @@ function renderMembership() {
     ? allBookings.filter(
         (booking) =>
           !booking.holdExpired &&
-          String(booking.status || '').toLowerCase() !== 'cancelled' &&
+          String(booking.status || '').toLowerCase() === 'completed' &&
           String(booking.paymentStatus || '').toLowerCase() === 'paid' &&
           isChargeableHydrogenMembershipBooking(booking) &&
           isBookingWithinMembershipRange(booking, membershipRange)
@@ -9105,9 +9112,6 @@ function renderUserRows(bookings) {
     }
     if (canEdit && rescheduleEligibility.allowed) {
       actions.append(createActionButton('Reschedule', () => handleUserRescheduleAction(row)));
-      if (row.isGroupedHydrogen || getBookingCategory(row?.booking?.serviceName) === 'HYDROGEN SESSION') {
-        actions.append(createActionButton('Add On', () => handleUserAddOnAction(row)));
-      }
     }
     if (canEdit && !row.isGroupedHydrogen && !rescheduleEligibility.allowed && rescheduleEligibility.message) {
       const disabledRescheduleBtn = document.createElement('button');
@@ -9172,9 +9176,6 @@ function renderCartRows(cartBookings) {
     const rescheduleEligibility = !row.isGroupedHydrogen ? getUserRescheduleEligibility(row) : { allowed: canEdit, message: '' };
     if (canEdit && rescheduleEligibility.allowed) {
       actions.append(createActionButton('Reschedule', () => handleUserRescheduleAction(row)));
-      if (row.isGroupedHydrogen || getBookingCategory(row?.booking?.serviceName) === 'HYDROGEN SESSION') {
-        actions.append(createActionButton('Add On', () => handleUserAddOnAction(row)));
-      }
     }
     if (canEdit && !row.isGroupedHydrogen && !rescheduleEligibility.allowed && rescheduleEligibility.message) {
       const disabledRescheduleBtn = document.createElement('button');
@@ -9311,10 +9312,16 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       sortedEntries[0];
     const baseServiceName = hydrogenEntries[0]?.serviceName || booking.serviceName || 'Hydrogen Package';
     const packageSessionCount = Math.max(1, Number(hydrogenEntries.length || 0));
+    const isAdditionalHydrogenPackage = hydrogenEntries.some((entry) => {
+      const paymentReference = String(entry?.paymentReference || '').trim().toLowerCase();
+      return paymentReference === 'buy_extra' || Number(entry?.isTopUpSession || 0) === 1;
+    });
     const displayPackageName =
       packageSessionCount > 1
-        ? `${packageSessionCount} Hydrogen Sessions`
-        : baseServiceName;
+        ? 'Membership Sessions'
+        : isAdditionalHydrogenPackage
+          ? 'H2 Additional Sessions'
+          : baseServiceName;
     const payableHydrogenEntries = hydrogenEntries.filter(
       (entry) => entry.status !== 'cancelled' && String(entry.paymentStatus || 'unpaid').toLowerCase() !== 'paid'
     );

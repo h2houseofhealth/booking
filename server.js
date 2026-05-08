@@ -7435,14 +7435,37 @@ function validateHydrogenDailySessionLimit(userId, slots, excludeBookingIds = []
     requestedByDate.set(date, Number(requestedByDate.get(date) || 0) + 1);
   }
 
+  let expiryDateIso = '';
+  const memberRow = db
+    .prepare(
+      `SELECT membership_status AS membershipStatus,
+              membership_started_at AS membershipStartedAt,
+              membership_expires_at AS membershipExpiresAt
+       FROM users
+       WHERE id = ?`
+    )
+    .get(Number(userId));
+  if (memberRow && String(memberRow.membershipStatus || '').toLowerCase() === 'active') {
+    const startedAtMs = memberRow.membershipStartedAt ? new Date(memberRow.membershipStartedAt).getTime() : NaN;
+    const storedExpiresAtMs = memberRow.membershipExpiresAt ? new Date(memberRow.membershipExpiresAt).getTime() : NaN;
+    const effectiveExpiresAtMs = Number.isFinite(startedAtMs)
+      ? startedAtMs + MEMBERSHIP_VALIDITY_DAYS * 24 * 60 * 60 * 1000
+      : storedExpiresAtMs;
+    if (Number.isFinite(effectiveExpiresAtMs) && effectiveExpiresAtMs > Date.now()) {
+      expiryDateIso = new Date(effectiveExpiresAtMs).toISOString().slice(0, 10);
+    }
+  }
+
   for (const [bookingDate, requestedTotal] of requestedByDate.entries()) {
     const existingTotal = Number(existingByDate.get(bookingDate) || 0);
-    if (existingTotal + requestedTotal > MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER) {
+    const maxAllowed =
+      expiryDateIso && bookingDate === expiryDateIso ? 3 : MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER;
+    if (existingTotal + requestedTotal > maxAllowed) {
       return {
         bookingDate,
         existingTotal,
         requestedTotal,
-        maxAllowed: MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER,
+        maxAllowed,
       };
     }
   }
@@ -8269,6 +8292,20 @@ function validateBookingPayload(body, user) {
   const selectedDate = new Date(`${bookingDate}T00:00:00`);
   if (Number.isNaN(selectedDate.getTime())) {
     return { error: 'bookingDate is invalid' };
+  }
+
+  if (String(service.category || '').toUpperCase() === 'HYDROGEN SESSION' && isMembershipActiveForUser(user)) {
+    const startedAtMs = user?.membershipStartedAt ? new Date(user.membershipStartedAt).getTime() : NaN;
+    const storedExpiresAtMs = user?.membershipExpiresAt ? new Date(user.membershipExpiresAt).getTime() : NaN;
+    const effectiveExpiresAtMs = Number.isFinite(startedAtMs)
+      ? startedAtMs + MEMBERSHIP_VALIDITY_DAYS * 24 * 60 * 60 * 1000
+      : storedExpiresAtMs;
+    if (Number.isFinite(effectiveExpiresAtMs)) {
+      const expiryDateIso = new Date(effectiveExpiresAtMs).toISOString().slice(0, 10);
+      if (bookingDate > expiryDateIso) {
+        return { error: `Membership sessions can only be scheduled until ${expiryDateIso}.` };
+      }
+    }
   }
 
   const today = new Date();

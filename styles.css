@@ -442,6 +442,14 @@ h1, h2, h3 {
   max-width: 42ch;
 }
 
+.membership-status.is-alert {
+  color: #b54708;
+  background: rgba(255, 234, 213, 0.9);
+  border: 1px solid rgba(242, 191, 138, 0.9);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+}
+
 .membership-copy {
   margin: 0.15rem 0 0.9rem;
   line-height: 1.6;
@@ -739,6 +747,10 @@ h1, h2, h3 {
   gap: 20px;
 }
 
+.progress-flex-secondary {
+  margin-top: 4px;
+}
+
 .progress-flex.is-single {
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
@@ -782,6 +794,17 @@ h1, h2, h3 {
   height: 74px;
   background: linear-gradient(180deg, #fffefe 0%, #fff7f1 100%);
   border-radius: 50%;
+}
+
+.progress-ring-sm {
+  width: 84px;
+  height: 84px;
+  font-size: 14px;
+}
+
+.progress-ring-sm::after {
+  width: 56px;
+  height: 56px;
 }
 
 #progressText {
@@ -10806,7 +10829,7 @@ body {
 #memberChoiceGate .cards,
 #memberChoiceGate .member-choice-experience-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: stretch;
   gap: 28px;
   margin-top: 22px;
@@ -10820,7 +10843,7 @@ body {
 }
 
 #memberChoiceGate .member-choice-experience-card {
-  min-height: 590px;
+  min-height: 520px;
   max-width: 100%;
   width: 100%;
   margin: 0 auto;
@@ -10883,6 +10906,16 @@ body {
   min-height: 56px;
   border-radius: 14px;
   font-size: 18px;
+}
+
+#memberChoiceGate .member-choice-info-card .member-choice-card-cta {
+  margin-top: auto;
+  min-height: 56px;
+  border-radius: 14px;
+  font-size: 18px;
+  border: 1px solid rgba(196, 106, 60, 0.38);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--lux-primary-dark);
 }
 
 #cmp-perfect-01,
@@ -11085,9 +11118,9 @@ img {
 
   #memberChoiceGate .cards,
   #memberChoiceGate .member-choice-experience-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     margin-top: 28px;
-    max-width: 640px;
+    max-width: 100%;
   }
 }
 
@@ -12991,4 +13024,80 @@ img {
  .hero {
   border-radius: 40px;
   overflow: hidden;
+}
+
+/* ===== Member choice final override (2026-05-08) ===== */
+#memberChoiceGate .member-choice-experience-grid.cards,
+#memberChoiceGate .member-choice-experience-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 20px !important;
+}
+
+#memberChoiceGate .member-choice-experience-card {
+  min-height: 480px !important;
+}
+
+#memberChoiceGate .member-choice-info-card {
+  display: flex !important;
+  flex-direction: column !important;
+  border: 1px solid #eadfd4 !important;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(250,244,239,0.96) 100%) !important;
+}
+
+#memberChoiceGate .member-choice-info-card .member-choice-card-cta {
+  margin-top: auto !important;
+  min-height: 56px !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(196, 106, 60, 0.42) !important;
+  background: rgba(255,255,255,0.88) !important;
+  color: #8f3f24 !important;
+}
+
+#memberChoiceGate #continueAsMemberBtn.member-choice-experience-card {
+  order: 4 !important;
+}
+
+#memberChoiceGate #continueAsNonMemberBtn.member-choice-experience-card {
+  order: 2 !important;
+}
+
+#memberChoiceGate .member-choice-info-card[aria-label="Membership Sessions"] {
+  order: 1 !important;
+}
+
+#memberChoiceGate .member-choice-info-card[aria-label="Member Price"] {
+  order: 3 !important;
+}
+
+@media (max-width: 1024px) {
+  #memberChoiceGate .member-choice-experience-grid.cards,
+  #memberChoiceGate .member-choice-experience-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  #memberChoiceGate .member-choice-experience-grid.cards,
+  #memberChoiceGate .member-choice-experience-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Non-member dashboard stat card order */
+#membershipDashboard.is-non-member #membershipStatValidCard {
+  order: 2;
+}
+
+#membershipDashboard.is-non-member #membershipStatMembersCard {
+  order: 3;
+}
+
+#membershipDashboard.is-non-member #membershipStatExtraCard {
+  order: 4;
+}
+
+#membershipDashboard.is-non-member #membershipStatMembersMeta {
+  white-space: pre-line;
+  line-height: 1.35;
 }

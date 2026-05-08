@@ -12,7 +12,36 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260427-5" />
+    <link rel="stylesheet" href="styles.css?v=20260508-1" />
+    <style>
+      /* Final fail-safe for member choice card order/visibility */
+      #memberChoiceGate .member-choice-experience-grid.cards,
+      #memberChoiceGate .member-choice-experience-grid {
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 20px !important;
+      }
+      #memberChoiceGate .member-choice-info-card {
+        display: flex !important;
+        flex-direction: column !important;
+      }
+      #memberChoiceGate .member-choice-info-card[data-slot="sessions"] { order: 1 !important; }
+      #memberChoiceGate #continueAsNonMemberBtn { order: 2 !important; }
+      #memberChoiceGate .member-choice-info-card[data-slot="member-price"] { order: 3 !important; }
+      #memberChoiceGate #continueAsMemberBtn { order: 4 !important; }
+      @media (max-width: 1024px) {
+        #memberChoiceGate .member-choice-experience-grid.cards,
+        #memberChoiceGate .member-choice-experience-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+      }
+      @media (max-width: 768px) {
+        #memberChoiceGate .member-choice-experience-grid.cards,
+        #memberChoiceGate .member-choice-experience-grid {
+          grid-template-columns: 1fr !important;
+        }
+      }
+    </style>
 
   </head>
 
@@ -199,30 +228,21 @@
             <p class="member-choice-experience-kicker">Experiences That Heal</p>
             <h3 class="member-choice-experience-title section-title">Select Your <span>Experience</span></h3>
             <div class="member-choice-experience-grid cards" role="group" aria-label="Continue options">
-              <button id="continueAsMemberBtn" class="member-choice-experience-card card-member is-featured" type="button">
-                <span class="member-choice-experience-badge">Most Popular</span>
-                <span class="member-choice-card-plan">Member</span>
+              <article class="member-choice-experience-card card-light member-choice-info-card" data-slot="sessions" aria-label="Membership Sessions">
+                <span class="member-choice-experience-badge">Included</span>
+                <span class="member-choice-card-plan">Membership Sessions</span>
                 <div class="member-choice-card-price-row">
-                  <strong class="member-choice-card-price">₹4,800</strong>
-                  <span class="member-choice-card-price-unit">/ session</span>
+                  <strong class="member-choice-card-price">16</strong>
+                  <span class="member-choice-card-price-unit">sessions / month</span>
                 </div>
                 <div class="member-choice-card-highlight">
                   <span class="member-choice-card-highlight-icon" aria-hidden="true">✦</span>
-                  <span>Save up to ₹1,50,000 annually</span>
+                  <span>Access member-only wellness benefits</span>
                 </div>
-                <ul class="member-choice-card-list">
-                  <li>16 sessions included</li>
-                  <li>Exclusive member pricing</li>
-                  <li>Priority booking access</li>
-                  <li>Access to all included services</li>
-                  <li>Flexible plan management</li>
-                  <li>Exclusive offers &amp; early access</li>
-                </ul>
-                <span class="member-choice-card-cta">Become a Member</span>
-              </button>
+              </article>
               <button id="continueAsNonMemberBtn" class="member-choice-experience-card card-light" type="button">
                 <span class="member-choice-experience-badge is-placeholder" aria-hidden="true">Most Popular</span>
-                <span class="member-choice-card-plan">Non-member</span>
+                <span class="member-choice-card-plan">Non-member Price</span>
                 <div class="member-choice-card-price-row">
                   <strong class="member-choice-card-price">₹9,500</strong>
                   <span class="member-choice-card-price-unit">/ session</span>
@@ -240,6 +260,40 @@
                   <li>Pay per session</li>
                 </ul>
                 <span class="member-choice-card-cta">Continue as Non-member</span>
+              </button>
+              <article class="member-choice-experience-card card-light member-choice-info-card" data-slot="member-price" aria-label="Member Price">
+                <span class="member-choice-experience-badge">Best Value</span>
+                <span class="member-choice-card-plan">MEMBER PRICE</span>
+                <div class="member-choice-card-price-row">
+                  <strong class="member-choice-card-price">₹4,800</strong>
+                  <span class="member-choice-card-price-unit">/session</span>
+                </div>
+                <div class="member-choice-card-highlight">
+                  <span class="member-choice-card-highlight-icon" aria-hidden="true">✦</span>
+                  <span>Save ₹4,700 every visit</span>
+                </div>
+                <span class="member-choice-card-cta">Join to unlock member benefits →</span>
+              </article>
+              <button id="continueAsMemberBtn" class="member-choice-experience-card card-member is-featured" type="button">
+                <span class="member-choice-experience-badge">Most Popular</span>
+                <span class="member-choice-card-plan">Become Member</span>
+                <div class="member-choice-card-price-row">
+                  <strong class="member-choice-card-price">₹4,800</strong>
+                  <span class="member-choice-card-price-unit">/ session</span>
+                </div>
+                <div class="member-choice-card-highlight">
+                  <span class="member-choice-card-highlight-icon" aria-hidden="true">✦</span>
+                  <span>Save up to ₹1,50,000 annually</span>
+                </div>
+                <ul class="member-choice-card-list">
+                  <li>16 sessions included</li>
+                  <li>Exclusive member pricing</li>
+                  <li>Priority booking access</li>
+                  <li>Access to all included services</li>
+                  <li>Flexible plan management</li>
+                  <li>Exclusive offers &amp; early access</li>
+                </ul>
+                <span class="member-choice-card-cta">Become a Member</span>
               </button>
             </div>
             <div id="cmp-perfect-01" class="member-choice-comparison" aria-label="Member vs non-member comparison">
@@ -415,7 +469,7 @@
       <section id="membershipSection" class="panel app-only user-only" aria-label="Membership" hidden>
         <div class="panel-head membership-head">
           <div>
-            <h2>Membership Subscription</h2>
+            <h2 id="membershipSectionTitle">Membership Subscription</h2>
             <p id="memberFlowLabel" class="service-panel-lead"></p>
           </div>
           <p id="membershipStatusText" class="membership-status"></p>
@@ -450,7 +504,7 @@
               <strong id="membershipStatSessions">0</strong>
               <small id="membershipStatSessionsMeta">Included</small>
             </div>
-            <button class="membership-stat-card" type="button">
+            <button id="membershipStatMembersCard" class="membership-stat-card" type="button">
               <span class="stat-icon stat-icon-members" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
                   <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
@@ -463,7 +517,7 @@
               <strong id="membershipStatMembers">0</strong>
               <small id="membershipStatMembersMeta">Covered</small>
             </button>
-            <button class="membership-stat-card" type="button">
+            <button id="membershipStatValidCard" class="membership-stat-card" type="button">
               <span class="stat-icon stat-icon-valid" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
                   <path d="M7 3.5v3" />
@@ -477,7 +531,7 @@
               <strong id="membershipStatValid">-</strong>
               <small id="membershipStatValidMeta">Plan end</small>
             </button>
-            <button class="membership-stat-card" type="button">
+            <button id="membershipStatExtraCard" class="membership-stat-card" type="button">
               <span class="stat-icon stat-icon-session" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
                   <path d="M12 5v14" />
@@ -523,6 +577,34 @@
                         <span id="topupRemainingSessions">0</span>
                         <small>remaining</small>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="progress-flex progress-flex-secondary">
+                <div class="progress-cluster">
+                  <div class="progress-ring progress-ring-sm" id="therapyProgressRing">
+                    <span id="therapyProgressText">0%</span>
+                  </div>
+                  <div class="progress-info">
+                    <strong id="therapyUsageCount">0 of 0</strong>
+                    <p class="progress-sub">Therapies</p>
+                    <div class="progress-mini">
+                      <span id="therapyRemainingSessions">0</span>
+                      <small>remaining</small>
+                    </div>
+                  </div>
+                </div>
+                <div class="progress-cluster">
+                  <div class="progress-ring progress-ring-sm" id="shotsProgressRing">
+                    <span id="shotsProgressText">0%</span>
+                  </div>
+                  <div class="progress-info">
+                    <strong id="shotsUsageCount">0 of 0</strong>
+                    <p class="progress-sub">Shots</p>
+                    <div class="progress-mini">
+                      <span id="shotsRemainingSessions">0</span>
+                      <small>remaining</small>
                     </div>
                   </div>
                 </div>

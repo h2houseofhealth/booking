@@ -739,7 +739,23 @@ h1, h2, h3 {
   gap: 20px;
 }
 
+.progress-flex.is-single {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+}
+
+.progress-flex.is-single .progress-cluster {
+  justify-content: center;
+}
+
 .progress-cluster {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+#membershipTopUpMetrics {
   display: flex;
   align-items: center;
   gap: 14px;

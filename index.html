@@ -13,36 +13,6 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="styles.css?v=20260508-1" />
-    <style>
-      /* Final fail-safe for member choice card order/visibility */
-      #memberChoiceGate .member-choice-experience-grid.cards,
-      #memberChoiceGate .member-choice-experience-grid {
-        display: grid !important;
-        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-        gap: 20px !important;
-      }
-      #memberChoiceGate .member-choice-info-card {
-        display: flex !important;
-        flex-direction: column !important;
-      }
-      #memberChoiceGate .member-choice-info-card[data-slot="sessions"] { order: 1 !important; }
-      #memberChoiceGate #continueAsNonMemberBtn { order: 2 !important; }
-      #memberChoiceGate .member-choice-info-card[data-slot="member-price"] { order: 3 !important; }
-      #memberChoiceGate #continueAsMemberBtn { order: 4 !important; }
-      @media (max-width: 1024px) {
-        #memberChoiceGate .member-choice-experience-grid.cards,
-        #memberChoiceGate .member-choice-experience-grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        }
-      }
-      @media (max-width: 768px) {
-        #memberChoiceGate .member-choice-experience-grid.cards,
-        #memberChoiceGate .member-choice-experience-grid {
-          grid-template-columns: 1fr !important;
-        }
-      }
-    </style>
-
   </head>
 
   <body class="auth-mode">
@@ -228,55 +198,9 @@
             <p class="member-choice-experience-kicker">Experiences That Heal</p>
             <h3 class="member-choice-experience-title section-title">Select Your <span>Experience</span></h3>
             <div class="member-choice-experience-grid cards" role="group" aria-label="Continue options">
-              <article class="member-choice-experience-card card-light member-choice-info-card" data-slot="sessions" aria-label="Membership Sessions">
-                <span class="member-choice-experience-badge">Included</span>
-                <span class="member-choice-card-plan">Membership Sessions</span>
-                <div class="member-choice-card-price-row">
-                  <strong class="member-choice-card-price">16</strong>
-                  <span class="member-choice-card-price-unit">sessions / month</span>
-                </div>
-                <div class="member-choice-card-highlight">
-                  <span class="member-choice-card-highlight-icon" aria-hidden="true">✦</span>
-                  <span>Access member-only wellness benefits</span>
-                </div>
-              </article>
-              <button id="continueAsNonMemberBtn" class="member-choice-experience-card card-light" type="button">
-                <span class="member-choice-experience-badge is-placeholder" aria-hidden="true">Most Popular</span>
-                <span class="member-choice-card-plan">Non-member Price</span>
-                <div class="member-choice-card-price-row">
-                  <strong class="member-choice-card-price">₹9,500</strong>
-                  <span class="member-choice-card-price-unit">/ session</span>
-                </div>
-                <div class="member-choice-card-highlight is-placeholder" aria-hidden="true">
-                  <span class="member-choice-card-highlight-icon" aria-hidden="true">✦</span>
-                  <span>Placeholder</span>
-                </div>
-                <ul class="member-choice-card-list">
-                  <li>No free sessions</li>
-                  <li>Regular standard pricing</li>
-                  <li>Standard booking window</li>
-                  <li>Limited access to services</li>
-                  <li>No exclusive offers</li>
-                  <li>Pay per session</li>
-                </ul>
-                <span class="member-choice-card-cta">Continue as Non-member</span>
-              </button>
-              <article class="member-choice-experience-card card-light member-choice-info-card" data-slot="member-price" aria-label="Member Price">
-                <span class="member-choice-experience-badge">Best Value</span>
-                <span class="member-choice-card-plan">MEMBER PRICE</span>
-                <div class="member-choice-card-price-row">
-                  <strong class="member-choice-card-price">₹4,800</strong>
-                  <span class="member-choice-card-price-unit">/session</span>
-                </div>
-                <div class="member-choice-card-highlight">
-                  <span class="member-choice-card-highlight-icon" aria-hidden="true">✦</span>
-                  <span>Save ₹4,700 every visit</span>
-                </div>
-                <span class="member-choice-card-cta">Join to unlock member benefits →</span>
-              </article>
               <button id="continueAsMemberBtn" class="member-choice-experience-card card-member is-featured" type="button">
                 <span class="member-choice-experience-badge">Most Popular</span>
-                <span class="member-choice-card-plan">Become Member</span>
+                <span class="member-choice-card-plan">Member</span>
                 <div class="member-choice-card-price-row">
                   <strong class="member-choice-card-price">₹4,800</strong>
                   <span class="member-choice-card-price-unit">/ session</span>
@@ -294,6 +218,27 @@
                   <li>Exclusive offers &amp; early access</li>
                 </ul>
                 <span class="member-choice-card-cta">Become a Member</span>
+              </button>
+              <button id="continueAsNonMemberBtn" class="member-choice-experience-card card-light" type="button">
+                <span class="member-choice-experience-badge is-placeholder" aria-hidden="true">Most Popular</span>
+                <span class="member-choice-card-plan">Non-member</span>
+                <div class="member-choice-card-price-row">
+                  <strong class="member-choice-card-price">₹9,500</strong>
+                  <span class="member-choice-card-price-unit">/ session</span>
+                </div>
+                <div class="member-choice-card-highlight is-placeholder" aria-hidden="true">
+                  <span class="member-choice-card-highlight-icon" aria-hidden="true">✦</span>
+                  <span>Placeholder</span>
+                </div>
+                <ul class="member-choice-card-list">
+                  <li>No free sessions</li>
+                  <li>Regular standard pricing</li>
+                  <li>Standard booking window</li>
+                  <li>Limited access to services</li>
+                  <li>No exclusive offers</li>
+                  <li>Pay per session</li>
+                </ul>
+                <span class="member-choice-card-cta">Continue as Non-member</span>
               </button>
             </div>
             <div id="cmp-perfect-01" class="member-choice-comparison" aria-label="Member vs non-member comparison">

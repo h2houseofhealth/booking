@@ -10829,7 +10829,7 @@ body {
 #memberChoiceGate .cards,
 #memberChoiceGate .member-choice-experience-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 1fr 1fr;
   align-items: stretch;
   gap: 28px;
   margin-top: 22px;
@@ -10843,7 +10843,7 @@ body {
 }
 
 #memberChoiceGate .member-choice-experience-card {
-  min-height: 520px;
+  min-height: 590px;
   max-width: 100%;
   width: 100%;
   margin: 0 auto;
@@ -10906,16 +10906,6 @@ body {
   min-height: 56px;
   border-radius: 14px;
   font-size: 18px;
-}
-
-#memberChoiceGate .member-choice-info-card .member-choice-card-cta {
-  margin-top: auto;
-  min-height: 56px;
-  border-radius: 14px;
-  font-size: 18px;
-  border: 1px solid rgba(196, 106, 60, 0.38);
-  background: rgba(255, 255, 255, 0.85);
-  color: var(--lux-primary-dark);
 }
 
 #cmp-perfect-01,
@@ -13024,64 +13014,6 @@ img {
  .hero {
   border-radius: 40px;
   overflow: hidden;
-}
-
-/* ===== Member choice final override (2026-05-08) ===== */
-#memberChoiceGate .member-choice-experience-grid.cards,
-#memberChoiceGate .member-choice-experience-grid {
-  display: grid !important;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-  gap: 20px !important;
-}
-
-#memberChoiceGate .member-choice-experience-card {
-  min-height: 480px !important;
-}
-
-#memberChoiceGate .member-choice-info-card {
-  display: flex !important;
-  flex-direction: column !important;
-  border: 1px solid #eadfd4 !important;
-  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(250,244,239,0.96) 100%) !important;
-}
-
-#memberChoiceGate .member-choice-info-card .member-choice-card-cta {
-  margin-top: auto !important;
-  min-height: 56px !important;
-  border-radius: 14px !important;
-  border: 1px solid rgba(196, 106, 60, 0.42) !important;
-  background: rgba(255,255,255,0.88) !important;
-  color: #8f3f24 !important;
-}
-
-#memberChoiceGate #continueAsMemberBtn.member-choice-experience-card {
-  order: 4 !important;
-}
-
-#memberChoiceGate #continueAsNonMemberBtn.member-choice-experience-card {
-  order: 2 !important;
-}
-
-#memberChoiceGate .member-choice-info-card[aria-label="Membership Sessions"] {
-  order: 1 !important;
-}
-
-#memberChoiceGate .member-choice-info-card[aria-label="Member Price"] {
-  order: 3 !important;
-}
-
-@media (max-width: 1024px) {
-  #memberChoiceGate .member-choice-experience-grid.cards,
-  #memberChoiceGate .member-choice-experience-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
-}
-
-@media (max-width: 768px) {
-  #memberChoiceGate .member-choice-experience-grid.cards,
-  #memberChoiceGate .member-choice-experience-grid {
-    grid-template-columns: 1fr !important;
-  }
 }
 
 /* Non-member dashboard stat card order */

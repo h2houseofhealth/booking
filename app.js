@@ -124,6 +124,7 @@ const state = {
   selectedHydrogenSlots: [],
   selectedHydrogenAddOnServiceName: '',
   selectedHydrogenAddOnSessionIndex: 0,
+  focusHydrogenAddOnScheduler: false,
   hydrogenComposerNotice: {
     message: '',
     type: '',
@@ -238,7 +239,7 @@ const SLOT_OPTIONS = [
   { value: '18:00', label: '6:00 PM - 7:00 PM' },
   { value: '19:00', label: '7:00 PM - 8:00 PM' },
 ];
-const BOOKING_WINDOW_DAYS = 60;
+const BOOKING_WINDOW_DAYS = 365;
 const IV_REBOOK_COOLDOWN_DAYS = 14;
 const MAX_HYDROGEN_SESSIONS_PER_DAY_PER_USER = 4;
 const BOOKING_HOLD_MINUTES = 10;
@@ -3930,6 +3931,10 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
         ? 'Added to cart. Use Pay Now in cart.'
         : 'Scheduled in My Bookings. No payment required.',
   ];
+  if (!summary.membershipActive && Number(summary.extraSessions || 0) <= 0) {
+    const extraIdx = lines.findIndex((line) => String(line).startsWith('Extra Hydrogen Sessions:'));
+    if (extraIdx >= 0) lines.splice(extraIdx, 1);
+  }
 
   state.selectedHydrogenSlots = [];
   state.selectedHydrogenExtraSessions = 0;
@@ -4029,9 +4034,11 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
   }
   if (membershipIncludedSessions <= 0) {
     lines.push(`Hydrogen Amount: Rs. ${Number(summary.packagePriceInr || 0).toLocaleString('en-IN')}`);
-    lines.push(
-      `Extra Hydrogen Sessions: ${Number(summary.extraSessions || 0)} x Rs. ${Number(summary.extraSessionPriceInr || 0).toLocaleString('en-IN')}`
-    );
+    if (Number(summary.extraSessions || 0) > 0) {
+      lines.push(
+        `Extra Hydrogen Sessions: ${Number(summary.extraSessions || 0)} x Rs. ${Number(summary.extraSessionPriceInr || 0).toLocaleString('en-IN')}`
+      );
+    }
   }
   lines.push(addOn ? `IV Add-on: ${addOn.serviceName} - Rs. ${Number(addOn.amountInr || 0).toLocaleString('en-IN')}` : 'IV Add-on: None');
   lines.push(
@@ -4634,6 +4641,7 @@ function resetHydrogenComposer({ keepCategory = false, keepFlow = false } = {}) 
   state.selectedHydrogenSlots = [];
   state.selectedHydrogenAddOnServiceName = '';
   state.selectedHydrogenAddOnSessionIndex = 0;
+  state.focusHydrogenAddOnScheduler = false;
   state.hydrogenEditingGroupId = '';
   state.activeHydrogenSessionIndex = 0;
   state.activeHydrogenSessionDate = '';
@@ -4907,14 +4915,18 @@ function getTodayAdminBookings(bookings = state.bookings) {
   const todayKey = `${yyyy}-${mm}-${dd}`;
   return (Array.isArray(bookings) ? bookings : [])
     .filter((booking) => String(booking?.bookingDate || '') === todayKey)
-    .filter((booking) => String(booking?.status || '').trim().toLowerCase() !== 'cancelled')
     .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
 }
 
 function isAdminPaidBookingVisible(booking) {
-  const status = String(booking?.status || '').trim().toLowerCase();
   const paymentStatus = normalizePaymentStatusKey(booking?.paymentStatus);
-  return status !== 'cancelled' && paymentStatus === 'paid';
+  return paymentStatus === 'paid';
+}
+
+function isAdminHistoryBookingVisible(booking) {
+  const status = String(booking?.status || '').trim().toLowerCase();
+  if (status === 'cancelled') return true;
+  return isAdminPaidBookingVisible(booking);
 }
 
 function isAdminDashboardBookingVisible(booking) {
@@ -4932,7 +4944,7 @@ function getAdminDashboardVisibleBookings(bookings = state.bookings) {
 function getAdminHistoryBookings(bookings = state.bookings) {
   const normalized = Array.isArray(bookings) ? bookings : [];
   return normalized
-    .filter(isAdminPaidBookingVisible)
+    .filter(isAdminHistoryBookingVisible)
     .sort((a, b) => {
       const aCreated = a?.createdAt ? new Date(a.createdAt).getTime() : Number.NaN;
       const bCreated = b?.createdAt ? new Date(b.createdAt).getTime() : Number.NaN;
@@ -5055,7 +5067,7 @@ function renderAdminAllBookingControls(bookings = state.bookings) {
   if (elements.adminAllBookingModeText) {
     elements.adminAllBookingModeText.textContent = isTodayMode
       ? "Paid bookings scheduled for today."
-      : 'Paid bookings across all users.';
+      : 'Paid and cancelled bookings across all users.';
   }
   if (elements.adminAllBookingModeToggleBtn) {
     elements.adminAllBookingModeToggleBtn.textContent = isTodayMode ? 'History' : "Today's Bookings";
@@ -5089,9 +5101,9 @@ function renderAdminAllBookingControls(bookings = state.bookings) {
 
   if (elements.adminAllBookingSlotSummary) {
     if (!selectedDate) {
-      elements.adminAllBookingSlotSummary.textContent = 'Choose a date to see paid booking counts by slot.';
+      elements.adminAllBookingSlotSummary.textContent = 'Choose a date to see booking counts by slot.';
     } else if (!slotCounts.size) {
-      elements.adminAllBookingSlotSummary.textContent = `No paid bookings found on ${formatBookingDateLabel(selectedDate)}.`;
+      elements.adminAllBookingSlotSummary.textContent = `No bookings found on ${formatBookingDateLabel(selectedDate)}.`;
     } else {
       const slotLines = SLOT_OPTIONS
         .filter((slot) => slotCounts.has(slot.value))
@@ -5792,12 +5804,19 @@ function renderServices() {
   }
   for (const category of orderedCategories) {
     if ((grouped.get(category) || []).length && !Object.prototype.hasOwnProperty.call(state.expandedServiceCategories, category)) {
-      state.expandedServiceCategories[category] = true;
+      state.expandedServiceCategories[category] = false;
+    }
+  }
+  if (state.selectedServiceCategory) {
+    for (const category of orderedCategories) {
+      state.expandedServiceCategories[category] = category === state.selectedServiceCategory;
     }
   }
 
-  // Display all service categories as image-first, clickable cards.
+  // Display only the focused category while exploring, otherwise show all categories.
+  const focusedCategory = String(state.selectedServiceCategory || '').trim().toUpperCase();
   for (const category of orderedCategories) {
+    if (focusedCategory && category !== focusedCategory) continue;
     const services = grouped.get(category) || [];
     if (!services.length) continue;
     const visual = categoryVisuals[category] || {};
@@ -5855,6 +5874,7 @@ function renderServices() {
       const isCurrentlyExpanded = Boolean(state.expandedServiceCategories[category]);
       if (isCurrentlyExpanded) {
         state.expandedServiceCategories[category] = false;
+        state.selectedServiceCategory = null;
       } else {
         const nextExpandedState = {};
         for (const item of orderedCategories) {
@@ -5865,6 +5885,7 @@ function renderServices() {
           ...state.expandedServiceCategories,
           ...nextExpandedState,
         };
+        state.selectedServiceCategory = category;
       }
       renderServices();
     });
@@ -5891,6 +5912,7 @@ function renderServices() {
     collapseBtn.textContent = 'Back';
     collapseBtn.addEventListener('click', () => {
       state.expandedServiceCategories[category] = false;
+      state.selectedServiceCategory = null;
       renderServices();
     });
     detailTopbar.appendChild(collapseBtn);
@@ -6122,6 +6144,32 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   const requiredSlots = isTopUpFlow
     ? Math.max(1, Number(selectedPlan.sessions || 1))
     : Math.max(1, scheduleWindowEnd - scheduleWindowStart + 1);
+  const shouldAutoConsecutiveTopUp = isTopUpFlow && !isEditingHydrogenGroup && (requiredSlots === 16 || requiredSlots === 30);
+  const existingConsecutiveSeed = Number(detailSelection.consecutiveSeedSlots || 0);
+  if (shouldAutoConsecutiveTopUp && (!state.selectedHydrogenSlots.length || existingConsecutiveSeed !== requiredSlots)) {
+    const seedStart = new Date();
+    seedStart.setHours(0, 0, 0, 0);
+    const seededSlots = [];
+    for (let idx = 0; idx < requiredSlots; idx += 1) {
+      const day = new Date(seedStart);
+      day.setDate(seedStart.getDate() + idx);
+      seededSlots.push({
+        bookingDate: day.toISOString().slice(0, 10),
+        bookingTime: SLOT_OPTIONS[0].value,
+      });
+    }
+    state.selectedHydrogenSlots = seededSlots;
+    state.serviceDetailSelections[category] = {
+      ...(state.serviceDetailSelections[category] || {}),
+      consecutiveSeedSlots: requiredSlots,
+    };
+  }
+  if (!shouldAutoConsecutiveTopUp && existingConsecutiveSeed) {
+    state.serviceDetailSelections[category] = {
+      ...(state.serviceDetailSelections[category] || {}),
+      consecutiveSeedSlots: 0,
+    };
+  }
   const topUpBlockStarts = [];
   for (let start = 1; start <= requiredSlots; start += 4) {
     topUpBlockStarts.push(start);
@@ -6270,6 +6318,10 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
 
   const therapySelect = addOnPanel.querySelector('.hydrogen-addon-therapy-select');
   const shotSelect = addOnPanel.querySelector('.hydrogen-addon-shot-select');
+  let addOnDateSelect = null;
+  let addOnTimeSelect = null;
+  let addOnSchedulePanel = null;
+  let addOnScheduleHint = null;
   for (const therapy of ivTherapyOptions) {
     const option = document.createElement('option');
     option.value = therapy.name;
@@ -6294,6 +6346,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     };
     state.selectedHydrogenAddOnServiceName = selectedValue || shotSelect.value || '';
     if (selectedValue) shotSelect.value = '';
+    refreshAddOnScheduleSelectors();
   });
   shotSelect.addEventListener('change', () => {
     const selectedValue = shotSelect.value || '';
@@ -6304,7 +6357,87 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     };
     state.selectedHydrogenAddOnServiceName = selectedValue || therapySelect.value || '';
     if (selectedValue) therapySelect.value = '';
+    refreshAddOnScheduleSelectors();
   });
+
+  const refreshAddOnScheduleSelectors = () => {
+    const assignedSlots = state.selectedHydrogenSlots
+      .slice(0, requiredSlots)
+      .map((slot, idx) => ({
+        index: idx,
+        bookingDate: String(slot?.bookingDate || '').trim(),
+        bookingTime: normalizeSlotStartTime(String(slot?.bookingTime || '').trim()),
+      }))
+      .filter((slot) => slot.bookingDate && slot.bookingTime);
+    const selectedAddOnName = String(state.selectedHydrogenAddOnServiceName || '').trim();
+
+    const priorDate = String(addOnDateSelect?.value || '').trim();
+    const priorTime = normalizeSlotStartTime(String(addOnTimeSelect?.value || '').trim());
+    const currentlyMapped = assignedSlots.find((slot) => slot.index === Number(state.selectedHydrogenAddOnSessionIndex || 0));
+
+    const uniqueDates = [...new Set(assignedSlots.map((slot) => slot.bookingDate))];
+    if (addOnDateSelect) {
+      addOnDateSelect.min = getTodayIsoDate();
+      addOnDateSelect.max = getMaxBookingIsoDate();
+      const preferredDate =
+        (priorDate && uniqueDates.includes(priorDate) && priorDate) ||
+        currentlyMapped?.bookingDate ||
+        uniqueDates[0] ||
+        '';
+      addOnDateSelect.value = preferredDate;
+    }
+
+    const selectedDate = String(addOnDateSelect?.value || '').trim();
+    if (addOnTimeSelect) {
+      addOnTimeSelect.innerHTML = '';
+      let effectiveSelectedDate = selectedDate;
+      let sameDateSlots = assignedSlots.filter((slot) => slot.bookingDate === effectiveSelectedDate);
+      if (!sameDateSlots.length && uniqueDates.length) {
+        effectiveSelectedDate = uniqueDates[0];
+        if (addOnDateSelect) addOnDateSelect.value = effectiveSelectedDate;
+        sameDateSlots = assignedSlots.filter((slot) => slot.bookingDate === effectiveSelectedDate);
+      }
+      if (!sameDateSlots.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = uniqueDates.length ? 'No slot for selected date' : 'Set hydrogen sessions first';
+        addOnTimeSelect.appendChild(option);
+      } else {
+        for (const slot of sameDateSlots) {
+          const option = document.createElement('option');
+          option.value = slot.bookingTime;
+          option.textContent = formatBookingTimeLabel(slot.bookingTime);
+          addOnTimeSelect.appendChild(option);
+        }
+      }
+      const preferredTime =
+        (priorTime && sameDateSlots.some((slot) => slot.bookingTime === priorTime) && priorTime) ||
+        currentlyMapped?.bookingTime ||
+        sameDateSlots[0]?.bookingTime ||
+        '';
+      addOnTimeSelect.value = preferredTime;
+    }
+
+    const mapped = assignedSlots.find(
+      (slot) => slot.bookingDate === String(addOnDateSelect?.value || '').trim()
+        && slot.bookingTime === normalizeSlotStartTime(String(addOnTimeSelect?.value || '').trim())
+    );
+    state.selectedHydrogenAddOnSessionIndex = mapped ? mapped.index : (assignedSlots[0]?.index || 0);
+
+    const selectorsDisabled = !selectedAddOnName || !assignedSlots.length;
+    if (addOnDateSelect) addOnDateSelect.disabled = selectorsDisabled;
+    if (addOnTimeSelect) addOnTimeSelect.disabled = selectorsDisabled;
+    if (addOnScheduleHint) {
+      addOnScheduleHint.hidden = false;
+      if (!selectedAddOnName) {
+        addOnScheduleHint.textContent = 'Select Therapy or Shots to enable add-on scheduling.';
+      } else if (!assignedSlots.length) {
+        addOnScheduleHint.textContent = 'Set hydrogen session date and time first.';
+      } else {
+        addOnScheduleHint.textContent = 'Choose when the selected add-on should be scheduled.';
+      }
+    }
+  };
 
   controls.appendChild(addOnPanel);
   layout.appendChild(controls);
@@ -6386,6 +6519,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
         state.selectedHydrogenSlots[storageIndex]?.bookingTime || ''
       );
       state.selectedHydrogenSlots[storageIndex].bookingTime = timeSelect.value || SLOT_OPTIONS[0].value;
+      refreshAddOnScheduleSelectors();
     });
     timeSelect.addEventListener('change', () => {
       clearHydrogenComposerNotice();
@@ -6394,11 +6528,52 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
         bookingDate: dateInput.value || getTodayIsoDate(),
         bookingTime: timeSelect.value || SLOT_OPTIONS[0].value,
       };
+      refreshAddOnScheduleSelectors();
     });
 
     scheduleList.appendChild(row);
   }
   schedulePanel.appendChild(scheduleList);
+  addOnSchedulePanel = document.createElement('section');
+  addOnSchedulePanel.className = 'hydrogen-schedule-row';
+  addOnSchedulePanel.innerHTML = `
+    <h5>Add-on Schedule</h5>
+    <div class="hydrogen-schedule-grid">
+      <label>
+        Add-on Date
+        <input class="hydrogen-addon-date-select" type="date" min="${getTodayIsoDate()}" max="${getMaxBookingIsoDate()}" />
+      </label>
+      <label>
+        Add-on Time
+        <select class="hydrogen-addon-time-select"></select>
+      </label>
+    </div>
+    <p class="service-flow-note hydrogen-addon-schedule-hint"></p>
+  `;
+  addOnDateSelect = addOnSchedulePanel.querySelector('.hydrogen-addon-date-select');
+  addOnTimeSelect = addOnSchedulePanel.querySelector('.hydrogen-addon-time-select');
+  addOnScheduleHint = addOnSchedulePanel.querySelector('.hydrogen-addon-schedule-hint');
+  addOnDateSelect?.addEventListener('change', () => {
+    refreshAddOnScheduleSelectors();
+  });
+  addOnTimeSelect?.addEventListener('change', () => {
+    const assignedSlots = state.selectedHydrogenSlots
+      .slice(0, requiredSlots)
+      .map((slot, idx) => ({
+        index: idx,
+        bookingDate: String(slot?.bookingDate || '').trim(),
+        bookingTime: normalizeSlotStartTime(String(slot?.bookingTime || '').trim()),
+      }))
+      .filter((slot) => slot.bookingDate && slot.bookingTime);
+    const mapped = assignedSlots.find(
+      (slot) => slot.bookingDate === String(addOnDateSelect?.value || '').trim()
+        && slot.bookingTime === normalizeSlotStartTime(String(addOnTimeSelect?.value || '').trim())
+    );
+    state.selectedHydrogenAddOnSessionIndex = mapped ? mapped.index : (assignedSlots[0]?.index || 0);
+  });
+  refreshAddOnScheduleSelectors();
+  schedulePanel.appendChild(addOnSchedulePanel);
+
   if (isTopUpFlow && requiredSlots > 4) {
     const blockMeta = document.createElement('p');
     blockMeta.className = 'service-flow-note';
@@ -7069,7 +7244,21 @@ function getHydrogenPlanOptions(services) {
     });
     const membershipSessionOffset = isCurrentUserMembershipActive() ? getHydrogenSessionsUsedThisMembership() : 0;
     let addOnSelect = null;
-    let addOnSessionSelect = null;
+    let addOnDateSelect = null;
+    let addOnTimeSelect = null;
+    const assignedHydrogenSlots = state.selectedHydrogenSlots
+      .slice(0, requiredSlots)
+      .map((slot, idx) => ({
+        index: idx,
+        bookingDate: String(slot?.bookingDate || '').trim(),
+        bookingTime: normalizeSlotStartTime(String(slot?.bookingTime || '').trim()),
+      }))
+      .filter((slot) => slot.bookingDate && slot.bookingTime);
+    const assignedAddOnSlotByIndex = assignedHydrogenSlots.find(
+      (slot) => slot.index === Number(state.selectedHydrogenAddOnSessionIndex || 0)
+    );
+    let selectedAddOnDate = assignedAddOnSlotByIndex?.bookingDate || assignedHydrogenSlots[0]?.bookingDate || '';
+    let selectedAddOnTime = assignedAddOnSlotByIndex?.bookingTime || '';
     if (!isAdmin) {
       addOnSelect = document.createElement('select');
       addOnSelect.className = 'hydrogen-addon-select';
@@ -7086,20 +7275,92 @@ function getHydrogenPlanOptions(services) {
       addOnSelect.value = state.selectedHydrogenAddOnServiceName;
       addOnSelect.addEventListener('change', () => {
         state.selectedHydrogenAddOnServiceName = addOnSelect.value;
+        state.focusHydrogenAddOnScheduler = Boolean(addOnSelect.value);
         renderServices();
       });
-      addOnSessionSelect = document.createElement('select');
-      addOnSessionSelect.className = 'hydrogen-addon-session-select';
-      for (let idx = 0; idx < requiredSlots; idx += 1) {
-        const option = document.createElement('option');
-        option.value = String(idx);
-        option.textContent = `Hydrogen Session ${membershipSessionOffset + idx + 1}`;
-        addOnSessionSelect.appendChild(option);
-      }
-      addOnSessionSelect.value = String(state.selectedHydrogenAddOnSessionIndex || 0);
-      addOnSessionSelect.disabled = !state.selectedHydrogenAddOnServiceName;
-      addOnSessionSelect.addEventListener('change', () => {
-        state.selectedHydrogenAddOnSessionIndex = Math.max(0, Number(addOnSessionSelect.value || 0));
+      addOnDateSelect = document.createElement('select');
+      addOnDateSelect.className = 'hydrogen-addon-date-select';
+      addOnTimeSelect = document.createElement('select');
+      addOnTimeSelect.className = 'hydrogen-addon-time-select';
+
+      const syncAddOnSessionIndex = () => {
+        const matchedSlot = assignedHydrogenSlots.find(
+          (slot) => slot.bookingDate === selectedAddOnDate && slot.bookingTime === selectedAddOnTime
+        );
+        if (matchedSlot) {
+          state.selectedHydrogenAddOnSessionIndex = matchedSlot.index;
+          return;
+        }
+        if (assignedHydrogenSlots.length) {
+          state.selectedHydrogenAddOnSessionIndex = assignedHydrogenSlots[0].index;
+        } else {
+          state.selectedHydrogenAddOnSessionIndex = 0;
+        }
+      };
+
+      const populateAddOnTimeOptions = () => {
+        if (!addOnTimeSelect) return;
+        addOnTimeSelect.innerHTML = '';
+        const matchingSlots = assignedHydrogenSlots.filter((slot) => slot.bookingDate === selectedAddOnDate);
+        if (!matchingSlots.length) {
+          const option = document.createElement('option');
+          option.value = '';
+          option.textContent = 'Select add-on date first';
+          addOnTimeSelect.appendChild(option);
+          addOnTimeSelect.value = '';
+          selectedAddOnTime = '';
+          syncAddOnSessionIndex();
+          return;
+        }
+        for (const slot of matchingSlots) {
+          const slotOption = SLOT_OPTIONS.find((opt) => opt.value === slot.bookingTime);
+          const option = document.createElement('option');
+          option.value = slot.bookingTime;
+          option.textContent = slotOption?.label || slot.bookingTime;
+          addOnTimeSelect.appendChild(option);
+        }
+        const hasSelectedTime = matchingSlots.some((slot) => slot.bookingTime === selectedAddOnTime);
+        selectedAddOnTime = hasSelectedTime ? selectedAddOnTime : matchingSlots[0].bookingTime;
+        addOnTimeSelect.value = selectedAddOnTime;
+        syncAddOnSessionIndex();
+      };
+
+      const populateAddOnDateOptions = () => {
+        if (!addOnDateSelect) return;
+        addOnDateSelect.innerHTML = '';
+        const uniqueDates = [...new Set(assignedHydrogenSlots.map((slot) => slot.bookingDate))];
+        if (!uniqueDates.length) {
+          const option = document.createElement('option');
+          option.value = '';
+          option.textContent = 'Set hydrogen sessions first';
+          addOnDateSelect.appendChild(option);
+          addOnDateSelect.value = '';
+          selectedAddOnDate = '';
+          populateAddOnTimeOptions();
+          return;
+        }
+        for (const dateValue of uniqueDates) {
+          const option = document.createElement('option');
+          option.value = dateValue;
+          option.textContent = formatBookingDateLabel(dateValue);
+          addOnDateSelect.appendChild(option);
+        }
+        const hasSelectedDate = uniqueDates.includes(selectedAddOnDate);
+        selectedAddOnDate = hasSelectedDate ? selectedAddOnDate : uniqueDates[0];
+        addOnDateSelect.value = selectedAddOnDate;
+        populateAddOnTimeOptions();
+      };
+
+      populateAddOnDateOptions();
+      addOnDateSelect.disabled = !state.selectedHydrogenAddOnServiceName || !assignedHydrogenSlots.length;
+      addOnTimeSelect.disabled = !state.selectedHydrogenAddOnServiceName || !assignedHydrogenSlots.length;
+      addOnDateSelect.addEventListener('change', () => {
+        selectedAddOnDate = String(addOnDateSelect.value || '').trim();
+        populateAddOnTimeOptions();
+      });
+      addOnTimeSelect.addEventListener('change', () => {
+        selectedAddOnTime = normalizeSlotStartTime(String(addOnTimeSelect.value || '').trim());
+        syncAddOnSessionIndex();
       });
     } else {
       state.selectedHydrogenAddOnServiceName = '';
@@ -7159,7 +7420,7 @@ function getHydrogenPlanOptions(services) {
       card.appendChild(initiationBlock);
     }
 
-    if (addOnSelect && addOnSessionSelect) {
+    if (addOnSelect && addOnDateSelect && addOnTimeSelect) {
       const addOnPanel = document.createElement('div');
       addOnPanel.className = 'hydrogen-addon-panel';
       addOnPanel.innerHTML = `
@@ -7172,19 +7433,34 @@ function getHydrogenPlanOptions(services) {
             Add-on Service
           </label>
           <label>
-            Add-on Hydrogen Session
+            Add-on Date
+          </label>
+          <label>
+            Add-on Time
           </label>
         </div>
       `;
       const addOnGrid = addOnPanel.querySelector('.hydrogen-addon-grid');
       addOnGrid.children[0].appendChild(addOnSelect);
-      addOnGrid.children[1].appendChild(addOnSessionSelect);
+      addOnGrid.children[1].appendChild(addOnDateSelect);
+      addOnGrid.children[2].appendChild(addOnTimeSelect);
       const addOnNote = document.createElement('p');
       addOnNote.className = 'hydrogen-addon-note';
       addOnNote.textContent =
         'Only one add-on can be booked in a single time slot. If you would like to book more sessions, please contact or visit H2 House of Health.';
       addOnPanel.appendChild(addOnNote);
       sidebar.appendChild(addOnPanel);
+      if (state.focusHydrogenAddOnScheduler && state.selectedHydrogenAddOnServiceName) {
+        state.focusHydrogenAddOnScheduler = false;
+        requestAnimationFrame(() => {
+          addOnPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (!addOnDateSelect.disabled) {
+            addOnDateSelect.focus();
+          } else {
+            addOnSelect.focus();
+          }
+        });
+      }
     }
 
     const editor = document.createElement('div');
@@ -7253,11 +7529,14 @@ function getHydrogenPlanOptions(services) {
       selectedSummary.appendChild(summaryItem);
     }
     if (selectedAddOnService) {
+      const addOnSlot = state.selectedHydrogenSlots[state.selectedHydrogenAddOnSessionIndex] || null;
       const addOnSummary = document.createElement('span');
       addOnSummary.className = 'hydrogen-selected-item';
-      addOnSummary.textContent = `IV Add-on: ${selectedAddOnService.name} (Hydrogen Session ${
-        membershipSessionOffset + state.selectedHydrogenAddOnSessionIndex + 1
-      })`;
+      addOnSummary.textContent = addOnSlot?.bookingDate && addOnSlot?.bookingTime
+        ? `IV Add-on: ${selectedAddOnService.name} (${formatDateTime(addOnSlot.bookingDate, addOnSlot.bookingTime)})`
+        : `IV Add-on: ${selectedAddOnService.name} (Hydrogen Session ${
+            membershipSessionOffset + state.selectedHydrogenAddOnSessionIndex + 1
+          })`;
       selectedSummary.appendChild(addOnSummary);
     }
     card.appendChild(selectedSummary);
@@ -8971,15 +9250,9 @@ function getUserRescheduleEligibility(row) {
     return { allowed: false, message: 'This booking slot is invalid for rescheduling.' };
   }
   const now = Date.now();
-  const openWindowMs = 24 * 60 * 60 * 1000;
-  const closeBufferMs = 15 * 60 * 1000;
-  const windowOpenAt = slotStart - openWindowMs;
-  const windowCloseAt = slotStart + closeBufferMs;
-  if (now < windowOpenAt) {
-    return { allowed: false, message: 'Reschedule opens 24 hours before slot start. Please try later.' };
-  }
-  if (now > windowCloseAt) {
-    return { allowed: false, message: 'Reschedule window closed. Please contact us to reschedule this booking.' };
+  const cutoffMs = 12 * 60 * 60 * 1000;
+  if (now > slotStart - cutoffMs) {
+    return { allowed: false, message: 'Reschedule is allowed only up to 12 hours before slot start.' };
   }
   return { allowed: true, message: '' };
 }
@@ -9349,6 +9622,17 @@ function buildHoldNotice(entries = []) {
   return null;
 }
 
+function buildUserRescheduleMissNotice(booking) {
+  const status = String(booking?.status || '').trim().toLowerCase();
+  if (status === 'completed' || status === 'cancelled') return null;
+  const eligibility = getUserRescheduleEligibility(booking);
+  if (!eligibility.allowed) return null;
+  return {
+    tone: 'warning',
+    text: 'If not rescheduled before slot start, this booking will be marked as missed.',
+  };
+}
+
 function buildUserBookingRows(bookings, allBookings = bookings) {
   const byGroup = new Map();
   for (const booking of allBookings) {
@@ -9375,6 +9659,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
     if (!isGroupedHydrogen) {
       const booking = sortedEntries[0];
       const holdNotice = buildHoldNotice([booking]);
+      const rescheduleMissNotice = buildUserRescheduleMissNotice(booking);
       rows.push({
         id: booking.id,
         booking,
@@ -9387,6 +9672,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
         serviceMetaLines: [
           getBookingCategoryLabel(booking.serviceName),
           ...(holdNotice ? [holdNotice] : []),
+          ...(rescheduleMissNotice ? [rescheduleMissNotice] : []),
         ],
         scheduleLines: [formatDateTime(booking.bookingDate, booking.bookingTime)],
         serviceText: booking.serviceName,
@@ -9430,6 +9716,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       return linkedIndex >= 0 ? `${entry.serviceName} (Hydrogen Session ${linkedIndex + 1})` : entry.serviceName;
     });
     const holdNotice = buildHoldNotice(sortedEntries);
+    const rescheduleMissNotice = buildUserRescheduleMissNotice(booking);
 
     const slotLines = hydrogenEntries.map(
       (entry, index) => `S${index + 1}: ${formatDateTime(entry.bookingDate, entry.bookingTime)}`
@@ -9458,6 +9745,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
         displayPackageName,
         ...(addOnDetails.length ? [`Add-on: ${addOnDetails.join(', ')}`] : []),
         ...(holdNotice ? [holdNotice] : []),
+        ...(rescheduleMissNotice ? [rescheduleMissNotice] : []),
       ],
       scheduleLines: [hydrogenEntries[0] ? formatDateTime(hydrogenEntries[0].bookingDate, hydrogenEntries[0].bookingTime) : '-'],
       detailSections: [
@@ -11034,7 +11322,17 @@ function getBookingCategory(serviceName) {
 function getBookingCategoryLabel(serviceName) {
   const category = getBookingCategory(serviceName);
   if (category === 'HYDROGEN SESSION') return 'Hydrogen Session';
-  if (category === 'IV ADD-ON') return 'Therapy / Shot';
+  if (category === 'IV ADD-ON') {
+    const service = getServiceCatalogEntry(serviceName);
+    let specific = String(service?.category || '').trim().toUpperCase();
+    if (!specific) {
+      const normalized = String(serviceName || '').trim().toLowerCase();
+      specific = normalized.includes('shot') ? 'IV SHOTS' : 'IV THERAPIES';
+    }
+    if (specific === 'IV THERAPIES') return 'Therapy';
+    if (specific === 'IV SHOTS') return 'Shot';
+    return 'Therapy / Shot';
+  }
   if (category === 'MEMBERSHIP SERVICES') return 'Membership Service';
   return 'Service Booking';
 }

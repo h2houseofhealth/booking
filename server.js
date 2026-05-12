@@ -3713,10 +3713,10 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
     if (!Number.isFinite(slotStart)) {
       return res.status(409).json({ message: 'Current booking slot is invalid for reschedule.' });
     }
-    const rescheduleWindowMs = 15 * 60 * 1000;
-    if (Date.now() > slotStart + rescheduleWindowMs) {
+    const rescheduleCutoffMs = 12 * 60 * 60 * 1000;
+    if (Date.now() > slotStart - rescheduleCutoffMs) {
       return res.status(409).json({
-        message: 'Reschedule is allowed only until 15 minutes after slot start time. Please contact admin.',
+        message: 'Reschedule is allowed only up to 12 hours before slot start time. Please contact admin.',
       });
     }
   }
@@ -6527,8 +6527,11 @@ app.get(/.*/, (_req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, () => {
+const HOST = '0.0.0.0';
+
+app.listen(PORT, HOST, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
+  console.log(`Server listening on http://127.0.0.1:${PORT}`);
   if (SENDGRID_API_KEY && SENDGRID_OTP_FROM_EMAIL && SENDGRID_BOOKING_FROM_EMAIL) {
     console.log(`SendGrid OTP mailer configured with sender ${SENDGRID_OTP_FROM_EMAIL}`);
     console.log(`SendGrid booking mailer configured with sender ${SENDGRID_BOOKING_FROM_EMAIL}`);

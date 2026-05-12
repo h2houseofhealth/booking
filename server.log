@@ -1,0 +1,8 @@
+
+> booking_management_portal@1.0.0 start
+> node server.js
+
+Server listening on http://localhost:3000
+Server listening on http://127.0.0.1:3000
+SendGrid OTP mailer configured with sender otpsender@zaynlevi.com
+SendGrid booking mailer configured with sender bookings@zaynlevi.com

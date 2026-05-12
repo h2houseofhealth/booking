@@ -9227,7 +9227,7 @@ function getAdminUserBookings(userId) {
 
 function getBookingStartTime(booking) {
   const bookingDate = String(booking?.bookingDate || '').trim();
-  const bookingTime = String(booking?.bookingTime || '').trim();
+  const bookingTime = normalizeSlotStartTime(booking?.bookingTime || '');
   if (!bookingDate || !bookingTime) return Number.NaN;
   const timestamp = new Date(`${bookingDate}T${bookingTime}:00`).getTime();
   return Number.isFinite(timestamp) ? timestamp : Number.NaN;
@@ -10339,7 +10339,7 @@ function renderAdminRescheduleQueue() {
           canReschedule && !isRescheduledView
             ? isBookingMissed(booking)
               ? `<p>Reschedule by: ${Number.isFinite(expiresAt) ? escapeHtml(new Date(expiresAt).toLocaleString()) : '-'}</p>`
-              : '<p>Reschedule allowed before the slot starts.</p>'
+              : '<p>Reschedule allowed until 15 minutes after the slot starts.</p>'
             : `<p>Status: ${wasRescheduled ? 'Already rescheduled' : escapeHtml(getDerivedBookingStatus(booking))}</p>`
         }
       </div>

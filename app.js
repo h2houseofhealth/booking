@@ -8111,8 +8111,7 @@ function renderMembershipCalendarDetails(dateKey, bookings) {
     `;
     return;
   }
-  const limited = bookings.slice(0, 3);
-  const lines = limited
+  const lines = bookings
     .map(
       (booking) => {
         const derivedStatus = getDerivedBookingStatus(booking);
@@ -8125,12 +8124,9 @@ function renderMembershipCalendarDetails(dateKey, bookings) {
       }
     )
     .join('');
-  const moreCount = bookings.length - limited.length;
-  const moreLine = moreCount > 0 ? `<span>+${moreCount} more</span>` : '';
   elements.membershipCalendarDetails.innerHTML = `
     <div>${escapeHtml(label)}</div>
-    ${lines}
-    ${moreLine}
+    <div class="membership-calendar-detail-list">${lines}</div>
   `;
 }
 

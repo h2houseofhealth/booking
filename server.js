@@ -1814,11 +1814,12 @@ app.get('/api/admin/users', requireAuth, requireAdmin, (_req, res) => {
   if (search) {
     const like = `%${search}%`;
     query += ` AND (
+      CAST(id AS TEXT) LIKE ? OR
       LOWER(name) LIKE ? OR
       LOWER(email) LIKE ? OR
       mobile LIKE ?
     )`;
-    params.push(like, like, like);
+    params.push(like, like, like, like);
   }
   query += ' ORDER BY name COLLATE NOCASE ASC, id ASC';
   const users = db.prepare(query).all(...params);

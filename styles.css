@@ -4614,6 +4614,12 @@ h1, h2, h3 {
   color: rgba(var(--ink-rgb), 0.72);
 }
 
+.admin-user-card-footer--secondary {
+  padding-top: 0;
+  border-top: 0;
+  color: rgba(var(--ink-rgb), 0.62);
+}
+
 .admin-user-card-footer strong {
   color: var(--brand-deep);
 }
@@ -4695,17 +4701,32 @@ h1, h2, h3 {
 
 .admin-user-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;
 }
 
 .admin-user-kpi-card {
+  appearance: none;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
   border-radius: 14px;
   padding: 0.75rem 0.8rem;
   border: 1px solid rgba(var(--brand-primary-rgb), 0.14);
   background: rgba(255, 255, 255, 0.9);
   display: grid;
   gap: 0.22rem;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.admin-user-kpi-card:hover,
+.admin-user-kpi-card.is-active {
+  border-color: rgba(var(--brand-primary-rgb), 0.46);
+  box-shadow: 0 10px 22px rgba(var(--brand-primary-rgb), 0.12);
+}
+
+.admin-user-kpi-card.is-active {
+  transform: translateY(-1px);
 }
 
 .admin-user-kpi-card span {
@@ -4721,6 +4742,14 @@ h1, h2, h3 {
 
 .admin-user-kpi-card.tone-completed {
   background: rgba(62, 140, 89, 0.08);
+}
+
+.admin-user-kpi-card.tone-member {
+  background: rgba(79, 123, 168, 0.1);
+}
+
+.admin-user-kpi-card.tone-topup {
+  background: rgba(182, 93, 60, 0.1);
 }
 
 .admin-user-kpi-card.tone-remaining {
@@ -4778,6 +4807,24 @@ h1, h2, h3 {
 .admin-user-session-badges .status-chip {
   padding: 0.22rem 0.5rem;
   font-size: 0.72rem;
+}
+
+.admin-user-session-badges .session-member {
+  background: rgba(79, 123, 168, 0.12);
+  color: #315B87;
+  border-color: rgba(79, 123, 168, 0.24);
+}
+
+.admin-user-session-badges .session-top-up {
+  background: rgba(182, 93, 60, 0.12);
+  color: #93401F;
+  border-color: rgba(182, 93, 60, 0.24);
+}
+
+.admin-user-session-badges .session-paid {
+  background: rgba(57, 57, 57, 0.08);
+  color: rgba(var(--ink-rgb), 0.78);
+  border-color: rgba(57, 57, 57, 0.16);
 }
 
 .admin-discount-form {

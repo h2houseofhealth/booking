@@ -70,6 +70,7 @@ const state = {
   adminUsers: [],
   adminCoupons: [],
   adminSelectedUserId: null,
+  adminUserSessionFilter: 'all',
   adminResolvedCustomer: null,
   adminCustomerForm: {
     name: '',
@@ -3272,6 +3273,7 @@ function closeProfileDialog() {
 function openAdminUserSessionDialog(userId) {
   if (!elements.adminUserSessionDialog) return;
   state.adminSelectedUserId = userId == null ? null : String(userId);
+  state.adminUserSessionFilter = 'all';
   renderAdminUserSessionDialog();
   if (elements.adminUserSessionDialog.open) {
     elements.adminUserSessionDialog.close();
@@ -9231,6 +9233,47 @@ function getAdminUserBookings(userId) {
     .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
 }
 
+function isAdminHydrogenSessionBooking(booking) {
+  return getBookingCategory(booking?.serviceName) === 'HYDROGEN SESSION';
+}
+
+function isAdminTopUpSessionBooking(booking) {
+  if (!isAdminHydrogenSessionBooking(booking)) return false;
+  if (Number(booking?.isTopUpSession || 0) === 1) return true;
+  return String(booking?.paymentReference || '').trim().toLowerCase() === 'buy_extra';
+}
+
+function isAdminMemberSessionBooking(booking) {
+  if (!isAdminHydrogenSessionBooking(booking)) return false;
+  if (isAdminTopUpSessionBooking(booking)) return false;
+  return String(booking?.paymentReference || '').trim().toLowerCase() === 'membership';
+}
+
+function getAdminSessionKindLabel(booking) {
+  if (isAdminTopUpSessionBooking(booking)) return 'Top-up';
+  if (isAdminMemberSessionBooking(booking)) return 'Member';
+  if (isAdminHydrogenSessionBooking(booking)) return 'Paid';
+  return getBookingCategoryLabel(booking?.serviceName || 'Session');
+}
+
+function getAdminUserSessionsByFilter(bookings, filter = state.adminUserSessionFilter) {
+  const normalizedFilter = String(filter || 'all').trim().toLowerCase();
+  const source = Array.isArray(bookings) ? bookings : [];
+  if (normalizedFilter === 'member') return source.filter(isAdminMemberSessionBooking);
+  if (normalizedFilter === 'topup') return source.filter(isAdminTopUpSessionBooking);
+  if (normalizedFilter === 'completed') {
+    return source.filter((booking) => String(booking?.status || '').trim().toLowerCase() === 'completed');
+  }
+  if (normalizedFilter === 'remaining') {
+    return source.filter((booking) => {
+      const status = String(booking?.status || '').trim().toLowerCase();
+      return status !== 'completed' && status !== 'cancelled' && !isBookingMissed(booking);
+    });
+  }
+  if (normalizedFilter === 'missed') return source.filter(isBookingMissed);
+  return source;
+}
+
 function getBookingStartTime(booking) {
   const bookingDate = String(booking?.bookingDate || '').trim();
   const bookingTime = normalizeSlotStartTime(booking?.bookingTime || '');
@@ -9295,6 +9338,8 @@ function buildAdminUserSessionSummary(user) {
     completed,
     remaining,
     missed,
+    memberSessions: activeBookings.filter(isAdminMemberSessionBooking).length,
+    topUpSessions: activeBookings.filter(isAdminTopUpSessionBooking).length,
   };
 }
 
@@ -9352,7 +9397,7 @@ function renderAdminUserCards() {
           <p>${escapeHtml(user?.email || user?.mobile || 'No contact info')}</p>
           <p class="admin-user-plan-copy">${escapeHtml(
             membership.totalSessions
-              ? `${membership.planLabel} ? ${membership.perUserSessions} sessions per user`
+              ? `${membership.planLabel} - ${membership.perUserSessions} member sessions per user`
               : membership.planLabel
           )}</p>
         </div>
@@ -9364,7 +9409,11 @@ function renderAdminUserCards() {
         </div>
       </div>
       <div class="admin-user-card-footer">
-        <span><strong>${summary.total}</strong> total sessions</span>
+        <span><strong>${summary.memberSessions}</strong> member sessions</span>
+        <span><strong>${summary.topUpSessions}</strong> top-up sessions</span>
+      </div>
+      <div class="admin-user-card-footer admin-user-card-footer--secondary">
+        <span><strong>${summary.total}</strong> paid bookings</span>
         <span><strong>${summary.completed}</strong> completed</span>
       </div>
     `;
@@ -9406,34 +9455,47 @@ function renderAdminUserSessionDialog() {
     .join(' • ');
 
   const kpis = [
-    { title: 'Total Sessions', value: summary.total, tone: 'total' },
-    { title: 'Completed Sessions', value: summary.completed, tone: 'completed' },
-    { title: 'Remaining Sessions', value: summary.remaining, tone: 'remaining' },
-    { title: 'Missed Sessions', value: summary.missed, tone: 'missed' },
+    { title: 'All Paid Bookings', value: summary.total, tone: 'total', filter: 'all' },
+    { title: 'Member Sessions', value: summary.memberSessions, tone: 'member', filter: 'member' },
+    { title: 'Top-up Sessions', value: summary.topUpSessions, tone: 'topup', filter: 'topup' },
+    { title: 'Completed Sessions', value: summary.completed, tone: 'completed', filter: 'completed' },
+    { title: 'Remaining Sessions', value: summary.remaining, tone: 'remaining', filter: 'remaining' },
+    { title: 'Missed Sessions', value: summary.missed, tone: 'missed', filter: 'missed' },
   ];
 
   elements.adminUserSessionKpis.innerHTML = '';
   kpis.forEach((metric) => {
-    const card = document.createElement('article');
+    const card = document.createElement('button');
+    card.type = 'button';
     card.className = `admin-user-kpi-card tone-${metric.tone}`;
+    card.classList.toggle('is-active', String(state.adminUserSessionFilter || 'all') === metric.filter);
+    card.setAttribute('aria-pressed', String(String(state.adminUserSessionFilter || 'all') === metric.filter));
     card.innerHTML = `
       <span>${escapeHtml(metric.title)}</span>
       <strong>${escapeHtml(String(metric.value))}</strong>
     `;
+    card.addEventListener('click', () => {
+      state.adminUserSessionFilter = metric.filter;
+      renderAdminUserSessionDialog();
+    });
     elements.adminUserSessionKpis.appendChild(card);
   });
 
   elements.adminUserSessionList.innerHTML = '';
-  if (!summary.bookings.length) {
+  const filteredBookings = getAdminUserSessionsByFilter(summary.bookings);
+  if (!filteredBookings.length) {
     elements.adminUserSessionListEmpty.hidden = false;
+    elements.adminUserSessionListEmpty.textContent =
+      state.adminUserSessionFilter === 'all' ? 'No sessions found for this user.' : 'No sessions match this filter.';
     return;
   }
 
   elements.adminUserSessionListEmpty.hidden = true;
-  [...summary.bookings]
+  [...filteredBookings]
     .sort((a, b) => `${b.bookingDate}T${b.bookingTime}`.localeCompare(`${a.bookingDate}T${a.bookingTime}`))
     .forEach((booking) => {
       const derivedStatus = getDerivedBookingStatus(booking);
+      const sessionKind = getAdminSessionKindLabel(booking);
       const row = document.createElement('article');
       row.className = 'admin-user-session-row';
       row.innerHTML = `
@@ -9442,6 +9504,9 @@ function renderAdminUserSessionDialog() {
           <p>${escapeHtml(formatAdminBookingDateTime(booking?.bookingDate, booking?.bookingTime).replace(/\n/g, ' • '))}</p>
         </div>
         <div class="admin-user-session-badges">
+          <span class="status-chip session-${escapeHtml(String(sessionKind).toLowerCase().replace(/[^a-z0-9]+/g, '-'))}">${escapeHtml(
+            sessionKind
+          )}</span>
           <span class="status-chip status-${escapeHtml(derivedStatus)}">${escapeHtml(derivedStatus)}</span>
           <span class="status-chip payment-${escapeHtml(normalizePaymentStatusKey(booking?.paymentStatus))}">${escapeHtml(
             formatPaymentStatusLabel(booking?.paymentStatus)

@@ -6144,31 +6144,33 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   const requiredSlots = isTopUpFlow
     ? Math.max(1, Number(selectedPlan.sessions || 1))
     : Math.max(1, scheduleWindowEnd - scheduleWindowStart + 1);
-  const shouldAutoConsecutiveTopUp = isTopUpFlow && !isEditingHydrogenGroup && (requiredSlots === 16 || requiredSlots === 30);
-  const existingConsecutiveSeed = Number(detailSelection.consecutiveSeedSlots || 0);
-  if (shouldAutoConsecutiveTopUp && (!state.selectedHydrogenSlots.length || existingConsecutiveSeed !== requiredSlots)) {
-    const seedStart = new Date();
-    seedStart.setHours(0, 0, 0, 0);
-    const seededSlots = [];
+  const normalizeConsecutiveHydrogenSlots = (anchorDate, anchorIndex = 0) => {
+    const safeAnchorIndex = Math.min(Math.max(0, Number(anchorIndex || 0)), Math.max(0, requiredSlots - 1));
+    const fallbackDate = state.selectedHydrogenSlots[safeAnchorIndex]?.bookingDate || state.selectedServiceDate || getTodayIsoDate();
+    const selectedAnchorDate = String(anchorDate || fallbackDate || getTodayIsoDate()).trim();
+    const startDate = addDaysToIsoDate(selectedAnchorDate, -safeAnchorIndex) || getTodayIsoDate();
+    const nextSlots = [];
     for (let idx = 0; idx < requiredSlots; idx += 1) {
-      const day = new Date(seedStart);
-      day.setDate(seedStart.getDate() + idx);
-      seededSlots.push({
-        bookingDate: day.toISOString().slice(0, 10),
-        bookingTime: SLOT_OPTIONS[0].value,
+      nextSlots.push({
+        bookingDate: addDaysToIsoDate(startDate, idx) || startDate,
+        bookingTime: state.selectedHydrogenSlots[idx]?.bookingTime || SLOT_OPTIONS[0].value,
       });
     }
-    state.selectedHydrogenSlots = seededSlots;
-    state.serviceDetailSelections[category] = {
-      ...(state.serviceDetailSelections[category] || {}),
-      consecutiveSeedSlots: requiredSlots,
-    };
-  }
-  if (!shouldAutoConsecutiveTopUp && existingConsecutiveSeed) {
-    state.serviceDetailSelections[category] = {
-      ...(state.serviceDetailSelections[category] || {}),
-      consecutiveSeedSlots: 0,
-    };
+    state.selectedHydrogenSlots = nextSlots;
+  };
+  if (!isEditingHydrogenGroup && requiredSlots > 1) {
+    const missingAnyDate =
+      state.selectedHydrogenSlots.length < requiredSlots ||
+      state.selectedHydrogenSlots.slice(0, requiredSlots).some((slot) => !slot?.bookingDate);
+    const hasDifferentDates = new Set(
+      state.selectedHydrogenSlots
+        .slice(0, requiredSlots)
+        .map((slot) => String(slot?.bookingDate || '').trim())
+        .filter(Boolean)
+    ).size > 1;
+    if (!state.selectedHydrogenSlots.length || missingAnyDate || !hasDifferentDates) {
+      normalizeConsecutiveHydrogenSlots(state.selectedHydrogenSlots[0]?.bookingDate || state.selectedServiceDate || getTodayIsoDate(), 0);
+    }
   }
   const topUpBlockStarts = [];
   for (let start = 1; start <= requiredSlots; start += 4) {
@@ -8042,6 +8044,14 @@ function getTomorrowIsoDate() {
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function addDaysToIsoDate(dateKey, daysToAdd = 0) {
+  const match = String(dateKey || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  date.setDate(date.getDate() + Number(daysToAdd || 0));
+  return toLocalIsoDate(date);
 }
 
 function isBookingSlotInPast(bookingDate, bookingTime) {

@@ -3375,6 +3375,36 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
   if (groupHasPaidBookings && addOnServiceName !== existingAddOnServiceName) {
     return res.status(409).json({ message: 'Paid packages can only reschedule the existing add-on. Add-on pricing changes are blocked.' });
   }
+  if (groupHasPaidBookings) {
+    const sortedExistingHydrogenBookings = [...hydrogenBookings].sort((a, b) =>
+      `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`) || a.id - b.id
+    );
+    const hydrogenSlotChanged = sortedExistingHydrogenBookings.some((entry, index) => {
+      const nextSlot = normalizedSlots[index] || {};
+      return entry.bookingDate !== nextSlot.bookingDate || normalizeSlotStartTime(entry.bookingTime) !== nextSlot.bookingTime;
+    });
+    const addOnSlot = addOnService ? normalizedSlots[addOnSessionIndex] : null;
+    const addOnSlotChanged = Boolean(
+      existingAddOnBookings[0] &&
+        addOnSlot &&
+        (existingAddOnBookings[0].bookingDate !== addOnSlot.bookingDate ||
+          normalizeSlotStartTime(existingAddOnBookings[0].bookingTime) !== addOnSlot.bookingTime)
+    );
+
+    if (hydrogenSlotChanged || addOnSlotChanged) {
+      const rescheduleCutoffMs = 12 * 60 * 60 * 1000;
+      const tooLateBooking = existingBookings.find((entry) => {
+        const normalizedExistingTime = normalizeSlotStartTime(String(entry.bookingTime || '').trim()) || String(entry.bookingTime || '').trim();
+        const slotStart = new Date(`${String(entry.bookingDate || '').trim()}T${normalizedExistingTime}:00`).getTime();
+        return !Number.isFinite(slotStart) || Date.now() > slotStart - rescheduleCutoffMs;
+      });
+      if (tooLateBooking) {
+        return res.status(409).json({
+          message: 'Reschedule is allowed only up to 12 hours before slot start time. Please contact admin.',
+        });
+      }
+    }
+  }
 
   const excludeIds = existingBookings.map((entry) => Number(entry.id)).filter((id) => Number.isInteger(id));
   const hydrogenDailyLimitConflict = validateHydrogenDailySessionLimit(req.user.id, normalizedSlots, excludeIds);

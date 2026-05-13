@@ -9541,21 +9541,12 @@ function renderUserRows(bookings) {
     actions.className = 'action-row';
 
     const canEdit = !['completed', 'cancelled'].includes(String(row.status || '').toLowerCase());
-    const rescheduleEligibility = !row.isGroupedHydrogen ? getUserRescheduleEligibility(row) : { allowed: canEdit, message: '' };
+    const rescheduleEligibility = getUserRescheduleEligibility(row);
     if (canShowBookingInvoice(row)) {
       actions.append(createActionButton('Invoice', () => openBookingInvoice(row.booking?.id || row.id)));
     }
     if (canEdit && rescheduleEligibility.allowed) {
       actions.append(createActionButton('Reschedule', () => handleUserRescheduleAction(row)));
-    }
-    if (canEdit && !row.isGroupedHydrogen && !rescheduleEligibility.allowed && rescheduleEligibility.message) {
-      const disabledRescheduleBtn = document.createElement('button');
-      disabledRescheduleBtn.type = 'button';
-      disabledRescheduleBtn.className = 'action-btn';
-      disabledRescheduleBtn.textContent = 'Reschedule';
-      disabledRescheduleBtn.disabled = true;
-      disabledRescheduleBtn.title = rescheduleEligibility.message;
-      actions.appendChild(disabledRescheduleBtn);
     }
     if (String(row.status || '').toLowerCase() !== 'cancelled') {
       actions.append(createActionButton('Cancel', () => changeStatus(row.id, 'cancelled')));
@@ -9607,20 +9598,6 @@ function renderCartRows(cartBookings) {
     const actions = document.createElement('div');
     actions.className = 'action-row';
 
-    const canEdit = !['completed', 'cancelled'].includes(String(row.status || '').toLowerCase());
-    const rescheduleEligibility = !row.isGroupedHydrogen ? getUserRescheduleEligibility(row) : { allowed: canEdit, message: '' };
-    if (canEdit && rescheduleEligibility.allowed) {
-      actions.append(createActionButton('Reschedule', () => handleUserRescheduleAction(row)));
-    }
-    if (canEdit && !row.isGroupedHydrogen && !rescheduleEligibility.allowed && rescheduleEligibility.message) {
-      const disabledRescheduleBtn = document.createElement('button');
-      disabledRescheduleBtn.type = 'button';
-      disabledRescheduleBtn.className = 'action-btn';
-      disabledRescheduleBtn.textContent = 'Reschedule';
-      disabledRescheduleBtn.disabled = true;
-      disabledRescheduleBtn.title = rescheduleEligibility.message;
-      actions.appendChild(disabledRescheduleBtn);
-    }
     actions.append(createDangerButton('Remove', () => deleteBooking(row.booking)));
     actionCell.appendChild(actions);
     tr.appendChild(actionCell);

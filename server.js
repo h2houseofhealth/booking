@@ -1688,6 +1688,12 @@ app.post('/api/membership/verify', requireAuth, (req, res) => {
   if (expectedSignature !== razorpaySignature) {
     return res.status(400).json({ message: 'Invalid payment signature' });
   }
+  if (Number(pendingOrder.couponId || 0) > 0) {
+    const couponLimitError = validateCouponRedemptionLimit(Number(pendingOrder.couponId), req.user.id);
+    if (couponLimitError) {
+      return res.status(409).json({ message: couponLimitError });
+    }
+  }
 
   const existingUser = db
     .prepare(
@@ -2040,9 +2046,15 @@ app.get('/api/membership-orders/:orderId/invoice-link', requireAuth, (req, res) 
 app.get('/api/admin/discount-phones', requireAuth, requireAdmin, (_req, res) => {
   const discountPhones = db
     .prepare(
-      `SELECT id, phone_key AS phoneKey, phone_display AS phoneDisplay, discount_percent AS discountPercent, created_at AS createdAt
+      `SELECT id,
+              phone_key AS phoneKey,
+              phone_display AS phoneDisplay,
+              discount_percent AS discountPercent,
+              redeemed_at AS redeemedAt,
+              redeemed_booking_id AS redeemedBookingId,
+              created_at AS createdAt
        FROM admin_discount_phones
-       ORDER BY datetime(created_at) DESC, id DESC`
+       ORDER BY redeemed_at IS NOT NULL ASC, datetime(created_at) DESC, id DESC`
     )
     .all()
     .map((row) => ({
@@ -2050,6 +2062,8 @@ app.get('/api/admin/discount-phones', requireAuth, requireAdmin, (_req, res) => 
       phoneKey: row.phoneKey || '',
       phoneDisplay: row.phoneDisplay || '',
       discountPercent: Number(row.discountPercent || 0),
+      redeemedAt: row.redeemedAt || null,
+      redeemedBookingId: row.redeemedBookingId == null ? null : Number(row.redeemedBookingId),
       createdAt: row.createdAt || null,
     }));
 
@@ -2073,7 +2087,9 @@ app.post('/api/admin/discount-phones', requireAuth, requireAdmin, (req, res) => 
      VALUES (?, ?, ?, datetime('now'))
      ON CONFLICT(phone_key) DO UPDATE SET
        phone_display = excluded.phone_display,
-       discount_percent = excluded.discount_percent`
+       discount_percent = excluded.discount_percent,
+       redeemed_at = NULL,
+       redeemed_booking_id = NULL`
   ).run(phoneKey, phoneDisplay, discountPercent);
 
   res.status(201).json({ message: 'Discount phone saved.' });
@@ -2104,6 +2120,7 @@ app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req, res) => {
               active,
               recipient_email AS recipientEmail,
               recipient_name AS recipientName,
+              festival_name AS festivalName,
               emailed_at AS emailedAt,
               email_status AS emailStatus,
               email_error AS emailError,
@@ -2127,6 +2144,7 @@ app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req, res) => {
         active: Number(row.active || 0) === 1,
         recipientEmail: row.recipientEmail || '',
         recipientName: row.recipientName || '',
+        festivalName: row.festivalName || '',
         emailedAt: row.emailedAt || null,
         emailStatus: row.emailStatus || '',
         emailError: row.emailError || '',
@@ -2141,6 +2159,7 @@ app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req, res) => {
 app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
   let code = normalizeCouponCode(req.body?.code);
   const description = String(req.body?.description || '').trim();
+  const festivalName = String(req.body?.festivalName || '').trim();
   const discountType = String(req.body?.discountType || 'percent').trim().toLowerCase();
   const discountValue = Number(req.body?.discountValue || 0);
   const appliesTo = 'all';
@@ -2187,8 +2206,8 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
   db.prepare(
     `INSERT INTO coupons (
       code, description, discount_type, discount_value, applies_to, max_redemptions, per_user_limit, expires_at, active,
-      recipient_email, recipient_name, emailed_at, email_status, email_error, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1, ?, ?, NULL, ?, ?, datetime('now'))
+      recipient_email, recipient_name, festival_name, emailed_at, email_status, email_error, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1, ?, ?, ?, NULL, ?, ?, datetime('now'))
     ON CONFLICT(code) DO UPDATE SET
       description = excluded.description,
       discount_type = excluded.discount_type,
@@ -2199,6 +2218,7 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
       expires_at = excluded.expires_at,
       recipient_email = excluded.recipient_email,
       recipient_name = excluded.recipient_name,
+      festival_name = excluded.festival_name,
       email_status = excluded.email_status,
       email_error = excluded.email_error,
       active = 1`
@@ -2212,6 +2232,7 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
     expiresAt || null,
     recipientEmail || null,
     recipientName || null,
+    festivalName || null,
     initialEmailStatus,
     ''
   );
@@ -5384,6 +5405,7 @@ app.post('/api/payments/preview-cart-coupon', requireAuth, (req, res) => {
   const pricingUser = {
     membershipStatus: req.user.membershipStatus || 'inactive',
     membershipExpiresAt: req.user.membershipExpiresAt || null,
+    mobile: req.user.mobile || '',
   };
   const payableBookings = getPayableUserBookings(req.user.id);
   if (!payableBookings.length) {
@@ -5393,6 +5415,7 @@ app.post('/api/payments/preview-cart-coupon', requireAuth, (req, res) => {
   let paymentSummary;
   try {
     paymentSummary = buildAggregatePaymentSummary(payableBookings, pricingUser);
+    paymentSummary = applyOneUseAdminPhoneDiscountToSummary(payableBookings, { ...pricingUser, mobile: req.user.mobile || '' }, paymentSummary);
   } catch (error) {
     return res.status(409).json({ message: error?.message || 'Unable to calculate payment total for current bookings.' });
   }
@@ -5402,6 +5425,7 @@ app.post('/api/payments/preview-cart-coupon', requireAuth, (req, res) => {
     userId: req.user.id,
     appliesTo: 'services',
     subtotalAmountPaise: Math.round(Number(paymentSummary.totalAmountInr || 0) * 100),
+    singleBookingAmountPaise: getSingleBookingCouponBasePaise(paymentSummary),
   });
   if (couponResult.error) {
     return res.status(400).json({ message: couponResult.error });
@@ -5421,6 +5445,7 @@ app.post('/api/payments/create-cart-order', requireAuth, async (req, res) => {
   const pricingUser = {
     membershipStatus: req.user.membershipStatus || 'inactive',
     membershipExpiresAt: req.user.membershipExpiresAt || null,
+    mobile: req.user.mobile || '',
   };
   const payableBookings = getPayableUserBookings(req.user.id);
   if (!payableBookings.length) {
@@ -5430,6 +5455,7 @@ app.post('/api/payments/create-cart-order', requireAuth, async (req, res) => {
   let paymentSummary;
   try {
     paymentSummary = buildAggregatePaymentSummary(payableBookings, pricingUser);
+    paymentSummary = applyOneUseAdminPhoneDiscountToSummary(payableBookings, { ...pricingUser, mobile: req.user.mobile || '' }, paymentSummary);
   } catch (error) {
     return res.status(409).json({ message: error?.message || 'Unable to calculate payment total for current bookings.' });
   }
@@ -5440,6 +5466,7 @@ app.post('/api/payments/create-cart-order', requireAuth, async (req, res) => {
     userId: req.user.id,
     appliesTo: 'services',
     subtotalAmountPaise,
+    singleBookingAmountPaise: getSingleBookingCouponBasePaise(paymentSummary),
   });
   if (couponResult.error) {
     return res.status(400).json({ message: couponResult.error });
@@ -5544,7 +5571,8 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
     .prepare(
       `SELECT membership_status AS membershipStatus,
               membership_started_at AS membershipStartedAt,
-              membership_expires_at AS membershipExpiresAt
+              membership_expires_at AS membershipExpiresAt,
+              mobile
        FROM users
        WHERE id = ?`
     )
@@ -5553,6 +5581,7 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
     membershipStatus: bookingOwner?.membershipStatus || req.user.membershipStatus || 'inactive',
     membershipExpiresAt: bookingOwner?.membershipExpiresAt || req.user.membershipExpiresAt || null,
     membershipStartedAt: bookingOwner?.membershipStartedAt || req.user.membershipStartedAt || null,
+    mobile: bookingOwner?.mobile || req.user.mobile || '',
   };
   const groupBookings = booking.bookingGroupId
     ? db
@@ -5598,6 +5627,14 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
           totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
           bookingCount: 1,
         };
+    if (booking.bookingGroupId) {
+      const aggregateSummary = buildAggregatePaymentSummary(payableBookings, pricingUser);
+      const oneUseSummary = applyOneUseAdminPhoneDiscountToSummary(payableBookings, pricingUser, aggregateSummary);
+      paymentSummary = {
+        ...paymentSummary,
+        totalAmountInr: Number(oneUseSummary.totalAmountInr || paymentSummary.totalAmountInr || 0),
+      };
+    }
   } catch (error) {
     return res.status(409).json({ message: error?.message || 'Unable to calculate payment total for this booking.' });
   }
@@ -6127,12 +6164,23 @@ app.post('/api/payments/verify-cart', requireAuth, async (req, res) => {
   if (!matchedBookings.length) {
     return res.status(404).json({ message: 'No payable bookings found for this payment order.' });
   }
+  if (Number(cartOrder.couponId || 0) > 0) {
+    const couponLimitError = validateCouponRedemptionLimit(Number(cartOrder.couponId), req.user.id);
+    if (couponLimitError) {
+      return res.status(409).json({ message: couponLimitError });
+    }
+  }
 
   const pricingUser = {
     membershipStatus: req.user.membershipStatus || 'inactive',
     membershipExpiresAt: req.user.membershipExpiresAt || null,
+    mobile: req.user.mobile || '',
   };
-  const summary = buildAggregatePaymentSummary(matchedBookings, pricingUser);
+  const summary = applyOneUseAdminPhoneDiscountToSummary(
+    matchedBookings,
+    pricingUser,
+    buildAggregatePaymentSummary(matchedBookings, pricingUser)
+  );
 
   db.prepare(
     `UPDATE bookings
@@ -6164,6 +6212,9 @@ app.post('/api/payments/verify-cart', requireAuth, async (req, res) => {
       contextRef: razorpayOrderId,
       discountAmountPaise: Number(cartOrder.discountAmountPaise || 0),
     });
+  }
+  if (matchedBookings.length) {
+    consumeAdminDiscountForBooking(req.user.id, matchedBookings[0].id);
   }
 
   return res.json({
@@ -6619,12 +6670,27 @@ function getDiscountPercentForPhone(phone) {
     .prepare(
       `SELECT discount_percent AS discountPercent
        FROM admin_discount_phones
-       WHERE phone_key = ?`
+       WHERE phone_key = ?
+         AND redeemed_at IS NULL`
     )
     .get(phoneKey);
   const percent = Number(row?.discountPercent || 0);
   if (!Number.isFinite(percent) || percent <= 0) return 0;
   return Math.min(100, percent);
+}
+
+function consumeAdminDiscountForBooking(userId, bookingId) {
+  const user = getUserById(userId);
+  const phoneKey = normalizeDiscountPhoneKey(user?.mobile || '');
+  if (!phoneKey || !Number.isInteger(Number(bookingId))) return;
+
+  db.prepare(
+    `UPDATE admin_discount_phones
+     SET redeemed_at = datetime('now'),
+         redeemed_booking_id = ?
+     WHERE phone_key = ?
+       AND redeemed_at IS NULL`
+  ).run(Number(bookingId), phoneKey);
 }
 
 function applyPhoneDiscount(amountInr, phone) {
@@ -6669,6 +6735,7 @@ function getCouponByCode(code) {
               active,
               recipient_email AS recipientEmail,
               recipient_name AS recipientName,
+              festival_name AS festivalName,
               emailed_at AS emailedAt,
               email_status AS emailStatus,
               email_error AS emailError,
@@ -6691,6 +6758,7 @@ function getCouponByCode(code) {
     active: Number(row.active || 0) === 1,
     recipientEmail: row.recipientEmail || '',
     recipientName: row.recipientName || '',
+    festivalName: row.festivalName || '',
     emailedAt: row.emailedAt || null,
     emailStatus: row.emailStatus || '',
     emailError: row.emailError || '',
@@ -6715,6 +6783,7 @@ function getCouponById(couponId) {
               active,
               recipient_email AS recipientEmail,
               recipient_name AS recipientName,
+              festival_name AS festivalName,
               emailed_at AS emailedAt,
               email_status AS emailStatus,
               email_error AS emailError,
@@ -6737,6 +6806,7 @@ function getCouponById(couponId) {
     active: Number(row.active || 0) === 1,
     recipientEmail: row.recipientEmail || '',
     recipientName: row.recipientName || '',
+    festivalName: row.festivalName || '',
     emailedAt: row.emailedAt || null,
     emailStatus: row.emailStatus || '',
     emailError: row.emailError || '',
@@ -6782,7 +6852,7 @@ function calculateCouponDiscountPaise(coupon, subtotalAmountPaise) {
   return Math.min(discountPaise, Math.max(0, subtotal - 100));
 }
 
-function validateCouponForUser({ code, userId, appliesTo, subtotalAmountPaise }) {
+function validateCouponForUser({ code, userId, appliesTo, subtotalAmountPaise, singleBookingAmountPaise }) {
   const normalizedCode = normalizeCouponCode(code);
   if (!normalizedCode) {
     return {
@@ -6804,6 +6874,13 @@ function validateCouponForUser({ code, userId, appliesTo, subtotalAmountPaise })
   if (!['all', appliesTo].includes(String(coupon.appliesTo || 'all'))) {
     return { error: 'This coupon is not valid for this payment.' };
   }
+  if (coupon.recipientEmail) {
+    const user = getUserById(userId);
+    const userEmail = String(user?.email || '').trim().toLowerCase();
+    if (!userEmail || userEmail !== String(coupon.recipientEmail || '').trim().toLowerCase()) {
+      return { error: 'This coupon is assigned to another user.' };
+    }
+  }
 
   const stats = getCouponRedemptionStats(coupon.id, userId);
   if (Number.isFinite(coupon.maxRedemptions) && coupon.maxRedemptions > 0 && stats.total >= coupon.maxRedemptions) {
@@ -6813,8 +6890,17 @@ function validateCouponForUser({ code, userId, appliesTo, subtotalAmountPaise })
     return { error: 'You have already used this coupon.' };
   }
 
-  const originalAmountPaise = Math.max(0, Math.round(Number(subtotalAmountPaise || 0)));
-  const discountAmountPaise = calculateCouponDiscountPaise(coupon, originalAmountPaise);
+  const isAssignedSingleBookingServiceCoupon =
+    appliesTo === 'services' &&
+    coupon.recipientEmail &&
+    Number(coupon.maxRedemptions || 0) === 1 &&
+    Number(singleBookingAmountPaise || 0) > 0;
+  const subtotalPaise = Math.max(0, Math.round(Number(subtotalAmountPaise || 0)));
+  const discountBasePaise = Math.max(
+    0,
+    Math.round(Number(isAssignedSingleBookingServiceCoupon ? singleBookingAmountPaise : subtotalPaise || 0))
+  );
+  const discountAmountPaise = calculateCouponDiscountPaise(coupon, discountBasePaise);
   if (discountAmountPaise <= 0) {
     return { error: 'This coupon does not apply to the current payable amount.' };
   }
@@ -6822,9 +6908,9 @@ function validateCouponForUser({ code, userId, appliesTo, subtotalAmountPaise })
   return {
     coupon,
     couponCode: normalizedCode,
-    originalAmountPaise,
+    originalAmountPaise: subtotalPaise,
     discountAmountPaise,
-    finalAmountPaise: Math.max(100, originalAmountPaise - discountAmountPaise),
+    finalAmountPaise: Math.max(100, subtotalPaise - discountAmountPaise),
   };
 }
 
@@ -6866,6 +6952,26 @@ function recordCouponRedemption({ couponId, userId, contextType, contextRef, dis
     normalizedContextRef,
     Math.max(0, Math.round(Number(discountAmountPaise || 0)))
   );
+}
+
+function validateCouponRedemptionLimit(couponId, userId) {
+  const coupon = getCouponById(couponId);
+  if (!coupon || !coupon.active) return 'Invalid coupon code.';
+  if (coupon.recipientEmail) {
+    const user = getUserById(userId);
+    const userEmail = String(user?.email || '').trim().toLowerCase();
+    if (!userEmail || userEmail !== String(coupon.recipientEmail || '').trim().toLowerCase()) {
+      return 'This coupon is assigned to another user.';
+    }
+  }
+  const stats = getCouponRedemptionStats(coupon.id, userId);
+  if (Number.isFinite(coupon.maxRedemptions) && coupon.maxRedemptions > 0 && stats.total >= coupon.maxRedemptions) {
+    return 'This coupon has already been used.';
+  }
+  if (Number(coupon.perUserLimit || 1) > 0 && stats.userTotal >= Number(coupon.perUserLimit || 1)) {
+    return 'You have already used this coupon.';
+  }
+  return '';
 }
 
 function resolveAdminCustomerContext({ userId, customerName, customerEmail, customerPhone, createIfMissing = false } = {}) {
@@ -7865,6 +7971,45 @@ function buildAggregatePaymentSummary(bookings, user) {
   };
 }
 
+function getSingleBookingCouponBasePaise(paymentSummary) {
+  const units = Array.isArray(paymentSummary?.units) ? paymentSummary.units : [];
+  const firstPaidUnit = units.find((unit) => Number(unit?.amountInr || 0) > 0);
+  return Math.round(Number(firstPaidUnit?.amountInr || 0) * 100);
+}
+
+function applyOneUseAdminPhoneDiscountToSummary(bookings, user, summary) {
+  const discountPercent = getDiscountPercentForPhone(user?.mobile || '');
+  if (discountPercent <= 0 || !Array.isArray(bookings) || !bookings.length) return summary;
+
+  const baseUser = { ...user, mobile: '' };
+  let baseSummary;
+  try {
+    baseSummary = buildAggregatePaymentSummary(bookings, baseUser);
+  } catch {
+    return summary;
+  }
+
+  const baseUnits = Array.isArray(baseSummary.units) ? baseSummary.units : [];
+  const firstPaidUnitIndex = baseUnits.findIndex((unit) => Number(unit?.amountInr || 0) > 0);
+  if (firstPaidUnitIndex < 0) return summary;
+
+  const nextUnits = baseUnits.map((unit, index) => {
+    if (index !== firstPaidUnitIndex) return unit;
+    const baseAmountInr = Number(unit.amountInr || 0);
+    return {
+      ...unit,
+      amountInr: Math.max(0, Math.round(baseAmountInr * (1 - discountPercent / 100))),
+    };
+  });
+  const totalAmountInr = nextUnits.reduce((sum, unit) => sum + Number(unit.amountInr || 0), 0);
+  return {
+    ...baseSummary,
+    units: nextUnits,
+    totalAmountInr,
+    oneUseDiscountPercent: discountPercent,
+  };
+}
+
 async function getRazorpayPaymentMethod(paymentId) {
   const id = String(paymentId || '').trim();
   if (!id || !razorpay?.payments?.fetch) return '';
@@ -7881,6 +8026,9 @@ async function getRazorpayPaymentMethod(paymentId) {
 function markBookingPaid(bookingId, paymentOrderId, paymentRef, paymentMethod = '') {
   if (!Number.isInteger(Number(bookingId))) return;
 
+  const booking = db
+    .prepare('SELECT id, user_id AS userId FROM bookings WHERE id = ?')
+    .get(Number(bookingId));
   const orderId = String(paymentOrderId || '');
   const paymentId = String(paymentRef || '');
   const method = String(paymentMethod || '').trim().toLowerCase();
@@ -7894,6 +8042,9 @@ function markBookingPaid(bookingId, paymentOrderId, paymentRef, paymentMethod = 
          status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
      WHERE id = ?`
   ).run(orderId, orderId, paymentId, paymentId, method, method, Number(bookingId));
+  if (booking) {
+    consumeAdminDiscountForBooking(booking.userId, booking.id);
+  }
 }
 
 const USER_PROFILE_SELECT = `SELECT id, name, email, role, age, gender, mobile, avatar_url AS avatarUrl,
@@ -9576,6 +9727,7 @@ function migrate() {
       active INTEGER NOT NULL DEFAULT 1,
       recipient_email TEXT,
       recipient_name TEXT,
+      festival_name TEXT,
       emailed_at TEXT,
       email_status TEXT,
       email_error TEXT,
@@ -9611,6 +9763,8 @@ function migrate() {
       phone_key TEXT NOT NULL UNIQUE,
       phone_display TEXT NOT NULL,
       discount_percent REAL NOT NULL,
+      redeemed_at TEXT,
+      redeemed_booking_id INTEGER REFERENCES bookings(id) ON DELETE SET NULL,
       created_at TEXT NOT NULL
     );
 
@@ -9732,6 +9886,9 @@ function migrate() {
   if (hasTable('coupons') && !hasColumn('coupons', 'recipient_name')) {
     db.exec('ALTER TABLE coupons ADD COLUMN recipient_name TEXT');
   }
+  if (hasTable('coupons') && !hasColumn('coupons', 'festival_name')) {
+    db.exec('ALTER TABLE coupons ADD COLUMN festival_name TEXT');
+  }
   if (hasTable('coupons') && !hasColumn('coupons', 'emailed_at')) {
     db.exec('ALTER TABLE coupons ADD COLUMN emailed_at TEXT');
   }
@@ -9740,6 +9897,12 @@ function migrate() {
   }
   if (hasTable('coupons') && !hasColumn('coupons', 'email_error')) {
     db.exec('ALTER TABLE coupons ADD COLUMN email_error TEXT');
+  }
+  if (hasTable('admin_discount_phones') && !hasColumn('admin_discount_phones', 'redeemed_at')) {
+    db.exec('ALTER TABLE admin_discount_phones ADD COLUMN redeemed_at TEXT');
+  }
+  if (hasTable('admin_discount_phones') && !hasColumn('admin_discount_phones', 'redeemed_booking_id')) {
+    db.exec('ALTER TABLE admin_discount_phones ADD COLUMN redeemed_booking_id INTEGER REFERENCES bookings(id) ON DELETE SET NULL');
   }
 
   db.exec(`

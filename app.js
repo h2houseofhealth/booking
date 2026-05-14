@@ -66,6 +66,7 @@ const state = {
   bookings: [],
   services: [],
   adminMembershipOrders: [],
+  userMembershipOrders: [],
   adminDiscountPhones: [],
   adminUsers: [],
   adminCoupons: [],
@@ -82,6 +83,7 @@ const state = {
   showAuthCard: false,
   activeUserTab: 'services',
   userBookingsFilter: 'all',
+  memberSessionDisplayCount: 0,
   adminActiveTab: 'calendar',
   adminPendingBookingSearch: '',
   adminAllBookingSearch: '',
@@ -354,6 +356,9 @@ const elements = {
   myBookingsFilterUpcoming: document.getElementById('myBookingsFilterUpcoming'),
   myBookingsFilterCompleted: document.getElementById('myBookingsFilterCompleted'),
   myBookingsFilterCancelled: document.getElementById('myBookingsFilterCancelled'),
+  memberSessionCountDecBtn: document.getElementById('memberSessionCountDecBtn'),
+  memberSessionCountIncBtn: document.getElementById('memberSessionCountIncBtn'),
+  memberSessionCountValue: document.getElementById('memberSessionCountValue'),
 
   serviceGrid: document.getElementById('serviceGrid'),
   serviceEmpty: document.getElementById('serviceEmpty'),
@@ -605,6 +610,7 @@ const elements = {
   bookingTime: document.getElementById('bookingTime'),
   bookingNotes: document.getElementById('bookingNotes'),
   experienceBookBtn: document.getElementById('experienceBookBtn'),
+  experienceCardPrice: document.getElementById('experienceCardPrice'),
 };
 
 let isRegisterMode = false;
@@ -1128,6 +1134,16 @@ function attachEvents() {
         render();
       });
     });
+  elements.memberSessionCountDecBtn?.addEventListener('click', () => {
+    const current = Number(state.memberSessionDisplayCount || 0);
+    state.memberSessionDisplayCount = Math.max(0, current - 1);
+    render();
+  });
+  elements.memberSessionCountIncBtn?.addEventListener('click', () => {
+    const current = Number(state.memberSessionDisplayCount || 0);
+    state.memberSessionDisplayCount = Math.min(64, Math.max(0, current + 1));
+    render();
+  });
   elements.membershipBackBtn?.addEventListener('click', () => {
     if (state.user?.role === 'user' && state.membershipBrowseVisible) {
       state.membershipBrowseVisible = false;
@@ -2233,6 +2249,7 @@ async function loadDashboardData() {
     state.adminUsers = adminUsersResult.users || [];
     state.adminPaymentLinkAnalytics = paymentLinkAnalyticsResult?.analytics || null;
     state.adminPaymentLinkAnalyticsRows = Array.isArray(paymentLinkAnalyticsResult?.rows) ? paymentLinkAnalyticsResult.rows : [];
+    state.userMembershipOrders = [];
     state.membership = { plans: [], active: false, current: null };
     state.membershipBrowseVisible = false;
     state.services = genericServicesResult.services || [];
@@ -2258,10 +2275,11 @@ async function loadDashboardData() {
     initializeAdminCalendarState();
     await loadAdminCalendarAvailability({ silent: true });
   } else {
-    const [servicesResult, bookingsResult, membershipResult] = await Promise.all([
+    const [servicesResult, bookingsResult, membershipResult, membershipOrdersResult] = await Promise.all([
       api('/api/services'),
       api('/api/bookings'),
       api('/api/membership/plans'),
+      api('/api/membership/orders'),
     ]);
     state.services = servicesResult.services || [];
     state.bookings = bookingsResult.bookings || [];
@@ -2270,6 +2288,7 @@ async function loadDashboardData() {
       active: Boolean(membershipResult.active),
       current: membershipResult.current || null,
     };
+    state.userMembershipOrders = membershipOrdersResult.orders || [];
     state.membershipBrowseVisible = Boolean(state.membership.active);
     state.membershipRoster = null;
     if (state.membership.active && Number(state.membership.current?.peopleCount || 0) >= 2) {
@@ -2988,7 +3007,6 @@ function populateAvailableTimeOptions(selectElement, serviceName, bookingDate, c
   const capacity = Number(state.slotCapacityByService[String(serviceName || '')] || 1);
   const reservedDate = String(currentReservedSlot?.bookingDate || '').trim();
   const reservedTime = normalizeSlotStartTime(String(currentReservedSlot?.bookingTime || '').trim());
-  const holdMinutes = Number(state.bookingHoldMinutes || BOOKING_HOLD_MINUTES) || BOOKING_HOLD_MINUTES;
 
   for (const optionData of SLOT_OPTIONS) {
     const booked = Number(serviceAvailability[optionData.value] || 0);
@@ -2996,16 +3014,11 @@ function populateAvailableTimeOptions(selectElement, serviceName, bookingDate, c
     const isCurrentReserved = bookingDate === reservedDate && optionData.value === reservedTime;
     const isPastSlot = isBookingSlotInPast(bookingDate, optionData.value);
     const isFull = booked + held >= capacity && !isCurrentReserved;
+    if ((isPastSlot || isFull) && !isCurrentReserved) continue;
     const option = document.createElement('option');
     option.value = optionData.value;
-    option.textContent = isPastSlot
-      ? `${optionData.label} (Unavailable)`
-      : isFull
-        ? held > 0
-          ? `${optionData.label} (On hold - try in ${holdMinutes} min)`
-          : `${optionData.label} (Full)`
-        : optionData.label;
-    option.disabled = isPastSlot || isFull;
+    option.textContent = optionData.label;
+    option.disabled = false;
     selectElement.appendChild(option);
   }
 
@@ -3645,6 +3658,9 @@ async function changeStatus(id, status) {
     await refreshAdminCalendarCacheForDate(bookingDate);
   }
   render();
+  if (String(status || '').trim().toLowerCase() === 'cancelled' && state.user?.role !== 'admin') {
+    showNotice({ title: 'Session cancelled', body: 'Your membership slot has been restored.' });
+  }
 }
 
 async function markBookingCompleted(bookingId) {
@@ -3806,7 +3822,7 @@ async function payAllUserBookings() {
           render();
           showNotice({
             title: 'Payment successful',
-            body: `Paid ${Number(verifyResult.unitCount || 0)} item(s) in one checkout.\nTotal paid: Rs. ${Number(
+            body: `You’re all set! Your booking is confirmed.\nTotal paid: Rs. ${Number(
               verifyResult.totalAmountInr || result.summary?.totalAmountInr || 0
             ).toLocaleString('en-IN')}.`,
           });
@@ -3857,6 +3873,15 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
     return;
   }
   clearHydrogenComposerNotice();
+  const duplicateSlot = findDuplicateHydrogenSlotClient(slots);
+  if (duplicateSlot) {
+    setHydrogenComposerNotice(
+      `Duplicate/conflicting session slot selected for ${duplicateSlot.bookingDate} ${formatBookingTimeLabel(duplicateSlot.bookingTime)}.`,
+      'error'
+    );
+    renderServices();
+    return;
+  }
   const membershipExpiryConflict = findMembershipExpiryConflictClient(slots);
   if (membershipExpiryConflict) {
     setHydrogenComposerNotice(
@@ -3983,6 +4008,15 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
 
 async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSessions, slots, addOnServiceName, addOnSessionIndex }) {
   clearHydrogenComposerNotice();
+  const duplicateSlot = findDuplicateHydrogenSlotClient(slots);
+  if (duplicateSlot) {
+    setHydrogenComposerNotice(
+      `Duplicate/conflicting session slot selected for ${duplicateSlot.bookingDate} ${formatBookingTimeLabel(duplicateSlot.bookingTime)}.`,
+      'error'
+    );
+    renderServices();
+    return;
+  }
   const membershipExpiryConflict = findMembershipExpiryConflictClient(slots);
   if (membershipExpiryConflict) {
     setHydrogenComposerNotice(
@@ -4827,9 +4861,9 @@ function getFilteredBookings(sourceBookings = state.bookings) {
 function getFilteredUserHistoryBookings(sourceBookings = state.bookings) {
   const bookings = Array.isArray(sourceBookings) ? sourceBookings : [];
   const activeFilter = String(state.userBookingsFilter || 'all').trim().toLowerCase();
-  if (activeFilter === 'all') return bookings;
-
-  return bookings.filter((booking) => {
+  const statusFiltered = activeFilter === 'all'
+    ? bookings
+    : bookings.filter((booking) => {
     const status = String(booking?.status || '').trim().toLowerCase();
     if (activeFilter === 'completed') return status === 'completed';
     if (activeFilter === 'cancelled') return status === 'cancelled';
@@ -4838,6 +4872,16 @@ function getFilteredUserHistoryBookings(sourceBookings = state.bookings) {
       return !isBookingSlotInPast(booking?.bookingDate, booking?.bookingTime);
     }
     return true;
+  });
+
+  const requestedCount = Number(state.memberSessionDisplayCount || 0);
+  if (requestedCount <= 0) return statusFiltered;
+  let includedMemberSessions = 0;
+  return statusFiltered.filter((booking) => {
+    if (getBookingCategory(booking?.serviceName) !== 'HYDROGEN SESSION') return true;
+    if (isChargeableHydrogenMembershipBooking(booking)) return true;
+    includedMemberSessions += 1;
+    return includedMemberSessions <= requestedCount;
   });
 }
 
@@ -5491,7 +5535,14 @@ function render() {
     elements.myBookingsFilterUpcoming?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'upcoming');
     elements.myBookingsFilterCompleted?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'completed');
     elements.myBookingsFilterCancelled?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'cancelled');
-    renderUserRows(filteredHistoryBookings);
+    if (elements.memberSessionCountValue) {
+      const value = Number(state.memberSessionDisplayCount || 0);
+      elements.memberSessionCountValue.textContent = value > 0 ? String(value) : 'All';
+    }
+    if (elements.memberSessionCountDecBtn) {
+      elements.memberSessionCountDecBtn.disabled = Number(state.memberSessionDisplayCount || 0) <= 0;
+    }
+    renderUserRows(filteredHistoryBookings, state.userMembershipOrders || []);
     renderCartRows(cartDisplayBookings);
     renderUserCheckoutSummary(cartPayableBookings);
 
@@ -5743,6 +5794,11 @@ function renderServices() {
   if (experienceCard) {
     const isMember = isCurrentUserMembershipActive();
     experienceCard.hidden = isMember;
+  }
+  if (elements.experienceCardPrice) {
+    const experienceService = getServiceCatalogEntry('Experience Session') || getServiceCatalogEntry('Demo Session');
+    const priceInr = Number(experienceService?.effectivePriceInr ?? experienceService?.priceInr ?? 4000) || 4000;
+    elements.experienceCardPrice.innerHTML = `<strong>Rs. ${priceInr.toLocaleString('en-IN')}</strong>`;
   }
 
   elements.serviceGrid.innerHTML = '';
@@ -6102,28 +6158,16 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   const nextIncludedSessionNumber = Math.min(totalIncludedSessions, usedIncludedSessions + 1);
   const membershipScheduleTrimActive = Boolean(hydrogenSummary.active && isCurrentUserMembershipActive());
   const scheduleMinSessionNumber = membershipScheduleTrimActive ? Math.max(1, nextIncludedSessionNumber) : 1;
-  const allScheduleBlocks = [];
-  for (let start = 1; start <= totalIncludedSessions; start += 4) {
-    allScheduleBlocks.push({ start, end: Math.min(totalIncludedSessions, start + 3) });
-  }
-  const scheduleBlocks =
-    !isTopUpFlow && membershipScheduleTrimActive
-      ? allScheduleBlocks.filter((block) => block.end >= scheduleMinSessionNumber)
-      : allScheduleBlocks;
-  const defaultScheduleBlockStart = scheduleBlocks[0].start;
-  const selectedScheduleBlockStart = isTopUpFlow
-    ? null
-    : scheduleBlocks.some((block) => Number(block.start) === Number(detailSelection.selectedScheduleBlockStart))
-      ? Number(detailSelection.selectedScheduleBlockStart)
-      : defaultScheduleBlockStart;
-  const selectedScheduleBlock = !isTopUpFlow
-    ? scheduleBlocks.find((block) => Number(block.start) === Number(selectedScheduleBlockStart)) || scheduleBlocks[0]
-    : null;
-  const scheduleWindowStart = !isTopUpFlow
-    ? Math.max(Number(selectedScheduleBlock?.start || 1), Number(scheduleMinSessionNumber || 1))
-    : 1;
+  const maxMembershipSessionCount = Math.max(1, remainingIncludedSessions);
+  const selectedMembershipSessionCount = isTopUpFlow
+    ? 1
+    : Math.min(
+        maxMembershipSessionCount,
+        Math.max(1, Number(detailSelection.selectedMembershipSessionCount || 1))
+      );
+  const scheduleWindowStart = !isTopUpFlow ? Number(scheduleMinSessionNumber || 1) : 1;
   const scheduleWindowEnd = !isTopUpFlow
-    ? Math.max(scheduleWindowStart, Number(selectedScheduleBlock?.end || scheduleWindowStart))
+    ? Math.max(scheduleWindowStart, scheduleWindowStart + selectedMembershipSessionCount - 1)
     : 1;
 
   if (!state.selectedHydrogenServiceName || !planOptions.some((opt) => opt.service.name === state.selectedHydrogenServiceName)) {
@@ -6139,7 +6183,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   state.serviceDetailSelections[category] = {
     ...detailSelection,
     selectedPlanName: state.selectedHydrogenServiceName,
-    ...(!isTopUpFlow ? { selectedScheduleBlockStart } : {}),
+    ...(!isTopUpFlow ? { selectedMembershipSessionCount } : {}),
   };
 
   const selectedPlan = planOptions.find((opt) => opt.service.name === state.selectedHydrogenServiceName) || planOptions[0];
@@ -6218,28 +6262,32 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
 
   const controls = document.createElement('aside');
   controls.className = 'hydrogen-sidebar hydrogen-unified-controls';
+  const initiationNote = isCurrentUserMembershipActive() && !isTopUpFlow
+    ? '<p class="service-flow-note">Your first hydrogen session is the initiation session and is included in membership.</p>'
+    : '';
   controls.innerHTML = `
     <div class="hydrogen-plan-controls">
       <label>
-        ${isTopUpFlow ? 'Choose Package' : isCurrentUserMembershipActive() ? 'Membership Sessions' : 'Hydrogen Sessions'}
-        <select class="hydrogen-plan-select"></select>
+        ${isTopUpFlow ? 'Choose Package' : 'Sessions to Schedule'}
+        ${
+          isTopUpFlow
+            ? '<select class="hydrogen-plan-select"></select>'
+            : `
+              <div class="hydrogen-session-stepper" role="group" aria-label="Sessions to schedule">
+                <button type="button" class="hydrogen-stepper-btn hydrogen-stepper-decrease" aria-label="Decrease sessions">-</button>
+                <span class="hydrogen-stepper-value" aria-live="polite">${selectedMembershipSessionCount}</span>
+                <button type="button" class="hydrogen-stepper-btn hydrogen-stepper-increase" aria-label="Increase sessions">+</button>
+              </div>
+              <p class="hydrogen-session-remaining">${remainingIncludedSessions} session${remainingIncludedSessions === 1 ? '' : 's'} remaining</p>
+            `
+        }
       </label>
     </div>
+    ${initiationNote}
   `;
 
   const planSelect = controls.querySelector('.hydrogen-plan-select');
-  if (!isTopUpFlow) {
-    for (const block of scheduleBlocks) {
-      const option = document.createElement('option');
-      option.value = String(block.start);
-      const visibleStart = Math.max(Number(block.start), Number(scheduleMinSessionNumber || 1));
-      option.textContent =
-        visibleStart >= Number(block.end)
-          ? `Session ${block.end}`
-          : `Sessions ${visibleStart}-${block.end}`;
-      planSelect.appendChild(option);
-    }
-  } else {
+  if (isTopUpFlow) {
     const nonMemberPackageLabelBySessions = {
       1: '1 Session',
       4: '1 Week (4 Session)',
@@ -6271,39 +6319,58 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
       option.textContent = `${packageLabel} - Rs. ${safePriceInr.toLocaleString('en-IN')}`;
       planSelect.appendChild(option);
     }
-  }
-  planSelect.value = !isTopUpFlow ? String(selectedScheduleBlockStart) : state.selectedHydrogenServiceName;
-  planSelect.disabled = isEditingHydrogenGroup;
-  planSelect.addEventListener('change', () => {
-    if (!isTopUpFlow) {
-      state.serviceDetailSelections[category] = {
-        ...(state.serviceDetailSelections[category] || {}),
-        selectedPlanName: singleSessionPlan.service.name,
-        selectedScheduleBlockStart: Number(planSelect.value || defaultScheduleBlockStart),
-      };
-    } else {
+    planSelect.value = state.selectedHydrogenServiceName;
+    planSelect.disabled = isEditingHydrogenGroup;
+    planSelect.addEventListener('change', () => {
       state.selectedHydrogenServiceName = planSelect.value;
       state.serviceDetailSelections[category] = {
         ...(state.serviceDetailSelections[category] || {}),
         selectedPlanName: planSelect.value,
         selectedTopUpBlockStart: 1,
       };
-    }
-    state.selectedHydrogenSlots = [];
-    state.selectedHydrogenAddOnSessionIndex = 0;
-    state.activeHydrogenSessionIndex = 0;
-    state.activeHydrogenSessionDate = '';
-    state.activeHydrogenSessionTime = '';
-    clearHydrogenComposerNotice();
-    renderServices();
-  });
+      state.selectedHydrogenSlots = [];
+      state.selectedHydrogenAddOnSessionIndex = 0;
+      state.activeHydrogenSessionIndex = 0;
+      state.activeHydrogenSessionDate = '';
+      state.activeHydrogenSessionTime = '';
+      clearHydrogenComposerNotice();
+      renderServices();
+    });
+  } else {
+    const decreaseBtn = controls.querySelector('.hydrogen-stepper-decrease');
+    const increaseBtn = controls.querySelector('.hydrogen-stepper-increase');
+    const canDecrease = selectedMembershipSessionCount > 1 && !isEditingHydrogenGroup;
+    const canIncrease = selectedMembershipSessionCount < maxMembershipSessionCount && !isEditingHydrogenGroup;
+    if (decreaseBtn) decreaseBtn.disabled = !canDecrease;
+    if (increaseBtn) increaseBtn.disabled = !canIncrease;
+    decreaseBtn?.addEventListener('click', () => {
+      const nextCount = Math.max(1, selectedMembershipSessionCount - 1);
+      state.serviceDetailSelections[category] = {
+        ...(state.serviceDetailSelections[category] || {}),
+        selectedPlanName: singleSessionPlan.service.name,
+        selectedMembershipSessionCount: nextCount,
+      };
+      clearHydrogenComposerNotice();
+      renderServices();
+    });
+    increaseBtn?.addEventListener('click', () => {
+      const nextCount = Math.min(maxMembershipSessionCount, selectedMembershipSessionCount + 1);
+      state.serviceDetailSelections[category] = {
+        ...(state.serviceDetailSelections[category] || {}),
+        selectedPlanName: singleSessionPlan.service.name,
+        selectedMembershipSessionCount: nextCount,
+      };
+      clearHydrogenComposerNotice();
+      renderServices();
+    });
+  }
 
   const addOnPanel = document.createElement('section');
   addOnPanel.className = 'hydrogen-addon-panel';
   addOnPanel.innerHTML = `
     <div class="hydrogen-addon-head">
       <strong>Add-ons</strong>
-      <span>Optional. Choose Therapy or Shots.</span>
+      <span>Optional. Choose Therapy / Shot.</span>
     </div>
     <div class="hydrogen-addon-grid hydrogen-addon-grid-unified">
       <label>
@@ -6313,7 +6380,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
         </select>
       </label>
       <label>
-        Shots
+        Shot
         <select class="hydrogen-addon-shot-select">
           <option value="">None</option>
         </select>
@@ -6435,7 +6502,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     if (addOnScheduleHint) {
       addOnScheduleHint.hidden = false;
       if (!selectedAddOnName) {
-        addOnScheduleHint.textContent = 'Select Therapy or Shots to enable add-on scheduling.';
+        addOnScheduleHint.textContent = 'Select Therapy / Shot to enable add-on scheduling.';
       } else if (!assignedSlots.length) {
         addOnScheduleHint.textContent = 'Set hydrogen session date and time first.';
       } else {
@@ -6686,32 +6753,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
   const stickyActions = document.createElement('div');
   stickyActions.className = 'service-sticky-actions';
   stickyActions.appendChild(stickyButton);
-  if (!isTopUpFlow) {
-    const nextScheduleBtn = document.createElement('button');
-    nextScheduleBtn.type = 'button';
-    nextScheduleBtn.className = 'btn btn-secondary service-sticky-book-btn';
-    nextScheduleBtn.textContent = 'Next';
-    const scheduleBlockStarts = scheduleBlocks.map((block) => Number(block.start));
-    const currentIndex = scheduleBlockStarts.indexOf(Number(selectedScheduleBlockStart || 1));
-    const hasNext = currentIndex >= 0 && currentIndex < scheduleBlockStarts.length - 1;
-    nextScheduleBtn.disabled = isEditingHydrogenGroup || !hasNext;
-    nextScheduleBtn.addEventListener('click', () => {
-      const nextStart = scheduleBlockStarts[Math.min(scheduleBlockStarts.length - 1, Math.max(0, currentIndex) + 1)];
-      state.serviceDetailSelections[category] = {
-        ...(state.serviceDetailSelections[category] || {}),
-        selectedPlanName: singleSessionPlan.service.name,
-        selectedScheduleBlockStart: Number(nextStart || 1),
-      };
-      state.selectedHydrogenSlots = [];
-      state.selectedHydrogenAddOnSessionIndex = 0;
-      state.activeHydrogenSessionIndex = 0;
-      state.activeHydrogenSessionDate = '';
-      state.activeHydrogenSessionTime = '';
-      clearHydrogenComposerNotice();
-      renderServices();
-    });
-    stickyActions.appendChild(nextScheduleBtn);
-  } else if (requiredSlots > 4) {
+  if (isTopUpFlow && requiredSlots > 4) {
     const prevTopUpBtn = document.createElement('button');
     prevTopUpBtn.type = 'button';
     prevTopUpBtn.className = 'btn btn-secondary service-sticky-book-btn';
@@ -7415,15 +7457,6 @@ function getHydrogenPlanOptions(services) {
         <h3>${escapeHtml(getServiceDisplayName(selectedService))}</h3>
       </div>
     `;
-    if (String(selectedService.name || '') === 'H2 Single Session' && isCurrentUserMembershipActive()) {
-      const initiationBlock = document.createElement('div');
-      initiationBlock.className = 'service-info-block';
-      initiationBlock.innerHTML = `
-        <strong>Initiation Hydrogen Session (1 hr)</strong>
-        <span>Full doctor consultation + diagnostic &amp; genetic testing</span>
-      `;
-      card.appendChild(initiationBlock);
-    }
 
     if (addOnSelect && addOnDateSelect && addOnTimeSelect) {
       const addOnPanel = document.createElement('div');
@@ -7708,15 +7741,6 @@ function getHydrogenPlanOptions(services) {
         ${isMembershipOnly && !hasMemberAccess ? '<p class="service-price-meta">Booking is only available for active members.</p>' : ''}
       </div>
     `;
-    if (String(selectedService.name || '') === 'H2 Single Session') {
-      const initiationBlock = document.createElement('div');
-      initiationBlock.className = 'service-info-block';
-      initiationBlock.innerHTML = `
-        <strong>Initiation Hydrogen Session (1 hr)</strong>
-        <span>Full doctor consultation + diagnostic &amp; genetic testing</span>
-      `;
-      card.appendChild(initiationBlock);
-    }
 
     const editor = document.createElement('div');
     editor.className = 'hydrogen-session-editor';
@@ -8326,6 +8350,9 @@ function renderMembership() {
     (booking) =>
       getBookingCategory(booking.serviceName) === 'HYDROGEN SESSION'
   );
+  const upcomingHydrogenBookings = hydrogenSessions
+    .filter((booking) => !isBookingSlotInPast(booking.bookingDate, booking.bookingTime))
+    .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
   const upcomingBookings = paidBookings
     .filter((booking) => !isBookingSlotInPast(booking.bookingDate, booking.bookingTime))
     .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
@@ -8334,7 +8361,9 @@ function renderMembership() {
     ? getHydrogenSessionsUsedThisMembership()
     : nonMemberCompletedHydrogenSessions;
   const missedSessions = active ? Number(hydrogenSessionSummary.missedSessions || 0) : 0;
-  const remainingSessions = Math.max(0, totalSessions - usedSessions);
+  const remainingSessions = active
+    ? upcomingHydrogenBookings.length
+    : Math.max(0, totalSessions - usedSessions);
   const usagePercent = totalSessions > 0 ? Math.min(100, Math.round((usedSessions / totalSessions) * 100)) : 0;
 
   if (elements.membershipUsageTitle) {
@@ -8442,9 +8471,7 @@ function renderMembership() {
   }
 
   const upcoming = active
-    ? hydrogenSessions
-        .filter((booking) => !isBookingSlotInPast(booking.bookingDate, booking.bookingTime))
-        .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`))[0]
+    ? upcomingHydrogenBookings[0]
     : upcomingBookings[0];
 
   if (elements.membershipNextSessionTitle) {
@@ -9302,7 +9329,10 @@ function getUserRescheduleEligibility(row) {
   const now = Date.now();
   const cutoffMs = 12 * 60 * 60 * 1000;
   if (now > slotStart - cutoffMs) {
-    return { allowed: false, message: 'Reschedule is allowed only up to 12 hours before slot start.' };
+    return {
+      allowed: false,
+      message: 'You can only reschedule at least 12 hours before your session. Please contact admin now.',
+    };
   }
   return { allowed: true, message: '' };
 }
@@ -9518,12 +9548,28 @@ function renderAdminUserSessionDialog() {
     });
 }
 
-function renderUserRows(bookings) {
+function renderUserRows(bookings, membershipOrders = []) {
   if (!elements.bookingTableBody || !elements.emptyState) return;
   elements.bookingTableBody.innerHTML = '';
 
   const displayRows = buildUserBookingRows(bookings, bookings);
-  if (!displayRows.length) {
+  const paidMembershipOrders = (Array.isArray(membershipOrders) ? membershipOrders : []).filter(
+    (order) => String(order?.status || '').trim().toLowerCase() === 'paid'
+  );
+  const fallbackMembershipRows = !paidMembershipOrders.length && state.membership?.active && state.membership?.current
+    ? [
+        {
+          orderId: `membership-active-${String(state.user?.id || '')}`,
+          planId: state.membership.current.plan,
+          peopleCount: Number(state.membership.current.peopleCount || 1),
+          amountPaise: Number(state.membership.current.priceInr || 0) * 100,
+          paidAt: state.membership.current.startedAt || state.membership.current.createdAt || '',
+          status: 'paid',
+        },
+      ]
+    : [];
+  const membershipRows = paidMembershipOrders.length ? paidMembershipOrders : fallbackMembershipRows;
+  if (!displayRows.length && !membershipRows.length) {
     elements.emptyState.hidden = false;
     return;
   }
@@ -9548,6 +9594,12 @@ function renderUserRows(bookings) {
     }
     if (canEdit && rescheduleEligibility.allowed) {
       actions.append(createActionButton('Reschedule', () => handleUserRescheduleAction(row)));
+    } else if (canEdit && rescheduleEligibility.message) {
+      actions.append(
+        createActionButton('Reschedule', () => {
+          showNotice({ title: 'Unable to reschedule', body: rescheduleEligibility.message });
+        })
+      );
     }
     if (String(row.status || '').toLowerCase() !== 'cancelled') {
       actions.append(createActionButton('Cancel', () => changeStatus(row.id, 'cancelled')));
@@ -9555,6 +9607,42 @@ function renderUserRows(bookings) {
 
     actionCell.appendChild(actions);
     tr.appendChild(actionCell);
+    elements.bookingTableBody.appendChild(tr);
+  }
+
+  for (const order of membershipRows) {
+    const tr = document.createElement('tr');
+    const peopleCount = Number(order?.peopleCount || 1);
+    const planName = getMembershipPlanDisplayName(order?.planId);
+    const serviceTitle = peopleCount > 1 ? `${planName} (${peopleCount} Members)` : planName;
+    const amountInr = Number(order?.amountPaise || 0) / 100;
+    const paidDate = order?.paidAt || order?.createdAt || '';
+
+    const serviceCell = document.createElement('td');
+    serviceCell.dataset.label = 'Service';
+    serviceCell.textContent = `Membership • ${serviceTitle}`;
+    tr.appendChild(serviceCell);
+
+    const scheduleCell = document.createElement('td');
+    scheduleCell.dataset.label = 'Date & Time';
+    scheduleCell.textContent = paidDate ? `${formatDateOnly(paidDate)}\nPayment completed` : '-';
+    tr.appendChild(scheduleCell);
+
+    tr.appendChild(statusCell('completed', 'Status'));
+
+    const amountCell = document.createElement('td');
+    amountCell.dataset.label = 'Amount';
+    amountCell.textContent = amountInr > 0 ? `Rs. ${amountInr.toLocaleString('en-IN')}` : 'Rs. 0';
+    tr.appendChild(amountCell);
+
+    const actionCell = document.createElement('td');
+    actionCell.dataset.label = 'Actions';
+    const actions = document.createElement('div');
+    actions.className = 'action-row';
+    actions.append(createActionButton('Invoice', () => openMembershipInvoice(order.orderId)));
+    actionCell.appendChild(actions);
+    tr.appendChild(actionCell);
+
     elements.bookingTableBody.appendChild(tr);
   }
 }
@@ -9849,6 +9937,7 @@ function getUserCartGroupKeys(bookings = state.bookings) {
     (Array.isArray(bookings) ? bookings : [])
       .filter((booking) => {
         if (String(booking?.status || '').toLowerCase() === 'cancelled') return false;
+        if (booking?.holdExpired) return false;
         return !isBookingPaid(booking);
       })
       .map((booking) => getBookingGroupKey(booking))
@@ -11407,12 +11496,27 @@ function getBookingCategoryLabel(serviceName) {
 
 function getServiceCatalogEntry(serviceName) {
   const normalized = String(serviceName || '').trim().toLowerCase();
-  return state.services.find((service) => String(service.name || '').trim().toLowerCase() === normalized) || null;
+  const direct = state.services.find((service) => String(service.name || '').trim().toLowerCase() === normalized) || null;
+  if (direct) return direct;
+  if (normalized === 'demo session' || normalized === 'demo hydrogen session') {
+    return (
+      state.services.find((service) => String(service.name || '').trim().toLowerCase() === 'experience session') || null
+    );
+  }
+  return null;
 }
 
 function getDisplayedServicePriceInr(serviceName) {
   const service = getServiceCatalogEntry(serviceName);
-  return Number(service?.effectivePriceInr ?? service?.priceInr ?? 0);
+  const normalized = String(serviceName || '').trim().toLowerCase();
+  if (!service && (normalized === 'demo session' || normalized === 'demo hydrogen session' || normalized === 'experience session')) {
+    return 4000;
+  }
+  const price = Number(service?.effectivePriceInr ?? service?.priceInr ?? 0);
+  if (price <= 0 && String(service?.category || '').trim().toUpperCase() === 'EXPERIENCE SESSION') {
+    return 4000;
+  }
+  return price;
 }
 
 function getHydrogenSingleSessionPriceInr() {
@@ -11520,6 +11624,21 @@ function findHydrogenDailyLimitConflictClient(slots = [], excludeGroupId = '') {
     }
   }
 
+  return null;
+}
+
+function findDuplicateHydrogenSlotClient(slots = []) {
+  const seen = new Set();
+  for (const slot of Array.isArray(slots) ? slots : []) {
+    const bookingDate = String(slot?.bookingDate || '').trim();
+    const bookingTime = normalizeSlotStartTime(String(slot?.bookingTime || '').trim());
+    if (!bookingDate || !bookingTime) continue;
+    const key = `${bookingDate}|${bookingTime}`;
+    if (seen.has(key)) {
+      return { bookingDate, bookingTime };
+    }
+    seen.add(key);
+  }
   return null;
 }
 

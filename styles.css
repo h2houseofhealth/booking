@@ -92,6 +92,18 @@ body.auth-mode {
   overflow: hidden;
 }
 
+a,
+a:visited {
+  color: var(--brand-primary);
+  text-decoration-color: rgba(var(--brand-primary-rgb), 0.55);
+}
+
+a:hover,
+a:focus-visible {
+  color: var(--brand-deep);
+  text-decoration-color: rgba(var(--brand-primary-rgb), 0.75);
+}
+
 .background-shape {
   position: fixed;
   border-radius: 50%;
@@ -3845,6 +3857,68 @@ h1, h2, h3 {
 
 .hydrogen-unified-controls .hydrogen-plan-select {
   min-height: 2.5rem;
+}
+
+.hydrogen-session-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.hydrogen-stepper-btn {
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.25);
+  background: rgba(250, 243, 236, 0.86);
+  color: var(--brand-primary);
+  font-size: 1.15rem;
+  line-height: 1;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 160ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+
+.hydrogen-stepper-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(var(--brand-primary-rgb), 0.4);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 6px 14px rgba(var(--brand-primary-rgb), 0.14);
+}
+
+.hydrogen-stepper-btn:focus-visible {
+  outline: none;
+  border-color: rgba(var(--brand-primary-rgb), 0.55);
+  box-shadow: 0 0 0 3px rgba(var(--brand-primary-rgb), 0.2);
+}
+
+.hydrogen-stepper-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.hydrogen-stepper-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.hydrogen-stepper-value {
+  min-width: 1.3rem;
+  text-align: center;
+  font-weight: 700;
+  color: rgba(var(--ink-rgb), 0.92);
+}
+
+.hydrogen-session-remaining {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  color: rgba(var(--ink-rgb), 0.74);
 }
 
 .hydrogen-addon-grid-unified {
@@ -12515,6 +12589,27 @@ img {
   background: linear-gradient(135deg, var(--terracotta), var(--terracotta-deep));
   color: #fff;
   box-shadow: 0 12px 24px rgba(201, 106, 45, 0.24);
+}
+
+.my-bookings-session-stepper {
+  margin: -0.5rem 0 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.72rem;
+  color: #6e4e3a;
+}
+
+.my-bookings-session-stepper-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.62rem;
+}
+
+.my-bookings-session-stepper-controls .btn {
+  min-width: 38px;
+  min-height: 36px;
+  padding: 0.35rem 0.65rem;
 }
 
 .my-bookings-table-wrap {

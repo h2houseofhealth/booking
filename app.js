@@ -508,6 +508,7 @@ const elements = {
   adminDiscountSelectedList: document.getElementById('adminDiscountSelectedList'),
   adminCouponForm: document.getElementById('adminCouponForm'),
   adminCouponRecipientEmail: document.getElementById('adminCouponRecipientEmail'),
+  adminCouponFestivalName: document.getElementById('adminCouponFestivalName'),
   adminCouponCode: document.getElementById('adminCouponCode'),
   adminCouponDescription: document.getElementById('adminCouponDescription'),
   adminCouponType: document.getElementById('adminCouponType'),
@@ -10644,10 +10645,14 @@ function renderAdminDiscountPhones() {
   items.forEach((item) => {
     const row = document.createElement('article');
     row.className = 'admin-discount-card';
+    const redeemedText = item.redeemedAt
+      ? `Used once${item.redeemedBookingId ? ` on booking #${item.redeemedBookingId}` : ''}`
+      : 'Available for next paid booking';
     row.innerHTML = `
       <div>
         <h3>${escapeHtml(item.phoneDisplay || item.phoneKey || '-')}</h3>
         <p>${escapeHtml(String(item.discountPercent || 0))}% service discount</p>
+        <p>${escapeHtml(redeemedText)}</p>
       </div>
     `;
     const removeBtn = document.createElement('button');
@@ -11025,9 +11030,19 @@ async function deleteAdminDiscountPhone(discountId) {
   render();
 }
 
-function generateAdminCouponCode() {
+function buildCouponCodePrefix(value) {
+  const prefix = String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '')
+    .slice(0, 10);
+  return prefix || 'H2';
+}
+
+function generateAdminCouponCode(prefixValue = 'H2') {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const size = 8;
+  const prefix = buildCouponCodePrefix(prefixValue);
   let suffix = '';
   if (window.crypto?.getRandomValues) {
     const bytes = new Uint8Array(size);
@@ -11040,7 +11055,7 @@ function generateAdminCouponCode() {
       suffix += alphabet[Math.floor(Math.random() * alphabet.length)];
     }
   }
-  return `H2-${suffix}`;
+  return `${prefix}-${suffix}`;
 }
 
 function isLikelyEmail(value) {
@@ -11070,12 +11085,14 @@ function renderAdminCoupons() {
     const recipientLabel = item.recipientEmail
       ? `${item.recipientName ? `${item.recipientName} • ` : ''}${item.recipientEmail}`
       : 'No recipient';
+    const festivalLabel = item.festivalName ? `Festival: ${item.festivalName}` : '';
     const emailStatus = item.emailStatus ? item.emailStatus.toUpperCase() : 'N/A';
     const emailedAtText = item.emailedAt ? formatDateOnly(item.emailedAt) : '-';
     row.innerHTML = `
       <div>
         <h3>${escapeHtml(item.code || '-')}</h3>
         <p>${escapeHtml(discountLabel)}</p>
+        ${festivalLabel ? `<p>${escapeHtml(festivalLabel)}</p>` : ''}
         ${item.description ? `<p>${escapeHtml(item.description)}</p>` : ''}
         <p>Recipient: ${escapeHtml(recipientLabel)}</p>
         <p>Email: ${escapeHtml(emailStatus)} • Last sent: ${escapeHtml(emailedAtText)}</p>
@@ -11120,6 +11137,7 @@ function renderAdminCoupons() {
 
 async function saveAdminCoupon({ sendEmail = true } = {}) {
   const recipientEmail = String(elements.adminCouponRecipientEmail?.value || '').trim();
+  const festivalName = String(elements.adminCouponFestivalName?.value || '').trim();
   let code = String(elements.adminCouponCode?.value || '').trim().toUpperCase();
   const description = String(elements.adminCouponDescription?.value || '').trim();
   const discountValue = Number(elements.adminCouponValue?.value || 0);
@@ -11139,7 +11157,7 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
     return;
   }
   if (!code) {
-    code = generateAdminCouponCode();
+    code = generateAdminCouponCode(festivalName);
     if (elements.adminCouponCode) {
       elements.adminCouponCode.value = code;
     }
@@ -11166,6 +11184,7 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
         discountType: 'percent',
         discountValue,
         appliesTo,
+        festivalName,
         maxRedemptions: 1,
         expiresAt,
         recipientEmail,
@@ -11179,6 +11198,7 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
     if (elements.adminCouponValue) elements.adminCouponValue.value = '';
     if (elements.adminCouponExpiresAt) elements.adminCouponExpiresAt.value = '';
     if (elements.adminCouponRecipientEmail) elements.adminCouponRecipientEmail.value = '';
+    if (elements.adminCouponFestivalName) elements.adminCouponFestivalName.value = '';
 
     await loadDashboardData();
     render();

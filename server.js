@@ -70,6 +70,7 @@ const SENDGRID_MARKETING_VERIFIED_SENDER = normalizeEnvValue(
 const MARKETING_LIST_UNSUBSCRIBE = normalizeEnvValue(process.env.MARKETING_LIST_UNSUBSCRIBE || '');
 const SENDGRID_WEBHOOK_PUBLIC_KEY = normalizeEnvValue(process.env.SENDGRID_WEBHOOK_PUBLIC_KEY || '');
 const SENDGRID_WEBHOOK_TOLERANCE_SECONDS = 5 * 60;
+const BUSINESS_GSTIN = normalizeEnvValue(process.env.BUSINESS_GSTIN || process.env.GSTIN || '');
 const AVATAR_MAX_SIZE_BYTES = 10 * 1024 * 1024;
 const SEED_DEMO_DOCTORS = normalizeEnvValue(process.env.SEED_DEMO_DOCTORS || 'false').toLowerCase() === 'true';
 const SES_API_REGION = (
@@ -106,9 +107,9 @@ const SERVICE_CATALOG = [
   {
     category: 'EXPERIENCE SESSION',
     name: 'Experience Session',
-    priceInr: 0,
+    priceInr: 4000,
     includes: '30 min consultation + hydrogen session',
-    description: 'Demo hydrogen session for first-time experience and consultation.',
+    description: 'Demo hydrogen session for non-members with consultation.',
   },
   {
     category: 'HYDROGEN SESSION',
@@ -1998,6 +1999,50 @@ app.get('/api/admin/membership-orders', requireAuth, requireAdmin, (_req, res) =
   res.json({ orders });
 });
 
+app.get('/api/membership/orders', requireAuth, (req, res) => {
+  if (req.user.role !== 'user') {
+    return res.status(403).json({ message: 'only users can access membership orders' });
+  }
+
+  const orders = db
+    .prepare(
+      `SELECT order_id AS orderId,
+              plan_id AS planId,
+              people_count AS peopleCount,
+              member_details_json AS memberDetailsJson,
+              amount_paise AS amountPaise,
+              status,
+              payment_reference AS paymentReference,
+              paid_at AS paidAt,
+              created_at AS createdAt
+       FROM membership_payment_orders
+       WHERE user_id = ?
+       ORDER BY datetime(COALESCE(paid_at, created_at)) DESC`
+    )
+    .all(req.user.id)
+    .map((row) => {
+      let memberDetails = [];
+      try {
+        memberDetails = row.memberDetailsJson ? JSON.parse(row.memberDetailsJson) : [];
+      } catch {
+        memberDetails = [];
+      }
+      return {
+        orderId: row.orderId,
+        planId: row.planId,
+        peopleCount: Number(row.peopleCount || 0),
+        amountPaise: Number(row.amountPaise || 0),
+        status: row.status,
+        paymentReference: row.paymentReference || '',
+        paidAt: row.paidAt || null,
+        createdAt: row.createdAt,
+        memberDetails,
+      };
+    });
+
+  return res.json({ orders });
+});
+
 app.get('/api/membership-orders/:orderId/invoice-link', requireAuth, (req, res) => {
   const orderId = String(req.params.orderId || '').trim();
   if (!orderId) {
@@ -2510,6 +2555,8 @@ app.get('/api/bookings', requireAuth, (req, res) => {
       if (paymentStatus === 'paid') continue;
       const service = getServiceByName(booking.serviceName);
       if (!service) continue;
+      const category = String(service.category || '').toUpperCase();
+      if (category === 'EXPERIENCE SESSION') continue;
       const effectivePriceInr = Number(getEffectiveServicePriceInr(service, req.user) || 0);
       if (effectivePriceInr <= 0) {
         booking.paymentStatus = 'paid';
@@ -2593,6 +2640,12 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
   const slots = Array.isArray(req.body?.slots) ? req.body.slots : [];
   if (slots.length !== totalSessions) {
     return res.status(400).json({ message: `Please select exactly ${totalSessions} slots.` });
+  }
+  const duplicateSlot = findDuplicateHydrogenSlot(slots);
+  if (duplicateSlot) {
+    return res.status(409).json({
+      message: `Duplicate/conflicting session slot selected for ${duplicateSlot.bookingDate} ${duplicateSlot.bookingTime}.`,
+    });
   }
 
   const normalizedSlots = [];
@@ -2825,6 +2878,12 @@ app.post('/api/hydrogen/book-pack', requireAuth, (req, res) => {
   const slots = Array.isArray(req.body?.slots) ? req.body.slots : [];
   if (slots.length !== totalSessions) {
     return res.status(400).json({ message: `Please select exactly ${totalSessions} slots.` });
+  }
+  const duplicateSlot = findDuplicateHydrogenSlot(slots);
+  if (duplicateSlot) {
+    return res.status(409).json({
+      message: `Duplicate/conflicting session slot selected for ${duplicateSlot.bookingDate} ${duplicateSlot.bookingTime}.`,
+    });
   }
 
   const normalizedSlots = [];
@@ -3062,6 +3121,12 @@ app.post('/api/admin/hydrogen/book-pack', requireAuth, requireAdmin, (req, res) 
   const slots = Array.isArray(req.body?.slots) ? req.body.slots : [];
   if (slots.length !== totalSessions) {
     return res.status(400).json({ message: `Please select exactly ${totalSessions} slots.` });
+  }
+  const duplicateSlot = findDuplicateHydrogenSlot(slots);
+  if (duplicateSlot) {
+    return res.status(409).json({
+      message: `Duplicate/conflicting session slot selected for ${duplicateSlot.bookingDate} ${duplicateSlot.bookingTime}.`,
+    });
   }
 
   const normalizedSlots = [];
@@ -3351,6 +3416,12 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
   const slots = Array.isArray(req.body?.slots) ? req.body.slots : [];
   if (slots.length !== totalSessions) {
     return res.status(400).json({ message: `Please select exactly ${totalSessions} slots.` });
+  }
+  const duplicateSlot = findDuplicateHydrogenSlot(slots);
+  if (duplicateSlot) {
+    return res.status(409).json({
+      message: `Duplicate/conflicting session slot selected for ${duplicateSlot.bookingDate} ${duplicateSlot.bookingTime}.`,
+    });
   }
 
   const normalizedSlots = [];
@@ -5796,10 +5867,9 @@ app.get('/invoice/booking', (req, res) => {
     return res.status(409).send('Invoice is available only for paid bookings with amount greater than 0');
   }
   const invoiceNo = `BK-${booking.id}`;
-  const paidAtLabel = booking.paidAt ? new Date(booking.paidAt).toLocaleString() : '';
-  const bookingDateTimeLabel = booking.bookingDate
-    ? `${formatDateAsDayMonthYear(`${booking.bookingDate}T12:00:00`)} ${booking.bookingTime || ''}`.trim()
-    : `${booking.bookingDate || ''} ${booking.bookingTime || ''}`.trim();
+  const paidAtLabel = formatInvoiceDateTime(booking.paidAt);
+  const bookingDateTimeLabel = formatDateTimeWithComma(booking.bookingDate, booking.bookingTime);
+  const generatedAtLabel = formatInvoiceDateTime(booking.paidAt || booking.createdAt);
   const customerName = bookingOwner?.name || '';
   const customerEmail = bookingOwner?.email || '';
   const customerMobile = bookingOwner?.mobile || '';
@@ -5857,7 +5927,7 @@ app.get('/invoice/booking', (req, res) => {
         <h1 class="title">Billing Invoice</h1>
         <div class="muted">Invoice No: ${escapeHtml(invoiceNo)}</div>
         ${paidAtLabel ? `<div class="muted">Paid at: ${escapeHtml(paidAtLabel)}</div>` : ''}
-        <div class="muted gst"><strong>GSTIN:</strong> <span class="gst-space"></span></div>
+        <div class="muted gst"><strong>GSTIN:</strong> <span class="gst-space">${escapeHtml(BUSINESS_GSTIN || '-')}</span></div>
       </div>
       <div>
         <div class="muted"><strong>Customer</strong></div>
@@ -5892,7 +5962,7 @@ app.get('/invoice/booking', (req, res) => {
 
     <div class="footer muted">
       ${booking.paymentReference ? `<div>Payment ref: ${escapeHtml(String(booking.paymentReference))}</div>` : ''}
-      <div>Generated on ${escapeHtml(new Date().toLocaleString())}</div>
+      <div>Generated on ${escapeHtml(generatedAtLabel || '-')}</div>
     </div>
   </div>
 </body>
@@ -5932,7 +6002,8 @@ app.get('/invoice/membership', (req, res) => {
 
   const user = getUserById(order.userId);
   const invoiceNo = `MB-${escapeHtml(order.orderId)}`;
-  const paidAtLabel = order.paidAt ? new Date(order.paidAt).toLocaleString() : '';
+  const paidAtLabel = formatInvoiceDateTime(order.paidAt);
+  const generatedAtLabel = formatInvoiceDateTime(order.paidAt || order.createdAt);
   const amountInr = Math.round(Number(order.amountPaise || 0) / 100);
   const discountInr = Math.round(Number(order.discountAmountPaise || 0) / 100);
 
@@ -5988,7 +6059,7 @@ app.get('/invoice/membership', (req, res) => {
         <h1 class="title">Membership Invoice</h1>
         <div class="muted">Invoice No: ${invoiceNo}</div>
         ${paidAtLabel ? `<div class="muted">Paid at: ${escapeHtml(paidAtLabel)}</div>` : ''}
-        <div class="muted gst"><strong>GSTIN:</strong> <span class="gst-space"></span></div>
+        <div class="muted gst"><strong>GSTIN:</strong> <span class="gst-space">${escapeHtml(BUSINESS_GSTIN || '-')}</span></div>
       </div>
       <div>
         <div class="muted"><strong>Customer</strong></div>
@@ -6024,7 +6095,7 @@ app.get('/invoice/membership', (req, res) => {
 
     <div class="footer muted">
       ${order.paymentReference ? `<div>Payment ref: ${escapeHtml(String(order.paymentReference))}</div>` : ''}
-      <div>Generated on ${escapeHtml(new Date().toLocaleString())}</div>
+      <div>Generated on ${escapeHtml(generatedAtLabel || '-')}</div>
     </div>
   </div>
 </body>
@@ -6263,6 +6334,13 @@ app.patch('/api/bookings/:id/status', requireAuth, (req, res) => {
     db.prepare('UPDATE bookings SET status = ? WHERE booking_group_id = ?').run(status, existing.bookingGroupId);
   } else {
     db.prepare('UPDATE bookings SET status = ? WHERE id = ?').run(status, bookingId);
+  }
+  if (status === 'cancelled') {
+    const targetUser = getUserProfileById(Number(existing.userId));
+    if (targetUser) {
+      syncMembershipForUser({ userId: Number(existing.userId) });
+      syncMembershipCoveredHydrogenBookings(Number(existing.userId), targetUser);
+    }
   }
   res.status(204).send();
 });
@@ -7222,7 +7300,9 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
 
   const selectedService = getServiceByName(payload.data.serviceName);
   const effectivePriceInr = selectedService ? Number(getEffectiveServicePriceInr(selectedService, targetUser) || 0) : 0;
-  const computedPaymentStatus = effectivePriceInr > 0 ? 'unpaid' : 'paid';
+  const selectedCategory = String(selectedService?.category || '').toUpperCase();
+  const isExperienceSession = selectedCategory === 'EXPERIENCE SESSION';
+  const computedPaymentStatus = isExperienceSession || effectivePriceInr > 0 ? 'unpaid' : 'paid';
   if (
     selectedService &&
     isAddOnService(selectedService) &&
@@ -8469,6 +8549,9 @@ function validateBookingPayload(body, user) {
   if (!service) {
     return { error: 'Invalid service selected.' };
   }
+  if (String(service.category || '').toUpperCase() === 'EXPERIENCE SESSION' && isMembershipActiveForUser(user)) {
+    return { error: 'Demo hydrogen session is available only for non-members.' };
+  }
 
   if (service.membershipOnly && !isMembershipActiveForUser(user)) {
     return { error: '✨ An exclusive benefit for our members. Activate your membership to enjoy this service at no cost.' };
@@ -8687,6 +8770,7 @@ function getEffectiveServicePriceInr(service, user) {
   if (!service) return 0;
   const category = String(service.category || '').toUpperCase();
   const isHydrogen = category === 'HYDROGEN SESSION';
+  const isExperienceSession = category === 'EXPERIENCE SESSION';
   const membershipActive = isMembershipActiveForUser(user);
   const userPhone = user?.mobile || '';
 
@@ -8698,6 +8782,11 @@ function getEffectiveServicePriceInr(service, user) {
     return applyPhoneDiscount(Number(service.priceInr || 0), userPhone);
   }
 
+  // Demo/experience session should always stay chargeable at its catalog price.
+  if (isExperienceSession) {
+    return Number(service.priceInr || 0);
+  }
+
   if (isHydrogen && membershipActive && Number(service.memberPriceInr) > 0) {
     return applyPhoneDiscount(Number(service.memberPriceInr), userPhone);
   }
@@ -8707,6 +8796,21 @@ function getEffectiveServicePriceInr(service, user) {
   }
 
   return applyPhoneDiscount(Number(service.priceInr || 0), userPhone);
+}
+
+function findDuplicateHydrogenSlot(slots = []) {
+  const seen = new Set();
+  for (const slot of slots) {
+    const bookingDate = String(slot?.bookingDate || '').trim();
+    const bookingTime = normalizeSlotStartTime(String(slot?.bookingTime || '').trim());
+    if (!bookingDate || !bookingTime) continue;
+    const key = `${bookingDate}|${bookingTime}`;
+    if (seen.has(key)) {
+      return { bookingDate, bookingTime };
+    }
+    seen.add(key);
+  }
+  return null;
 }
 
 function toServiceResponse(service, user) {
@@ -8723,7 +8827,12 @@ function toServiceResponse(service, user) {
 
 function getServiceByName(name) {
   const normalized = String(name || '').trim().toLowerCase();
-  return SERVICE_CATALOG.find((service) => service.name.toLowerCase() === normalized) || null;
+  const directMatch = SERVICE_CATALOG.find((service) => service.name.toLowerCase() === normalized) || null;
+  if (directMatch) return directMatch;
+  if (normalized === 'demo session' || normalized === 'demo hydrogen session') {
+    return SERVICE_CATALOG.find((service) => String(service.name || '').trim().toLowerCase() === 'experience session') || null;
+  }
+  return null;
 }
 
 function validateDoctorPayload(body) {
@@ -9244,6 +9353,20 @@ function formatDateTimeWithComma(bookingDate, bookingTime) {
     hour12: true,
   });
   return `${datePart}, ${timePart}`;
+}
+
+function formatInvoiceDateTime(value) {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
 }
 
 function formatDateAsDayMonthYear(value) {

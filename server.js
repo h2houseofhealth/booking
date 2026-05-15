@@ -1331,6 +1331,9 @@ app.get('/api/admin/ses/identity-status', requireAuth, requireAdmin, async (req,
 });
 
 app.get('/api/services', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') {
+    syncMembershipCoveredHydrogenBookings(req.user.id, req.user);
+  }
   const hydrogenBalance = getHydrogenFreeSessionBalance(req.user.id, req.user);
   const services = getVisibleServicesForUser(req.user).map((service) => {
     const response = toServiceResponse(service, req.user);
@@ -8818,6 +8821,8 @@ function countPaidHydrogenSessionsDuringMembership(userId, user) {
        WHERE user_id = ?
          AND status <> 'cancelled'
          AND COALESCE(payment_status, '') = 'paid'
+         AND COALESCE(is_topup_session, 0) = 0
+         AND LOWER(COALESCE(payment_reference, '')) = 'membership'
          AND service_name IN (${placeholders})
          AND booking_date >= ?
          AND booking_date <= ?`
@@ -8865,6 +8870,7 @@ function syncMembershipCoveredHydrogenBookings(userId, user) {
        WHERE user_id = ?
          AND COALESCE(payment_status, 'unpaid') <> 'paid'
          AND COALESCE(payment_reference, '') <> 'buy_extra'
+         AND COALESCE(is_topup_session, 0) = 0
          AND status IN ('pending', 'booked', 'confirmed')
          AND service_name IN (${placeholders})
          AND booking_date >= ?

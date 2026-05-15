@@ -34,6 +34,7 @@ const OTP_RESEND_COOLDOWN_SECONDS = (() => {
 })();
 const BOOKING_HOLD_MINUTES = 10;
 const BOOKING_HOLD_CUTOFF_SQL = `datetime('now', '-${BOOKING_HOLD_MINUTES} minutes')`;
+const BOOKING_STATUSES = ['pending', 'booked', 'confirmed', 'completed', 'cancelled', 'schedule_later'];
 const FRONTEND_ORIGINS = String(process.env.FRONTEND_ORIGINS || process.env.FRONTEND_ORIGIN || '')
   .split(',')
   .map((value) => normalizeOriginValue(value))
@@ -3928,7 +3929,8 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
     return res.status(403).json({ message: 'forbidden' });
   }
 
-  if (req.user.role !== 'admin' && ['completed', 'cancelled'].includes(String(existing.status))) {
+  const existingStatus = String(existing.status || '').trim().toLowerCase();
+  if (req.user.role !== 'admin' && ['completed', 'cancelled'].includes(existingStatus)) {
     return res.status(409).json({ message: 'completed/cancelled booking cannot be edited by user' });
   }
 
@@ -3947,11 +3949,12 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
   if (payload.error) return res.status(400).json({ message: payload.error });
 
   const isUser = req.user.role === 'user';
+  const isScheduleLaterBooking = existingStatus === 'schedule_later';
   const isRescheduleAttempt =
     isUser &&
     (String(payload.data.bookingDate || '').trim() !== String(existing.bookingDate || '').trim() ||
       String(payload.data.bookingTime || '').trim() !== String(existing.bookingTime || '').trim());
-  if (isRescheduleAttempt) {
+  if (isRescheduleAttempt && !isScheduleLaterBooking) {
     if (Number(existing.rescheduleCount || 0) >= 1) {
       return res.status(409).json({
         message: 'You can reschedule only once. Please contact admin for further reschedule changes.',
@@ -4031,18 +4034,26 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
   }
 
   const nextStatus = req.user.role === 'admin'
-    ? String(req.body?.status || existing.status).toLowerCase()
-    : String(existing.status || 'pending');
+    ? normalizeBookingStatus(req.body?.status || existing.status)
+    : isScheduleLaterBooking && isRescheduleAttempt
+      ? 'booked'
+      : String(existing.status || 'pending');
 
   if (!isValidStatus(nextStatus)) {
-    return res.status(400).json({ message: 'invalid status' });
+    return res.status(400).json({
+      message: `invalid status: ${String(req.body?.status ?? nextStatus ?? '').trim() || '(empty)'}`,
+      allowedStatuses: BOOKING_STATUSES,
+    });
   }
 
   let nextNotes = String(payload.data.notes || '').trim();
   if (isRescheduleAttempt) {
-    const userRescheduleNote = `Rescheduled by user from ${existing.bookingDate} ${existing.bookingTime} to ${payload.data.bookingDate} ${payload.data.bookingTime}`;
+    const userRescheduleNote = isScheduleLaterBooking
+      ? `Scheduled later by user from ${existing.bookingDate} ${existing.bookingTime} to ${payload.data.bookingDate} ${payload.data.bookingTime}`
+      : `Rescheduled by user from ${existing.bookingDate} ${existing.bookingTime} to ${payload.data.bookingDate} ${payload.data.bookingTime}`;
     nextNotes = [nextNotes, userRescheduleNote].filter(Boolean).join('\n');
   }
+  const shouldIncrementRescheduleCount = isRescheduleAttempt && !isScheduleLaterBooking;
 
   db.prepare(
     `UPDATE bookings SET
@@ -4061,7 +4072,7 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
     payload.data.bookingDate,
     payload.data.bookingTime,
     nextNotes,
-    isRescheduleAttempt ? 1 : 0,
+    shouldIncrementRescheduleCount ? 1 : 0,
     selectedService?.membershipOnly ? 1 : 0,
     nextStatus,
     bookingId
@@ -6424,19 +6435,22 @@ app.post('/api/payments/verify-cart', requireAuth, async (req, res) => {
 
 app.patch('/api/bookings/:id/status', requireAuth, (req, res) => {
   const bookingId = Number(req.params.id);
-  const status = String(req.body?.status || '').toLowerCase();
+  const status = normalizeBookingStatus(req.body?.status);
 
   if (!Number.isInteger(bookingId)) {
     return res.status(400).json({ message: 'invalid booking id' });
   }
 
   if (!isValidStatus(status)) {
-    return res.status(400).json({ message: 'invalid status' });
+    return res.status(400).json({
+      message: `invalid status: ${String(req.body?.status ?? '').trim() || '(empty)'}`,
+      allowedStatuses: BOOKING_STATUSES,
+    });
   }
 
   const existing = db
     .prepare(
-      'SELECT id, user_id AS userId, payment_status AS paymentStatus, booking_group_id AS bookingGroupId FROM bookings WHERE id = ?'
+      'SELECT id, user_id AS userId, status, payment_status AS paymentStatus, booking_group_id AS bookingGroupId, booking_date AS bookingDate, booking_time AS bookingTime, notes FROM bookings WHERE id = ?'
     )
     .get(bookingId);
 
@@ -6448,8 +6462,27 @@ app.patch('/api/bookings/:id/status', requireAuth, (req, res) => {
     return res.status(403).json({ message: 'forbidden' });
   }
 
-  if (req.user.role !== 'admin' && status !== 'cancelled') {
+  if (req.user.role !== 'admin' && ['completed', 'cancelled'].includes(String(existing.status || '').trim().toLowerCase())) {
+    return res.status(409).json({ message: 'completed/cancelled booking cannot be moved to schedule later' });
+  }
+
+  if (req.user.role !== 'admin' && !['cancelled', 'schedule_later'].includes(status)) {
     return res.status(403).json({ message: 'only admin can set this status' });
+  }
+
+  if (req.user.role !== 'admin' && status === 'schedule_later' && String(existing.paymentStatus || '').trim().toLowerCase() !== 'paid') {
+    return res.status(409).json({ message: 'Only paid bookings can be moved to Schedule Later.' });
+  }
+
+  const existingStatus = String(existing.status || '').trim().toLowerCase();
+  const existingNotesLower = String(existing.notes || '').toLowerCase();
+  if (req.user.role !== 'admin' && status === 'schedule_later') {
+    if (!['booked', 'confirmed'].includes(existingStatus)) {
+      return res.status(409).json({ message: 'Only booked sessions can be moved to Schedule Later.' });
+    }
+    if (existingNotesLower.includes('moved to schedule later by user')) {
+      return res.status(409).json({ message: 'Schedule Later can be used only once for this session.' });
+    }
   }
 
   if (status === 'confirmed' && existing.paymentStatus !== 'paid') {
@@ -6458,6 +6491,10 @@ app.patch('/api/bookings/:id/status', requireAuth, (req, res) => {
 
   if (status === 'cancelled' && existing.bookingGroupId) {
     db.prepare('UPDATE bookings SET status = ? WHERE booking_group_id = ?').run(status, existing.bookingGroupId);
+  } else if (status === 'schedule_later') {
+    const scheduleLaterNote = `Moved to Schedule Later by user from ${existing.bookingDate} ${existing.bookingTime}`;
+    const nextNotes = [String(existing.notes || '').trim(), scheduleLaterNote].filter(Boolean).join('\n');
+    db.prepare('UPDATE bookings SET status = ?, notes = ? WHERE id = ?').run(status, nextNotes, bookingId);
   } else {
     db.prepare('UPDATE bookings SET status = ? WHERE id = ?').run(status, bookingId);
   }
@@ -9068,7 +9105,13 @@ function isDoctorAvailableOnDate(availableDays, bookingDate) {
 }
 
 function isValidStatus(status) {
-  return ['pending', 'booked', 'confirmed', 'completed', 'cancelled'].includes(status);
+  return BOOKING_STATUSES.includes(normalizeBookingStatus(status));
+}
+
+function normalizeBookingStatus(status) {
+  const normalized = String(status || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (['schedulelater', 'scheduled_later', 'scheduledlater'].includes(normalized)) return 'schedule_later';
+  return normalized;
 }
 
 function hasColumn(tableName, columnName) {

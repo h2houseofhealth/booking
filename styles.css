@@ -12797,6 +12797,12 @@ img {
   color: #75695f;
 }
 
+.status-schedule_later {
+  background: rgba(201, 106, 45, 0.12);
+  border-color: rgba(201, 106, 45, 0.18);
+  color: #a94f24;
+}
+
 .action-row {
   display: grid;
   justify-items: start;
@@ -13137,6 +13143,7 @@ img {
 .my-bookings-status-chip.cancelled,
 .my-bookings-payment-chip.unpaid,
 .status-cancelled,
+.status-schedule_later,
 .payment-unpaid {
   background: rgba(176, 90, 43, 0.12);
   color: #94492c;

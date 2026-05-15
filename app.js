@@ -82,6 +82,7 @@ const state = {
   pendingPreAuthChoice: '',
   showAuthCard: false,
   activeUserTab: 'services',
+  servicesBackTargetTab: '',
   userBookingsFilter: 'all',
   memberSessionDisplayCount: 0,
   adminActiveTab: 'calendar',
@@ -1083,18 +1084,21 @@ function attachEvents() {
       resetServiceBrowserState();
     }
     state.selectedHydrogenFlow = 'topup';
+    state.servicesBackTargetTab = '';
     state.activeUserTab = 'services';
     window.location.hash = '#services';
     render();
   });
   elements.userTabMembership?.addEventListener('click', () => {
     resetServiceBrowserState();
+    state.servicesBackTargetTab = '';
     state.activeUserTab = 'membership';
     window.location.hash = '#membership';
     render();
   });
   elements.userTabBookings?.addEventListener('click', () => {
     resetServiceBrowserState();
+    state.servicesBackTargetTab = '';
     state.activeUserTab = 'bookings';
     window.location.hash = '#bookings';
     render();
@@ -1104,6 +1108,7 @@ function attachEvents() {
   });
   elements.userTabCart?.addEventListener('click', () => {
     resetServiceBrowserState();
+    state.servicesBackTargetTab = '';
     state.activeUserTab = 'cart';
     window.location.hash = '#cart';
     render();
@@ -1169,6 +1174,7 @@ function attachEvents() {
   });
   elements.membershipNextBtn?.addEventListener('click', () => {
     resetServiceBrowserState();
+    state.servicesBackTargetTab = 'membership';
     state.activeUserTab = 'services';
     window.location.hash = '#services';
     render();
@@ -1182,6 +1188,7 @@ function attachEvents() {
     const resolvedFlow = flow === 'topup' && !allowTopUpFlow ? 'schedule' : flow;
     const resolvedTarget = target === 'topup' && !allowTopUpFlow ? 'hydrogen' : target;
     state.selectedHydrogenFlow = resolvedFlow;
+    state.servicesBackTargetTab = state.activeUserTab === 'membership' ? 'membership' : '';
     state.activeUserTab = 'services';
     state.selectedServiceCategory = 'HYDROGEN SESSION';
     state.expandedServiceCategories = {
@@ -1273,6 +1280,18 @@ function attachEvents() {
   });
   elements.servicesBackBtn?.addEventListener('click', () => {
     resetServiceBrowserState();
+    const backTargetTab = String(state.servicesBackTargetTab || '').trim();
+    state.servicesBackTargetTab = '';
+    if (backTargetTab === 'membership' || isCurrentUserMembershipActive()) {
+      state.postLoginChoice = state.postLoginChoice || 'continue-member';
+      state.activeUserTab = 'membership';
+      window.location.hash = '#membership';
+      render();
+      requestAnimationFrame(() => {
+        elements.membershipSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return;
+    }
     if (state.postLoginChoice === 'join-member') {
       state.activeUserTab = 'membership';
       window.location.hash = '#membership';
@@ -5819,11 +5838,13 @@ function getHydrogenSessionsUsedThisMembership() {
   const range = getCurrentMembershipIsoRange();
   const bookings = Array.isArray(state.bookings) ? state.bookings : [];
   return bookings.filter((booking) => {
-    if (String(booking.status || '').toLowerCase() !== 'completed') return false;
     if (getBookingCategory(booking.serviceName) !== 'HYDROGEN SESSION') return false;
-    // Membership usage should track only included/free sessions.
+    const status = String(booking.status || '').toLowerCase();
+    if (status === 'cancelled') return false;
+    if (booking.holdExpired) return false;
+    // Included/free membership sessions are allocated when booked, not when completed.
     // Chargeable top-up sessions are tracked separately in the top-up counters.
-    if (isChargeableHydrogenMembershipBooking(booking)) return false;
+    if (!isMembershipCoveredHydrogenBooking(booking)) return false;
     if (!range?.startIso || !range?.endIso) return true;
     const bookingDate = String(booking.bookingDate || '').trim();
     return bookingDate >= range.startIso && bookingDate <= range.endIso;
@@ -5849,6 +5870,12 @@ function isBuyExtraHydrogenBooking(booking) {
 
 function isChargeableHydrogenMembershipBooking(booking) {
   return isBuyExtraHydrogenBooking(booking);
+}
+
+function isMembershipCoveredHydrogenBooking(booking) {
+  if (getBookingCategory(booking?.serviceName) !== 'HYDROGEN SESSION') return false;
+  if (isChargeableHydrogenMembershipBooking(booking)) return false;
+  return String(booking?.paymentReference || '').trim().toLowerCase() === 'membership';
 }
 
 function getHydrogenExtraSessionsThisMembership() {
@@ -8570,17 +8597,27 @@ function renderMembership() {
   const upcomingBookings = paidBookings
     .filter((booking) => !isBookingSlotInPast(booking.bookingDate, booking.bookingTime))
     .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
-  const totalSessions = unifiedHydrogenTracking.totalSessions;
-  const usedSessions = unifiedHydrogenTracking.completedSessions;
+  const totalSessions = active
+    ? Number(hydrogenSessionSummary.totalSessions || 0)
+    : unifiedHydrogenTracking.totalSessions;
+  const usedSessions = active
+    ? Number(hydrogenSessionSummary.usedSessions || 0)
+    : unifiedHydrogenTracking.completedSessions;
   const missedSessions = active ? Number(hydrogenSessionSummary.missedSessions || 0) : 0;
-  const remainingSessions = unifiedHydrogenTracking.remainingSessions;
-  const usagePercent = unifiedHydrogenTracking.usagePercent;
+  const remainingSessions = active
+    ? Number(hydrogenSessionSummary.remainingSessions || 0)
+    : unifiedHydrogenTracking.remainingSessions;
+  const usagePercent = active
+    ? Number(hydrogenSessionSummary.usagePercent || 0)
+    : unifiedHydrogenTracking.usagePercent;
 
   if (elements.membershipUsageTitle) {
-    elements.membershipUsageTitle.textContent = 'Booking Activity';
+    elements.membershipUsageTitle.textContent = active ? 'Hydrogen Session Usage' : 'Booking Activity';
   }
   if (elements.membershipUsageLabel) {
-    elements.membershipUsageLabel.textContent = totalSessions ? `${usedSessions} of ${totalSessions} completed` : '0 of 0 completed';
+    elements.membershipUsageLabel.textContent = totalSessions
+      ? `${usedSessions} of ${totalSessions} used`
+      : '0 of 0 used';
   }
   if (elements.membershipUsageCount) {
     elements.membershipUsageCount.textContent = `${usedSessions} of ${totalSessions}`;

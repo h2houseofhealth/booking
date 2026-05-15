@@ -2920,7 +2920,7 @@ function renderAdminCalendar() {
       const openSeats = Math.max(0, slotCapacity - booked - holdCount);
       const isPast = isBookingSlotInPast(selectedDate, slot.value);
 
-      if (selectedDateIsPast || (isPast && booked > 0)) {
+      if (selectedDateIsPast) {
         availableSlotCount += 1;
         const row = document.createElement('article');
         row.className = booked > 0
@@ -8338,7 +8338,9 @@ function isBookingSlotInPast(bookingDate, bookingTime) {
   const minutes = Number(timeMatch[2]);
   const slotDateTime = new Date(year, monthIndex, day, hours, minutes, 0, 0);
   if (Number.isNaN(slotDateTime.getTime())) return false;
-  return slotDateTime.getTime() <= Date.now();
+  const slotEndDateTime = new Date(slotDateTime.getTime());
+  slotEndDateTime.setHours(slotEndDateTime.getHours() + 1);
+  return slotEndDateTime.getTime() <= Date.now();
 }
 
 function getMaxBookingIsoDate() {

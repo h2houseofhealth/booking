@@ -7512,6 +7512,64 @@ table tbody td {
   gap: 0.6rem;
 }
 
+.user-reschedule-picker form {
+  padding: 1rem;
+}
+
+.user-reschedule-picker .dialog-head {
+  margin-bottom: 0.55rem;
+}
+
+.user-reschedule-picker-copy {
+  margin: 0 0 0.7rem;
+}
+
+.user-reschedule-picker-list {
+  display: grid;
+  gap: 0.62rem;
+  max-height: 56vh;
+  overflow: auto;
+  padding-right: 0.1rem;
+}
+
+.user-reschedule-option {
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.72rem 0.78rem;
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.22);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.user-reschedule-option-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.52rem;
+}
+
+.user-reschedule-option input[type="radio"] {
+  margin-top: 0.2rem;
+}
+
+.user-reschedule-option.is-disabled {
+  opacity: 0.6;
+  background: rgba(249, 245, 241, 0.88);
+  border-color: rgba(var(--ink-rgb), 0.16);
+}
+
+.user-reschedule-option.is-disabled .user-reschedule-option-head {
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .user-reschedule-picker form {
+    padding: 0.85rem;
+  }
+  .user-reschedule-picker .dialog-actions {
+    gap: 0.5rem;
+  }
+}
+
 /* Membership layout hard overrides to avoid stale selector conflicts */
 .membership-hero {
   display: grid;

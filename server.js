@@ -6480,6 +6480,9 @@ app.patch('/api/bookings/:id/status', requireAuth, (req, res) => {
     if (!['booked', 'confirmed'].includes(existingStatus)) {
       return res.status(409).json({ message: 'Only booked sessions can be moved to Schedule Later.' });
     }
+    if (isBookingSlotInPast(existing.bookingDate, existing.bookingTime)) {
+      return res.status(409).json({ message: 'Past sessions cannot be moved to Schedule Later.' });
+    }
     if (existingNotesLower.includes('moved to schedule later by user')) {
       return res.status(409).json({ message: 'Schedule Later can be used only once for this session.' });
     }

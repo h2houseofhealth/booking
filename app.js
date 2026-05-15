@@ -4848,7 +4848,8 @@ function getGroupedHydrogenScheduleLaterOptions(row) {
     const status = String(entry?.status || '').trim().toLowerCase();
     const notesLower = String(entry?.notes || '').toLowerCase();
     const wasAlreadyScheduledLater = notesLower.includes('moved to schedule later by user');
-    const allowed = !['completed', 'cancelled', 'schedule_later'].includes(status) && !wasAlreadyScheduledLater;
+    const isPastSlot = isBookingSlotInPast(entry?.bookingDate, entry?.bookingTime);
+    const allowed = !['completed', 'cancelled', 'schedule_later'].includes(status) && !wasAlreadyScheduledLater && !isPastSlot;
     return {
       index,
       booking: entry,
@@ -4857,7 +4858,9 @@ function getGroupedHydrogenScheduleLaterOptions(row) {
         ? 'Can be scheduled later'
         : wasAlreadyScheduledLater
           ? 'Schedule Later was already used once for this session.'
-          : 'This session is already completed, cancelled, or waiting to be scheduled.',
+          : isPastSlot
+            ? 'Past sessions cannot be moved to Schedule Later.'
+            : 'This session is already completed, cancelled, or waiting to be scheduled.',
       label: `Hydrogen Session ${index + 1} - ${formatDateTime(entry.bookingDate, entry.bookingTime)}`,
     };
   });
@@ -4952,6 +4955,10 @@ async function handleScheduleLaterAction(row) {
     return;
   }
   const booking = row.booking || row;
+  if (isBookingSlotInPast(booking?.bookingDate, booking?.bookingTime)) {
+    showNotice({ title: 'Schedule later unavailable', body: 'Past sessions cannot be moved to Schedule Later.' });
+    return;
+  }
   await changeStatus(booking.id, 'schedule_later');
 }
 
@@ -10003,7 +10010,10 @@ function renderUserRows(bookings, membershipOrders = []) {
     const scheduleLaterAlreadyUsed = row.isGroupedHydrogen
       ? !getGroupedHydrogenScheduleLaterOptions(row).some((item) => item.allowed)
       : rowNotesLower.includes('moved to schedule later by user');
-    if (isPaidBookingRow && !scheduleLaterAlreadyUsed && !['cancelled', 'completed', 'schedule_later'].includes(rowStatus)) {
+    const isScheduleLaterSlotEligible = row.isGroupedHydrogen
+      ? getGroupedHydrogenScheduleLaterOptions(row).some((item) => item.allowed)
+      : !isBookingSlotInPast(row.booking?.bookingDate || row.bookingDate, row.booking?.bookingTime || row.bookingTime);
+    if (isPaidBookingRow && !scheduleLaterAlreadyUsed && isScheduleLaterSlotEligible && !['cancelled', 'completed', 'schedule_later'].includes(rowStatus)) {
       actions.append(createActionButton('Schedule Later', () => handleScheduleLaterAction(row)));
     }
 

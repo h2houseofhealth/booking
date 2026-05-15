@@ -4826,11 +4826,14 @@ function openIvAddOnSelectorFromBooking() {
 }
 
 function getGroupedHydrogenRescheduleOptions(row) {
+  const isScheduleLaterFlow = String(row?.status || '').trim().toLowerCase() === 'schedule_later';
   const entries = [...(Array.isArray(row?.hydrogenEntries) ? row.hydrogenEntries : [])].sort((a, b) =>
     `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`)
   );
   return entries.map((entry, index) => {
-    const eligibility = getUserRescheduleEligibility(entry);
+    const eligibility = getUserRescheduleEligibility(entry, {
+      enforceRescheduleLimit: !isScheduleLaterFlow,
+    });
     return {
       index,
       booking: entry,
@@ -5051,7 +5054,10 @@ function handleUserRescheduleAction(row, selectedBookingId = '') {
       showNotice({ title: 'Unable to reschedule', body: 'Selected session is unavailable.' });
       return;
     }
-    const eligibility = getUserRescheduleEligibility(selectedBooking);
+    const isScheduleLaterFlow = String(row?.status || '').trim().toLowerCase() === 'schedule_later';
+    const eligibility = getUserRescheduleEligibility(selectedBooking, {
+      enforceRescheduleLimit: !isScheduleLaterFlow,
+    });
     if (!eligibility.allowed) {
       showNotice({ title: 'Unable to reschedule', body: eligibility.message || 'This session is not eligible.' });
       return;
@@ -9691,23 +9697,40 @@ function getBookingStartTime(booking) {
   const bookingDate = String(booking?.bookingDate || '').trim();
   const bookingTime = normalizeSlotStartTime(booking?.bookingTime || '');
   if (!bookingDate || !bookingTime) return Number.NaN;
-  const timestamp = new Date(`${bookingDate}T${bookingTime}:00`).getTime();
+  const isoDateMatch = bookingDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const dmyDateMatch = bookingDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const timeMatch = bookingTime.match(/^(\d{2}):(\d{2})$/);
+  if (!timeMatch) return Number.NaN;
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  let year;
+  let month;
+  let day;
+  if (isoDateMatch) {
+    year = Number(isoDateMatch[1]);
+    month = Number(isoDateMatch[2]);
+    day = Number(isoDateMatch[3]);
+  } else if (dmyDateMatch) {
+    day = Number(dmyDateMatch[1]);
+    month = Number(dmyDateMatch[2]);
+    year = Number(dmyDateMatch[3]);
+  } else {
+    return Number.NaN;
+  }
+  const timestamp = new Date(year, month - 1, day, hour, minute, 0, 0).getTime();
   return Number.isFinite(timestamp) ? timestamp : Number.NaN;
 }
 
-function getUserRescheduleEligibility(row) {
+function getUserRescheduleEligibility(row, options = {}) {
   const booking = row?.booking || row;
+  const enforceRescheduleLimit = options?.enforceRescheduleLimit !== false;
   const status = String(booking?.status || '').trim().toLowerCase();
   if (status === 'completed' || status === 'cancelled') {
     return { allowed: false, message: 'Completed or cancelled bookings cannot be rescheduled.' };
   }
-  if (status === 'schedule_later') {
-    return { allowed: true, message: '' };
-  }
-  const notesLower = String(booking?.notes || '').toLowerCase();
   const rescheduleCount = Number(booking?.rescheduleCount || 0);
-  const hasUserRescheduleHistory = rescheduleCount > 0 || notesLower.includes('rescheduled by user from');
-  if (hasUserRescheduleHistory) {
+  const hasUserRescheduleHistory = rescheduleCount >= 1;
+  if (enforceRescheduleLimit && hasUserRescheduleHistory) {
     return { allowed: false, message: 'Reschedule limit reached. Further rescheduling can be done only by admin.' };
   }
   const slotStart = getBookingStartTime(booking);
@@ -9715,6 +9738,9 @@ function getUserRescheduleEligibility(row) {
     return { allowed: false, message: 'This booking slot is invalid for rescheduling.' };
   }
   const now = Date.now();
+  if (now >= slotStart) {
+    return { allowed: false, message: 'This session has already started or passed and cannot be rescheduled.' };
+  }
   const cutoffMs = 12 * 60 * 60 * 1000;
   if (now > slotStart - cutoffMs) {
     return {

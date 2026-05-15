@@ -10347,14 +10347,7 @@ async function resendPaymentLinkFromTimeline() {
     showNotice({ title: 'Error', type: 'error', body: 'Booking details are not available.' });
     return;
   }
-  const recipientEmail = String(booking.paymentLinkRecipientEmail || booking.clientEmail || '').trim().toLowerCase();
-  if (!recipientEmail || !isValidEmail(recipientEmail)) {
-    showNotice({ title: 'Error', type: 'error', body: 'Valid recipient email not found for this booking.' });
-    return;
-  }
-  const paymentLinkResult = await api(`/api/bookings/${bookingId}/payment-link`);
-  const fallbackLink = String(paymentLinkResult?.paymentLinkUrl || '').trim();
-  await sendPaymentLinkViaEmail(bookingId, recipientEmail, fallbackLink, String(booking.clientMobile || '').trim());
+  await resendPaymentLinkForBooking(booking);
   await fetchBookingEmailTimeline(bookingId);
 }
 
@@ -10490,15 +10483,31 @@ async function resendPaymentLinkFromTimeline() {
     alert('Booking details are not available.');
     return;
   }
-  const recipientEmail = String(booking.paymentLinkRecipientEmail || booking.clientEmail || '').trim().toLowerCase();
+  await resendPaymentLinkForBooking(booking);
+  await fetchBookingEmailTimeline(bookingId);
+}
+
+function canResendBookingPaymentLink(booking) {
+  const status = String(booking?.status || '').trim().toLowerCase();
+  const paymentStatus = String(booking?.paymentStatus || 'unpaid').trim().toLowerCase();
+  const recipientEmail = String(booking?.paymentLinkRecipientEmail || booking?.clientEmail || '').trim();
+  return paymentStatus !== 'paid' && !['completed', 'cancelled'].includes(status) && isValidEmail(recipientEmail);
+}
+
+async function resendPaymentLinkForBooking(booking) {
+  const bookingId = Number(booking?.id || 0);
+  if (!Number.isInteger(bookingId)) {
+    showNotice({ title: 'Error', type: 'error', body: 'Booking details are not available.' });
+    return;
+  }
+  const recipientEmail = String(booking?.paymentLinkRecipientEmail || booking?.clientEmail || '').trim().toLowerCase();
   if (!recipientEmail || !isValidEmail(recipientEmail)) {
-    alert('Valid recipient email not found for this booking.');
+    showNotice({ title: 'Error', type: 'error', body: 'Valid recipient email not found for this booking.' });
     return;
   }
   const paymentLinkResult = await api(`/api/bookings/${bookingId}/payment-link`);
   const fallbackLink = String(paymentLinkResult?.paymentLinkUrl || '').trim();
-  await sendPaymentLinkViaEmail(bookingId, recipientEmail, fallbackLink, String(booking.clientMobile || '').trim());
-  await fetchBookingEmailTimeline(bookingId);
+  await sendPaymentLinkViaEmail(bookingId, recipientEmail, fallbackLink, String(booking?.clientMobile || '').trim());
 }
 
 function renderCartButtonState() {
@@ -10583,6 +10592,9 @@ function renderAdminRows(bookings) {
     if (!bookingPaid && booking.status !== 'cancelled') {
       actions.append(createActionButton('Paid in Cash', () => markBookingPaidInCash(booking.id)));
       actions.append(createActionButton('Copy Payment Link', () => copyBookingPaymentLink(booking.id)));
+      if (canResendBookingPaymentLink(booking)) {
+        actions.append(createActionButton('Resend Payment Link', () => resendPaymentLinkForBooking(booking)));
+      }
     }
     if (canShowBookingInvoice(booking)) {
       actions.append(createActionButton('Invoice', () => openBookingInvoice(booking.id)));
@@ -10599,7 +10611,6 @@ function renderAdminRows(bookings) {
       createActionButton('Cancel', () => changeStatus(booking.id, 'cancelled'))
     );
     actions.append(createActionButton('Notes', () => openBookingNotesDialog(booking.id)));
-    actions.append(createActionButton('Email Timeline', () => openBookingEmailTimelineDialog(booking)));
 
     actionCell.appendChild(actions);
     tr.appendChild(actionCell);
@@ -12193,15 +12204,13 @@ function renderAdminHistoryRows(bookings) {
     const bookingPaid = String(booking.paymentStatus || 'unpaid').toLowerCase() === 'paid';
     const bookingCancelled = String(booking.status || '').toLowerCase() === 'cancelled';
     const bookingCompleted = String(booking.status || '').toLowerCase() === 'completed';
-    const bookingConfirmed = String(booking.status || '').toLowerCase() === 'confirmed';
+    const bookingBookableStatus = ['booked', 'confirmed'].includes(String(booking.status || '').toLowerCase());
     const bookingMissed = isBookingMissed(booking);
 
     if (!bookingCancelled) {
       if (!bookingPaid) {
         actions.append(createActionButton('Paid in Cash', () => markBookingPaidInCash(booking.id)));
         actions.append(createActionButton('Copy Payment Link', () => copyBookingPaymentLink(booking.id)));
-      } else if (!bookingConfirmed && !bookingCompleted && !bookingMissed) {
-        actions.append(createActionButton('Accept', () => changeStatus(booking.id, 'confirmed')));
       }
 
     }
@@ -12210,8 +12219,15 @@ function renderAdminHistoryRows(bookings) {
       actions.append(createActionButton('Invoice', () => openBookingInvoice(booking.id)));
     }
 
+    if (bookingBookableStatus && !bookingCompleted && !bookingCancelled && !bookingMissed) {
+      actions.append(createActionButton('Complete', () => markBookingCompleted(booking.id)));
+    }
+
+    if (canResendBookingPaymentLink(booking)) {
+      actions.append(createActionButton('Resend Payment Link', () => resendPaymentLinkForBooking(booking)));
+    }
+
     actions.append(createActionButton('Notes', () => openBookingNotesDialog(booking.id)));
-    actions.append(createActionButton('Email Timeline', () => openBookingEmailTimelineDialog(booking)));
 
     actionCell.appendChild(actions);
     tr.appendChild(actionCell);
@@ -12277,15 +12293,13 @@ function renderAdminAllBookingRows(bookings) {
     const bookingPaid = String(booking.paymentStatus || 'unpaid').toLowerCase() === 'paid';
     const bookingCancelled = String(booking.status || '').toLowerCase() === 'cancelled';
     const bookingCompleted = String(booking.status || '').toLowerCase() === 'completed';
-    const bookingConfirmed = String(booking.status || '').toLowerCase() === 'confirmed';
+    const bookingBookableStatus = ['booked', 'confirmed'].includes(String(booking.status || '').toLowerCase());
     const bookingMissed = isBookingMissed(booking);
 
     if (!bookingCancelled) {
       if (!bookingPaid) {
         actions.append(createActionButton('Paid in Cash', () => markBookingPaidInCash(booking.id)));
         actions.append(createActionButton('Copy Payment Link', () => copyBookingPaymentLink(booking.id)));
-      } else if (!bookingConfirmed && !bookingCompleted && !bookingMissed) {
-        actions.append(createActionButton('Accept', () => changeStatus(booking.id, 'confirmed')));
       }
     }
 
@@ -12293,12 +12307,15 @@ function renderAdminAllBookingRows(bookings) {
       actions.append(createActionButton('Invoice', () => openBookingInvoice(booking.id)));
     }
 
-    if (bookingPaid && bookingConfirmed && !bookingCompleted && !bookingCancelled && !bookingMissed) {
+    if (bookingBookableStatus && !bookingCompleted && !bookingCancelled && !bookingMissed) {
       actions.append(createActionButton('Complete', () => markBookingCompleted(booking.id)));
     }
 
+    if (canResendBookingPaymentLink(booking)) {
+      actions.append(createActionButton('Resend Payment Link', () => resendPaymentLinkForBooking(booking)));
+    }
+
     actions.append(createActionButton('Notes', () => openBookingNotesDialog(booking.id)));
-    actions.append(createActionButton('Email Timeline', () => openBookingEmailTimelineDialog(booking)));
 
     actionCell.appendChild(actions);
     tr.appendChild(actionCell);

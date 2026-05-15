@@ -2567,6 +2567,129 @@ app.get('/api/bookings', requireAuth, (req, res) => {
   res.json({ bookings: mapped });
 });
 
+function mapBookingNote(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    bookingId: row.bookingId,
+    noteText: row.noteText || '',
+    createdBy: row.createdBy ?? null,
+    createdByName: row.createdByName || '',
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt || null,
+  };
+}
+
+function getAdminBookingNote(noteId) {
+  return db
+    .prepare(
+      `SELECT n.id,
+              n.booking_id AS bookingId,
+              n.note_text AS noteText,
+              n.created_by AS createdBy,
+              u.name AS createdByName,
+              n.created_at AS createdAt,
+              n.updated_at AS updatedAt
+       FROM booking_notes n
+       LEFT JOIN users u ON u.id = n.created_by
+       WHERE n.id = ?`
+    )
+    .get(noteId);
+}
+
+app.get('/api/bookings/:id/notes', requireAuth, requireAdmin, (req, res) => {
+  const bookingId = Number(req.params.id);
+  if (!Number.isInteger(bookingId) || bookingId <= 0) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+
+  const booking = db.prepare('SELECT id FROM bookings WHERE id = ?').get(bookingId);
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+
+  const rows = db
+    .prepare(
+      `SELECT n.id,
+              n.booking_id AS bookingId,
+              n.note_text AS noteText,
+              n.created_by AS createdBy,
+              u.name AS createdByName,
+              n.created_at AS createdAt,
+              n.updated_at AS updatedAt
+       FROM booking_notes n
+       LEFT JOIN users u ON u.id = n.created_by
+       WHERE n.booking_id = ?
+       ORDER BY n.created_at DESC, n.id DESC`
+    )
+    .all(bookingId);
+
+  res.json({ notes: rows.map(mapBookingNote) });
+});
+
+app.post('/api/notes', requireAuth, requireAdmin, (req, res) => {
+  const bookingId = Number(req.body?.bookingId);
+  const noteText = String(req.body?.noteText || '').trim();
+
+  if (!Number.isInteger(bookingId) || bookingId <= 0) {
+    return res.status(400).json({ message: 'invalid booking id' });
+  }
+  if (!noteText) {
+    return res.status(400).json({ message: 'note text is required' });
+  }
+
+  const booking = db.prepare('SELECT id FROM bookings WHERE id = ?').get(bookingId);
+  if (!booking) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+
+  const result = db
+    .prepare(
+      `INSERT INTO booking_notes (booking_id, note_text, created_by, created_at)
+       VALUES (?, ?, ?, datetime('now'))`
+    )
+    .run(bookingId, noteText, req.user.id);
+
+  const note = mapBookingNote(getAdminBookingNote(result.lastInsertRowid));
+  return res.status(201).json({ note });
+});
+
+app.put('/api/notes/:id', requireAuth, requireAdmin, (req, res) => {
+  const noteId = Number(req.params.id);
+  const noteText = String(req.body?.noteText || '').trim();
+
+  if (!Number.isInteger(noteId) || noteId <= 0) {
+    return res.status(400).json({ message: 'invalid note id' });
+  }
+  if (!noteText) {
+    return res.status(400).json({ message: 'note text is required' });
+  }
+
+  const existing = getAdminBookingNote(noteId);
+  if (!existing) {
+    return res.status(404).json({ message: 'note not found' });
+  }
+
+  db.prepare("UPDATE booking_notes SET note_text = ?, updated_at = datetime('now') WHERE id = ?").run(noteText, noteId);
+  const note = mapBookingNote(getAdminBookingNote(noteId));
+  return res.json({ note });
+});
+
+app.delete('/api/notes/:id', requireAuth, requireAdmin, (req, res) => {
+  const noteId = Number(req.params.id);
+  if (!Number.isInteger(noteId) || noteId <= 0) {
+    return res.status(400).json({ message: 'invalid note id' });
+  }
+
+  const existing = getAdminBookingNote(noteId);
+  if (!existing) {
+    return res.status(404).json({ message: 'note not found' });
+  }
+
+  db.prepare('DELETE FROM booking_notes WHERE id = ?').run(noteId);
+  return res.status(204).send();
+});
+
 app.get('/api/doctor/bookings', requireAuth, requireDoctor, (req, res) => {
   return res.status(410).json({ message: 'Doctor bookings are currently disabled.' });
 });
@@ -9753,6 +9876,15 @@ function migrate() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS booking_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      booking_id INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+      note_text TEXT NOT NULL,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS pending_registrations (
       email TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -10054,6 +10186,9 @@ function migrate() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_booking_email_events_dedupe_key
       ON booking_email_events(dedupe_key)
       WHERE dedupe_key IS NOT NULL AND dedupe_key <> '';
+
+    CREATE INDEX IF NOT EXISTS idx_booking_notes_booking_created
+      ON booking_notes(booking_id, created_at);
 
     CREATE INDEX IF NOT EXISTS idx_coupons_code
       ON coupons(code);

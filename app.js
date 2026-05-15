@@ -3702,19 +3702,31 @@ async function sendPaymentLinkViaEmail(bookingId, email, paymentLink = '', phone
 async function changeStatus(id, status) {
   const bookingBefore = (Array.isArray(state.bookings) ? state.bookings : []).find((booking) => Number(booking?.id) === Number(id));
   const bookingDate = String(bookingBefore?.bookingDate || '').trim();
+  const normalizedStatus = normalizeBookingStatusValue(status);
   await api(`/api/bookings/${id}/status`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status: normalizedStatus }),
   });
   await loadDashboardData();
   if (state.user?.role === 'admin' && (state.adminActiveTab || '') === 'calendar' && bookingDate) {
     await refreshAdminCalendarCacheForDate(bookingDate);
   }
+  if (normalizedStatus === 'schedule_later' && state.user?.role !== 'admin') {
+    state.userBookingsFilter = 'schedule_later';
+  }
   render();
-  if (String(status || '').trim().toLowerCase() === 'cancelled' && state.user?.role !== 'admin') {
+  if (normalizedStatus === 'schedule_later' && state.user?.role !== 'admin') {
+    showNotice({ title: 'Schedule later', body: 'This paid session is waiting in Schedule Later. Pick a new date when you are ready.' });
+  } else if (normalizedStatus === 'cancelled' && state.user?.role !== 'admin') {
     showNotice({ title: 'Session cancelled', body: 'Your membership slot has been restored.' });
   }
+}
+
+function normalizeBookingStatusValue(status) {
+  const normalized = String(status || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (['schedulelater', 'scheduled_later', 'scheduledlater'].includes(normalized)) return 'schedule_later';
+  return normalized;
 }
 
 async function markBookingCompleted(bookingId) {
@@ -4828,6 +4840,121 @@ function getGroupedHydrogenRescheduleOptions(row) {
   });
 }
 
+function getGroupedHydrogenScheduleLaterOptions(row) {
+  const entries = [...(Array.isArray(row?.hydrogenEntries) ? row.hydrogenEntries : [])].sort((a, b) =>
+    `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`)
+  );
+  return entries.map((entry, index) => {
+    const status = String(entry?.status || '').trim().toLowerCase();
+    const notesLower = String(entry?.notes || '').toLowerCase();
+    const wasAlreadyScheduledLater = notesLower.includes('moved to schedule later by user');
+    const allowed = !['completed', 'cancelled', 'schedule_later'].includes(status) && !wasAlreadyScheduledLater;
+    return {
+      index,
+      booking: entry,
+      allowed,
+      message: allowed
+        ? 'Can be scheduled later'
+        : wasAlreadyScheduledLater
+          ? 'Schedule Later was already used once for this session.'
+          : 'This session is already completed, cancelled, or waiting to be scheduled.',
+      label: `Hydrogen Session ${index + 1} - ${formatDateTime(entry.bookingDate, entry.bookingTime)}`,
+    };
+  });
+}
+
+function openGroupedScheduleLaterPicker(row) {
+  const options = getGroupedHydrogenScheduleLaterOptions(row);
+  if (!options.length) {
+    showNotice({ title: 'Schedule later', body: 'No sessions found in this package.' });
+    return;
+  }
+  const dialog = document.createElement('dialog');
+  dialog.className = 'booking-dialog user-reschedule-picker';
+  const listHtml = options
+    .map((item) => {
+      const disabledAttr = item.allowed ? '' : 'disabled aria-disabled="true"';
+      return `
+        <label class="user-reschedule-option${item.allowed ? '' : ' is-disabled'}">
+          <span class="user-reschedule-option-head">
+            <input type="checkbox" name="scheduleLaterSessionPick" value="${escapeHtml(String(item.booking.id || ''))}" ${disabledAttr} />
+            <strong>${escapeHtml(item.label)}</strong>
+          </span>
+          <span class="membership-copy">${escapeHtml(item.message)}</span>
+        </label>
+      `;
+    })
+    .join('');
+  dialog.innerHTML = `
+    <form method="dialog">
+      <div class="dialog-head">
+        <h2>Select Sessions</h2>
+        <button class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+      <p class="membership-copy user-reschedule-picker-copy">Choose one or more sessions to hold in Schedule Later. Leave at least one package session scheduled.</p>
+      <div class="user-reschedule-picker-list">${listHtml}</div>
+      <div class="dialog-actions">
+        <button class="btn btn-secondary" type="button" data-action="cancel">Cancel</button>
+        <button class="btn btn-primary" type="button" data-action="continue">Schedule Later</button>
+      </div>
+    </form>
+  `;
+  document.body.appendChild(dialog);
+  const closePicker = () => {
+    try {
+      dialog.close();
+    } catch {}
+    dialog.remove();
+  };
+  dialog.querySelector('.icon-btn')?.addEventListener('click', closePicker);
+  dialog.querySelector('[data-action="cancel"]')?.addEventListener('click', closePicker);
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    closePicker();
+  });
+  dialog.querySelector('[data-action="continue"]')?.addEventListener('click', async () => {
+    const selectedIds = [...dialog.querySelectorAll('input[name="scheduleLaterSessionPick"]:checked')]
+      .map((input) => String(input?.value || '').trim())
+      .filter(Boolean);
+    if (!selectedIds.length) {
+      showNotice({ title: 'Select sessions', body: 'Choose at least one session to schedule later.' });
+      return;
+    }
+    const totalActiveEligible = options.filter((item) => item.allowed).length;
+    if (totalActiveEligible > 1 && selectedIds.length >= totalActiveEligible) {
+      showNotice({ title: 'Keep one scheduled', body: 'Leave at least one package session scheduled. Use Reschedule when you already know the new date.' });
+      return;
+    }
+    const continueBtn = dialog.querySelector('[data-action="continue"]');
+    if (continueBtn) continueBtn.disabled = true;
+    try {
+      for (const bookingId of selectedIds) {
+        await changeStatus(bookingId, 'schedule_later');
+      }
+      closePicker();
+    } catch (error) {
+      if (continueBtn) continueBtn.disabled = false;
+      showNotice({ title: 'Schedule later failed', body: error?.message || 'Unable to move this session to Schedule Later.' });
+    }
+  });
+  if (typeof dialog.showModal === 'function') {
+    dialog.showModal();
+  } else {
+    showNotice({ title: 'Schedule later', body: 'Your browser does not support the session picker dialog.' });
+    dialog.remove();
+  }
+}
+
+async function handleScheduleLaterAction(row) {
+  if (!row) return;
+  if (row.isGroupedHydrogen) {
+    openGroupedScheduleLaterPicker(row);
+    return;
+  }
+  const booking = row.booking || row;
+  await changeStatus(booking.id, 'schedule_later');
+}
+
 function openGroupedReschedulePicker(row) {
   const options = getGroupedHydrogenRescheduleOptions(row);
   if (!options.length) {
@@ -4836,6 +4963,7 @@ function openGroupedReschedulePicker(row) {
   }
   const dialog = document.createElement('dialog');
   dialog.className = 'booking-dialog user-reschedule-picker';
+  const isScheduleLaterFlow = String(row?.status || '').trim().toLowerCase() === 'schedule_later';
   const listHtml = options
     .map((item) => {
       const disabledAttr = item.eligibility.allowed ? '' : 'disabled aria-disabled="true"';
@@ -4854,14 +4982,18 @@ function openGroupedReschedulePicker(row) {
   dialog.innerHTML = `
     <form method="dialog">
       <div class="dialog-head">
-        <h2>Select Session to Reschedule</h2>
+        <h2>${isScheduleLaterFlow ? 'Select Session to Schedule' : 'Select Session to Reschedule'}</h2>
         <button class="icon-btn" type="button" aria-label="Close">&times;</button>
       </div>
-      <p class="membership-copy user-reschedule-picker-copy">Choose one eligible session. Sessions outside the reschedule window are disabled.</p>
+      <p class="membership-copy user-reschedule-picker-copy">${
+        isScheduleLaterFlow
+          ? 'Choose one held session, then pick the date and time to put it back on your calendar.'
+          : 'Choose one eligible session. Sessions outside the reschedule window are disabled.'
+      }</p>
       <div class="user-reschedule-picker-list">${listHtml}</div>
       <div class="dialog-actions">
         <button class="btn btn-secondary" type="button" data-action="cancel">Cancel</button>
-        <button class="btn btn-primary" type="button" data-action="continue">Reschedule</button>
+        <button class="btn btn-primary" type="button" data-action="continue">${isScheduleLaterFlow ? 'Schedule' : 'Reschedule'}</button>
       </div>
     </form>
   `;
@@ -5027,9 +5159,10 @@ function getFilteredUserHistoryBookings(sourceBookings = state.bookings) {
     : bookings.filter((booking) => {
     const status = String(booking?.status || '').trim().toLowerCase();
     if (activeFilter === 'completed') return status === 'completed';
+    if (activeFilter === 'schedule_later') return status === 'schedule_later';
     if (activeFilter === 'cancelled') return status === 'cancelled';
     if (activeFilter === 'upcoming') {
-      if (status === 'completed' || status === 'cancelled') return false;
+      if (status === 'completed' || status === 'cancelled' || status === 'schedule_later') return false;
       return !isBookingSlotInPast(booking?.bookingDate, booking?.bookingTime);
     }
     return true;
@@ -5695,7 +5828,7 @@ function render() {
     elements.myBookingsFilterAll?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'all');
     elements.myBookingsFilterUpcoming?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'upcoming');
     elements.myBookingsFilterCompleted?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'completed');
-    elements.myBookingsFilterCancelled?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'cancelled');
+    elements.myBookingsFilterCancelled?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'schedule_later');
     if (elements.memberSessionCountValue) {
       const value = Number(state.memberSessionDisplayCount || 0);
       elements.memberSessionCountValue.textContent = value > 0 ? String(value) : 'All';
@@ -5894,7 +6027,7 @@ function getHydrogenMissedSessionsThisMembership() {
   const bookings = Array.isArray(state.bookings) ? state.bookings : [];
   return bookings.filter((booking) => {
     const status = String(booking.status || '').toLowerCase();
-    if (status === 'cancelled' || status === 'completed') return false;
+    if (status === 'cancelled' || status === 'completed' || status === 'schedule_later') return false;
     if (getBookingCategory(booking.serviceName) !== 'HYDROGEN SESSION') return false;
     if (!isBookingMissed(booking)) return false;
     if (!range?.startIso || !range?.endIso) return true;
@@ -5915,7 +6048,7 @@ function getUnifiedHydrogenTrackingSummary(bookings = state.bookings) {
   ).length;
   const upcomingSessions = hydrogenBookings.filter((booking) => {
     const status = String(booking?.status || '').toLowerCase();
-    if (status === 'completed' || status === 'cancelled') return false;
+    if (status === 'completed' || status === 'cancelled' || status === 'schedule_later') return false;
     return !isBookingSlotInPast(booking.bookingDate, booking.bookingTime);
   }).length;
   const totalSessions = hydrogenBookings.length;
@@ -8537,7 +8670,7 @@ function renderMembership() {
     elements.membershipStatSessions.textContent = Number.isFinite(sessions) ? String(sessions) : '0';
   }
   if (elements.membershipStatSessionsLabel) {
-    elements.membershipStatSessionsLabel.textContent = 'Membership Sessions';
+    elements.membershipStatSessionsLabel.textContent = active ? 'Membership Sessions' : 'Hydrogen Sessions';
   }
   if (elements.membershipStatMembersCard) {
     elements.membershipStatMembersCard.hidden = false;
@@ -9540,7 +9673,7 @@ function getAdminUserSessionsByFilter(bookings, filter = state.adminUserSessionF
   if (normalizedFilter === 'remaining') {
     return source.filter((booking) => {
       const status = String(booking?.status || '').trim().toLowerCase();
-      return status !== 'completed' && status !== 'cancelled' && !isBookingMissed(booking);
+      return status !== 'completed' && status !== 'cancelled' && status !== 'schedule_later' && !isBookingMissed(booking);
     });
   }
   if (normalizedFilter === 'missed') return source.filter(isBookingMissed);
@@ -9560,6 +9693,9 @@ function getUserRescheduleEligibility(row) {
   const status = String(booking?.status || '').trim().toLowerCase();
   if (status === 'completed' || status === 'cancelled') {
     return { allowed: false, message: 'Completed or cancelled bookings cannot be rescheduled.' };
+  }
+  if (status === 'schedule_later') {
+    return { allowed: true, message: '' };
   }
   const notesLower = String(booking?.notes || '').toLowerCase();
   const rescheduleCount = Number(booking?.rescheduleCount || 0);
@@ -9585,7 +9721,7 @@ function getUserRescheduleEligibility(row) {
 function isBookingMissed(booking) {
   const status = String(booking?.status || '').trim().toLowerCase();
   if (status === 'missed') return true;
-  if (status === 'completed' || status === 'cancelled') return false;
+  if (status === 'completed' || status === 'cancelled' || status === 'schedule_later') return false;
   const bookingStart = getBookingStartTime(booking);
   return Number.isFinite(bookingStart) && bookingStart < Date.now();
 }
@@ -9832,7 +9968,9 @@ function renderUserRows(bookings, membershipOrders = []) {
     const actions = document.createElement('div');
     actions.className = 'action-row';
 
-    const canEdit = !['completed', 'cancelled'].includes(String(row.status || '').toLowerCase());
+    const rowStatus = String(row.status || '').toLowerCase();
+    const canEdit = !['completed', 'cancelled'].includes(rowStatus);
+    const rescheduleLabel = rowStatus === 'schedule_later' ? 'Schedule' : 'Reschedule';
     const rescheduleEligibility = getUserRescheduleEligibility(row);
     if (canShowBookingInvoice(row)) {
       actions.append(createActionButton('Invoice', () => openBookingInvoice(row.booking?.id || row.id)));
@@ -9841,27 +9979,32 @@ function renderUserRows(bookings, membershipOrders = []) {
       const groupedRescheduleOptions = getGroupedHydrogenRescheduleOptions(row);
       const hasEligibleSession = groupedRescheduleOptions.some((item) => item.eligibility.allowed);
       if (hasEligibleSession) {
-        actions.append(createActionButton('Reschedule', () => handleUserRescheduleAction(row)));
+        actions.append(createActionButton(rescheduleLabel, () => handleUserRescheduleAction(row)));
       } else {
         const firstBlockedMessage = groupedRescheduleOptions.find((item) => !item.eligibility.allowed)?.eligibility?.message
           || 'No sessions are currently eligible for rescheduling.';
         actions.append(
-          createActionButton('Reschedule', () => {
+          createActionButton(rescheduleLabel, () => {
             showNotice({ title: 'Unable to reschedule', body: firstBlockedMessage });
           })
         );
       }
     } else if (canEdit && rescheduleEligibility.allowed) {
-      actions.append(createActionButton('Reschedule', () => handleUserRescheduleAction(row)));
+      actions.append(createActionButton(rescheduleLabel, () => handleUserRescheduleAction(row)));
     } else if (canEdit && rescheduleEligibility.message) {
       actions.append(
-        createActionButton('Reschedule', () => {
+        createActionButton(rescheduleLabel, () => {
           showNotice({ title: 'Unable to reschedule', body: rescheduleEligibility.message });
         })
       );
     }
-    if (String(row.status || '').toLowerCase() !== 'cancelled') {
-      actions.append(createActionButton('Cancel', () => changeStatus(row.id, 'cancelled')));
+    const rowNotesLower = String(row.booking?.notes || row.notes || '').toLowerCase();
+    const isPaidBookingRow = String(row.paymentStatus || row.booking?.paymentStatus || '').trim().toLowerCase() === 'paid';
+    const scheduleLaterAlreadyUsed = row.isGroupedHydrogen
+      ? !getGroupedHydrogenScheduleLaterOptions(row).some((item) => item.allowed)
+      : rowNotesLower.includes('moved to schedule later by user');
+    if (isPaidBookingRow && !scheduleLaterAlreadyUsed && !['cancelled', 'completed', 'schedule_later'].includes(rowStatus)) {
+      actions.append(createActionButton('Schedule Later', () => handleScheduleLaterAction(row)));
     }
 
     actionCell.appendChild(actions);
@@ -10020,7 +10163,7 @@ function buildHoldNotice(entries = []) {
 
 function buildUserRescheduleMissNotice(booking) {
   const status = String(booking?.status || '').trim().toLowerCase();
-  if (status === 'completed' || status === 'cancelled') return null;
+  if (status === 'completed' || status === 'cancelled' || status === 'schedule_later') return null;
   const eligibility = getUserRescheduleEligibility(booking);
   if (!eligibility.allowed) return null;
   return {
@@ -11848,7 +11991,7 @@ function findIvCooldownConflictClient(serviceName, bookingDate, excludeBookingId
   if (Number.isNaN(targetDate)) return null;
 
   return getCurrentContextBookings().find((booking) => {
-    if (booking.status === 'cancelled') return false;
+    if (['cancelled', 'schedule_later'].includes(String(booking.status || '').toLowerCase())) return false;
     if (booking.holdExpired) return false;
     if (excludeBookingId && String(booking.id) === String(excludeBookingId)) return false;
     if (excludeGroupId && String(booking.bookingGroupId || '') === String(excludeGroupId)) return false;
@@ -11865,7 +12008,7 @@ function findHydrogenDailyLimitConflictClient(slots = [], excludeGroupId = '') {
 
   const existingByDate = new Map();
   getCurrentContextBookings().forEach((booking) => {
-    if (booking.status === 'cancelled') return;
+    if (['cancelled', 'schedule_later'].includes(String(booking.status || '').toLowerCase())) return;
     if (booking.holdExpired) return;
     if (excludeGroupId && booking.bookingGroupId === excludeGroupId) return;
     if (getBookingCategory(booking.serviceName) !== 'HYDROGEN SESSION') return;
@@ -11935,7 +12078,7 @@ function hasHydrogenPackageAddOnOnDateClient(bookingDate, excludeGroupId = '') {
     if (booking.bookingDate !== targetDate) return false;
     if (!booking.bookingGroupId) return false;
     if (excludeGroupId && booking.bookingGroupId === excludeGroupId) return false;
-    if (booking.status === 'cancelled') return false;
+    if (['cancelled', 'schedule_later'].includes(String(booking.status || '').toLowerCase())) return false;
     if (booking.holdExpired) return false;
     return getBookingCategory(booking.serviceName) === 'IV ADD-ON';
   });
@@ -11947,7 +12090,7 @@ function hasStandaloneIvOnDateClient(bookingDate, excludeGroupId = '') {
 
   return getCurrentContextBookings().some((booking) => {
     if (booking.bookingDate !== targetDate) return false;
-    if (booking.status === 'cancelled') return false;
+    if (['cancelled', 'schedule_later'].includes(String(booking.status || '').toLowerCase())) return false;
     if (booking.holdExpired) return false;
     if (excludeGroupId && booking.bookingGroupId === excludeGroupId) return false;
     if (booking.bookingGroupId) return false;
@@ -12013,6 +12156,7 @@ function getHydrogenGroupBreakdown(hydrogenEntries, addOnEntries) {
 function summarizeGroupStatus(bookings) {
   const statuses = bookings.map((booking) => String(booking.status || '').toLowerCase());
   if (statuses.every((status) => status === 'cancelled')) return 'cancelled';
+  if (statuses.every((status) => status === 'schedule_later')) return 'schedule_later';
   if (statuses.some((status) => status === 'pending')) return 'pending';
   if (statuses.some((status) => status === 'booked')) return 'booked';
   if (statuses.some((status) => status === 'confirmed')) return 'confirmed';
@@ -12078,10 +12222,17 @@ function summarizeGroupPaymentStatus(bookings) {
   return 'unpaid';
 }
 
+function formatBookingStatusLabel(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'schedule_later') return 'Schedule Later';
+  return normalized || 'pending';
+}
+
 function statusCell(status, label = 'Status') {
   const td = document.createElement('td');
   td.dataset.label = label;
-  td.innerHTML = `<span class="status-chip status-${status}">${status}</span>`;
+  const normalized = String(status || 'pending').trim().toLowerCase();
+  td.innerHTML = `<span class="status-chip status-${escapeHtml(normalized)}">${escapeHtml(formatBookingStatusLabel(normalized))}</span>`;
   return td;
 }
 
@@ -12617,7 +12768,7 @@ function renderMyBookingsSessionTracking() {
   const upcomingCount = tracking.upcomingSessions;
   const upcomingBookings = hydrogenBookings.filter((booking) => {
     const bookingStatus = String(booking?.status || '').toLowerCase();
-    if (bookingStatus === 'completed' || bookingStatus === 'cancelled') return false;
+    if (bookingStatus === 'completed' || bookingStatus === 'cancelled' || bookingStatus === 'schedule_later') return false;
     return booking.bookingDate > todayKey ||
       (booking.bookingDate === todayKey && !isBookingSlotInPast(booking.bookingDate, booking.bookingTime));
   });

@@ -6853,11 +6853,11 @@ app.get(/.*/, (_req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-const HOST = '0.0.0.0';
+const HOST = normalizeEnvValue(process.env.HOST || '127.0.0.1');
+const BASE_PORT = Number(PORT) || 3000;
+const MAX_PORT_TRIES = 10;
 
-app.listen(PORT, HOST, () => {
-  console.log(`Server listening on http://localhost:${PORT}`);
-  console.log(`Server listening on http://127.0.0.1:${PORT}`);
+function logMailerConfiguration() {
   if (SENDGRID_API_KEY && SENDGRID_OTP_FROM_EMAIL && SENDGRID_BOOKING_FROM_EMAIL) {
     console.log(`SendGrid OTP mailer configured with sender ${SENDGRID_OTP_FROM_EMAIL}`);
     console.log(`SendGrid booking mailer configured with sender ${SENDGRID_BOOKING_FROM_EMAIL}`);
@@ -6866,7 +6866,39 @@ app.listen(PORT, HOST, () => {
       'SendGrid mailers are not fully configured. Check SENDGRID_API_KEY, SENDGRID_OTP_FROM_EMAIL, and SENDGRID_BOOKING_FROM_EMAIL.'
     );
   }
-});
+}
+
+function startServer(port, triesLeft = MAX_PORT_TRIES) {
+  const server = app.listen(port, HOST, () => {
+    const hostLabel = HOST === '0.0.0.0' ? 'localhost' : HOST;
+    console.log(`Server listening on http://${hostLabel}:${port}`);
+    if (hostLabel !== '127.0.0.1') {
+      console.log(`Server listening on http://127.0.0.1:${port}`);
+    }
+    if (port !== BASE_PORT) {
+      console.log(`Port ${BASE_PORT} was busy. Using fallback port ${port}.`);
+    }
+    logMailerConfiguration();
+  });
+
+  server.on('error', (error) => {
+    const code = String(error?.code || '');
+    if (code === 'EADDRINUSE' && triesLeft > 0) {
+      const nextPort = port + 1;
+      console.warn(`Port ${port} is in use. Retrying on ${nextPort}...`);
+      return startServer(nextPort, triesLeft - 1);
+    }
+    console.error('Server failed to start:', error?.message || error);
+  });
+
+  server.on('close', () => {
+    console.error('Server closed.');
+  });
+
+  return server;
+}
+
+startServer(BASE_PORT);
 
 function canAccessBooking(user, ownerId) {
   return user.role === 'admin' || user.id === Number(ownerId);

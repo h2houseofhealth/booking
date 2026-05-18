@@ -718,7 +718,7 @@
               <option value="IV SHOTS">Shots</option>
             </select>
           </label>
-          <label>
+          <label class="admin-calendar-service-field">
             Service
             <select id="adminCalendarService"></select>
           </label>
@@ -1344,6 +1344,33 @@
         <div class="dialog-actions">
           <button class="btn btn-secondary" type="button" id="cancelMembershipAddPersonBtn">Cancel</button>
           <button class="btn btn-primary" type="submit" id="saveMembershipAddPersonBtn">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="adminCalendarCustomerDialog" class="booking-dialog">
+      <form id="adminCalendarCustomerForm" method="dialog">
+        <div class="dialog-head">
+          <h2>Complete Customer Details</h2>
+          <button id="closeAdminCalendarCustomerDialogBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="form-grid">
+          <label>
+            Customer Name
+            <input id="adminCalendarModalCustomerName" type="text" maxlength="20" required />
+          </label>
+          <label>
+            Email Address
+            <input id="adminCalendarModalCustomerEmail" type="email" required />
+          </label>
+          <label>
+            Contact Number
+            <input id="adminCalendarModalCustomerPhone" type="tel" maxlength="10" inputmode="numeric" pattern="\d{10}" required />
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button id="cancelAdminCalendarCustomerDialogBtn" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="confirmAdminCalendarCustomerDialogBtn" class="btn btn-primary" type="submit">Confirm &amp; Book</button>
         </div>
       </form>
     </dialog>

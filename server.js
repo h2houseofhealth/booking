@@ -373,7 +373,7 @@ const corsOptions = {
       callback(null, true);
       return;
     }
-    if (ALLOWED_CORS_ORIGINS.includes(origin)) {
+    if (ALLOWED_CORS_ORIGINS.includes(origin) || isLocalDevOrigin(origin)) {
       callback(null, true);
       return;
     }
@@ -457,6 +457,18 @@ function normalizeOriginValue(value) {
   const normalized = normalizeEnvValue(value);
   if (!normalized) return '';
   return normalized.replace(/\/+$/, '');
+}
+
+function isLocalDevOrigin(origin) {
+  const normalized = normalizeOriginValue(origin);
+  if (!normalized) return false;
+  try {
+    const parsed = new URL(normalized);
+    const host = String(parsed.hostname || '').toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1';
+  } catch {
+    return false;
+  }
 }
 
 function deriveBookingSenderEmail(email) {

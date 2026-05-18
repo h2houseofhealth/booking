@@ -12,7 +12,8 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260508-1" />
+    <link rel="stylesheet" href="styles.css?v=20260427-5" />
+
   </head>
 
   <body class="auth-mode">
@@ -394,8 +395,9 @@
       <section id="adminTabNav" class="panel app-only admin-only user-tab-nav admin-tab-nav" aria-label="Admin navigation" hidden>
         <div class="user-tab-grid admin-tab-grid">
           <button id="adminTabCalendar" class="user-tab-btn" type="button">Calendar</button>
-          <button id="adminTabBookings" class="user-tab-btn" type="button">History</button>
-          <button id="adminTabSessions" class="user-tab-btn" type="button">Users Tracking</button>
+          <button id="adminTabBookings" class="user-tab-btn" type="button">Bookings</button>
+          <button id="adminTabSessions" class="user-tab-btn" type="button">Session Tracking</button>
+          <button id="adminTabHistory" class="user-tab-btn" type="button">History</button>
           <button id="adminTabCoupons" class="user-tab-btn" type="button">Coupons</button>
           <button id="adminTabMemberships" class="user-tab-btn" type="button">Memberships</button>
           <button id="adminTabRescheduled" class="user-tab-btn" type="button">Reschedule</button>
@@ -414,7 +416,7 @@
       <section id="membershipSection" class="panel app-only user-only" aria-label="Membership" hidden>
         <div class="panel-head membership-head">
           <div>
-            <h2 id="membershipSectionTitle">Membership Subscription</h2>
+            <h2>Membership Subscription</h2>
             <p id="memberFlowLabel" class="service-panel-lead"></p>
           </div>
           <p id="membershipStatusText" class="membership-status"></p>
@@ -428,6 +430,7 @@
             </div>
             <div class="dashboard-actions membership-quick-actions">
               <button id="membershipTakeMembershipBtn" class="btn btn-secondary" type="button" hidden>Become a member</button>
+              <button id="membershipQuickBookBtn" class="btn btn-primary" type="button">Book Hydrogen Session</button>
               <button id="membershipQuickAddPersonBtn" class="btn btn-secondary" type="button">Add Person</button>
               <button id="membershipQuickHistoryBtn" class="btn btn-secondary" type="button">View History</button>
             </div>
@@ -438,7 +441,7 @@
             />
           </div>
           <div class="membership-stat-grid">
-            <div class="membership-stat-card">
+            <button class="membership-stat-card" type="button">
               <span class="stat-icon stat-icon-session" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
                   <path d="M12 2.75c2.08 3.02 5.54 6.8 5.54 10.42A5.54 5.54 0 1 1 6.46 13.17C6.46 9.55 9.92 5.77 12 2.75Z" />
@@ -448,8 +451,8 @@
               <span id="membershipStatSessionsLabel" class="stat-label">Hydrogen Sessions</span>
               <strong id="membershipStatSessions">0</strong>
               <small id="membershipStatSessionsMeta">Included</small>
-            </div>
-            <button id="membershipStatMembersCard" class="membership-stat-card" type="button">
+            </button>
+            <button class="membership-stat-card" type="button">
               <span class="stat-icon stat-icon-members" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
                   <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
@@ -462,7 +465,7 @@
               <strong id="membershipStatMembers">0</strong>
               <small id="membershipStatMembersMeta">Covered</small>
             </button>
-            <button id="membershipStatValidCard" class="membership-stat-card" type="button">
+            <button class="membership-stat-card" type="button">
               <span class="stat-icon stat-icon-valid" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
                   <path d="M7 3.5v3" />
@@ -476,7 +479,7 @@
               <strong id="membershipStatValid">-</strong>
               <small id="membershipStatValidMeta">Plan end</small>
             </button>
-            <button id="membershipStatExtraCard" class="membership-stat-card" type="button">
+            <button class="membership-stat-card" type="button">
               <span class="stat-icon stat-icon-session" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
                   <path d="M12 5v14" />
@@ -511,44 +514,14 @@
                   </div>
                 </div>
                 <div class="progress-cluster">
-                  <div id="membershipTopUpMetrics">
-                    <div class="progress-ring" id="topupProgressRing">
-                      <span id="topupProgressText">0%</span>
-                    </div>
-                    <div class="progress-info">
-                      <strong id="membershipTopUpCount">0 of 0</strong>
-                      <p class="progress-sub">Purchased</p>
-                      <div class="progress-mini">
-                        <span id="topupRemainingSessions">0</span>
-                        <small>remaining</small>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="progress-flex progress-flex-secondary">
-                <div class="progress-cluster">
-                  <div class="progress-ring progress-ring-sm" id="therapyProgressRing">
-                    <span id="therapyProgressText">0%</span>
+                  <div class="progress-ring" id="topupProgressRing">
+                    <span id="topupProgressText">0%</span>
                   </div>
                   <div class="progress-info">
-                    <strong id="therapyUsageCount">0 of 0</strong>
-                    <p class="progress-sub">Therapies</p>
+                    <strong id="membershipTopUpCount">0 of 0</strong>
+                    <p class="progress-sub">Purchased</p>
                     <div class="progress-mini">
-                      <span id="therapyRemainingSessions">0</span>
-                      <small>remaining</small>
-                    </div>
-                  </div>
-                </div>
-                <div class="progress-cluster">
-                  <div class="progress-ring progress-ring-sm" id="shotsProgressRing">
-                    <span id="shotsProgressText">0%</span>
-                  </div>
-                  <div class="progress-info">
-                    <strong id="shotsUsageCount">0 of 0</strong>
-                    <p class="progress-sub">Shots</p>
-                    <div class="progress-mini">
-                      <span id="shotsRemainingSessions">0</span>
+                      <span id="topupRemainingSessions">0</span>
                       <small>remaining</small>
                     </div>
                   </div>
@@ -588,10 +561,6 @@
               <span class="membership-highlight-kicker">Upcoming</span>
               <h4 id="membershipNextSessionTitle">No hydrogen sessions scheduled</h4>
               <p id="membershipNextSessionMeta" class="membership-copy"></p>
-              <div class="service-sticky-actions">
-                <button id="membershipCardScheduleBtn" class="btn btn-primary" type="button">Schedule Hydrogen Session</button>
-                <button id="membershipCardTopUpBtn" class="btn btn-secondary" type="button">Buy Additional</button>
-              </div>
             </div>
             <div id="membershipPeopleCard" class="membership-progress-card membership-people-card" hidden>
               <div class="membership-progress-head">
@@ -666,7 +635,6 @@
           <div class="experience-card-left">
             <div class="experience-card-title">Demo Hydrogen Session</div>
             <div class="experience-card-desc">30 min consultation + hydrogen session</div>
-            <div id="experienceCardPrice" class="experience-card-desc"><strong>Rs. 4,000</strong></div>
           </div>
           <div class="experience-card-right">
             <button id="experienceBookBtn" class="experience-card-btn" type="button">Add to Cart</button>
@@ -689,7 +657,7 @@
         <div class="panel-head admin-calendar-head">
           <div>
             <h2>Admin Calendar</h2>
-            <p class="membership-copy">View open slots, book for users, and track customer history.</p>
+            <p class="membership-copy">View open slots, book for users, and track customer sessions.</p>
           </div>
           <button id="adminCalendarRefreshBtn" class="btn btn-secondary" type="button">Refresh Slots</button>
         </div>
@@ -718,12 +686,11 @@
               <option value="IV SHOTS">Shots</option>
             </select>
           </label>
-          <label class="admin-calendar-service-field">
+          <label>
             Service
             <select id="adminCalendarService"></select>
           </label>
           <button id="adminCalendarBookConsultationBtn" class="btn btn-primary" type="button">Book Consultation</button>
-          <button id="adminCalendarClearDetailsBtn" class="btn btn-secondary" type="button">Clear</button>
         </div>
         <div class="admin-calendar-shell">
           <section class="admin-calendar-month-panel" aria-label="Availability calendar">
@@ -755,7 +722,7 @@
               <p id="adminCalendarStatus" class="membership-copy"></p>
             </div>
             <div id="adminCalendarSlots" class="admin-calendar-slots"></div>
-            <p id="adminCalendarEmpty" class="empty-state" hidden>No available slots for this date and category.</p>
+            <p id="adminCalendarEmpty" class="empty-state" hidden>No services available for this date and category.</p>
           </section>
         </div>
         <div id="adminCalendarTracker" class="admin-calendar-tracker"></div>
@@ -778,15 +745,7 @@
           <button id="myBookingsFilterAll" class="my-bookings-filter is-active" type="button" data-booking-filter="all">All Bookings</button>
           <button id="myBookingsFilterUpcoming" class="my-bookings-filter" type="button" data-booking-filter="upcoming">Upcoming</button>
           <button id="myBookingsFilterCompleted" class="my-bookings-filter" type="button" data-booking-filter="completed">Completed</button>
-          <button id="myBookingsFilterCancelled" class="my-bookings-filter" type="button" data-booking-filter="schedule_later">Schedule Later</button>
-        </div>
-        <div class="my-bookings-session-stepper user-only">
-          <span>Member sessions to show</span>
-          <div class="my-bookings-session-stepper-controls">
-            <button id="memberSessionCountDecBtn" class="btn btn-secondary" type="button">-</button>
-            <strong id="memberSessionCountValue">All</strong>
-            <button id="memberSessionCountIncBtn" class="btn btn-secondary" type="button">+</button>
-          </div>
+          <button id="myBookingsFilterCancelled" class="my-bookings-filter" type="button" data-booking-filter="cancelled">Cancelled</button>
         </div>
         <div id="myBookingsSummary" class="my-bookings-summary">
           <div class="my-bookings-stats-grid">
@@ -907,9 +866,9 @@
         </div>
       </section>
 
-      <section id="adminUserSessionsSection" class="panel app-only admin-only admin-user-session-panel" aria-label="Users tracking" hidden>
+      <section id="adminUserSessionsSection" class="panel app-only admin-only admin-user-session-panel" aria-label="Admin bookings" hidden>
         <div class="panel-head">
-          <h2>Users Tracking</h2>
+          <h2>Session Tracking</h2>
         </div>
         <div class="admin-section-toolbar">
           <p class="membership-copy">Search any user and open their session details from the cards below.</p>
@@ -922,7 +881,7 @@
         <p id="adminUserCardsEmpty" class="empty-state" hidden>No users found.</p>
       </section>
 
-      <section id="adminHistorySection" class="panel app-only admin-only" aria-label="Admin bookings" hidden>
+      <section id="adminHistorySection" class="panel app-only admin-only" aria-label="Admin bookings">
         <div class="panel-head">
           <h2 id="adminTableTitle">Today's Bookings</h2>
         </div>
@@ -965,31 +924,25 @@
       </section>
 
       <section id="adminAllBookingsSection" class="panel app-only admin-only" aria-label="Booking history" hidden>
-        <div class="panel-head admin-booking-history-head">
-          <div>
-            <h2 id="adminAllBookingTitle">History of All Bookings</h2>
-            <p id="adminAllBookingModeText" class="membership-copy">Paid bookings across all users.</p>
-          </div>
-          <button id="adminAllBookingModeToggleBtn" class="btn btn-secondary" type="button">Today's Bookings</button>
+        <div class="panel-head">
+          <h2>History of All Bookings</h2>
         </div>
         <div class="admin-section-toolbar admin-section-toolbar--filters">
+          <p class="membership-copy">All bookings across users. Use search to quickly find a user by name, phone, or email.</p>
           <label class="admin-inline-search admin-inline-search--date">
-            <span>Date</span>
-            <input id="adminAllBookingSlotDate" type="date" />
+            <span>From</span>
+            <input id="adminAllBookingStartDate" type="date" />
           </label>
           <label class="admin-inline-search admin-inline-search--date">
-            <span>Slot</span>
-            <select id="adminAllBookingSlotTime">
-              <option value="">All slots</option>
-            </select>
+            <span>To</span>
+            <input id="adminAllBookingEndDate" type="date" />
           </label>
-          <button id="adminAllBookingSlotResetBtn" class="btn btn-secondary" type="button">Clear</button>
+          <button id="adminAllBookingDateResetBtn" class="btn btn-secondary" type="button">Clear</button>
           <label class="admin-inline-search admin-inline-search--search">
             <span>Search</span>
             <input id="adminAllBookingSearch" type="text" placeholder="Search by name, email, phone number, service" />
           </label>
         </div>
-        <p id="adminAllBookingSlotSummary" class="membership-copy"></p>
         <div class="table-wrap">
           <table>
             <thead>
@@ -1028,23 +981,23 @@
       <section id="adminRescheduledSection" class="panel app-only admin-only" aria-label="Missed session rescheduling" hidden>
         <div class="panel-head">
           <h2>Reschedule</h2>
-          <button id="adminRescheduleViewToggleBtn" class="btn btn-secondary" type="button">Rescheduled</button>
         </div>
         <div class="admin-section-toolbar">
-          <p class="membership-copy">Bookings can be rescheduled until 15 minutes after the slot starts. Reschedule is allowed only once per booking. Customer OTP verification is required.</p>
-          <div class="admin-reschedule-date-filter">
-            <label class="admin-inline-search">
-              <span>Date</span>
-              <input id="adminRescheduleDate" type="date" />
-            </label>
-            <button id="adminRescheduleDateClearBtn" class="btn btn-secondary" type="button">Clear</button>
-          </div>
+          <p class="membership-copy">Bookings can be rescheduled before the slot starts, or within 20 minutes after a missed slot. Customer OTP verification is required.</p>
           <label class="admin-inline-search">
             <span>Search</span>
             <input id="adminRescheduleSearch" type="text" placeholder="Search by name, email, phone number, service" />
           </label>
         </div>
-        <div id="adminRescheduleSlotFilters" class="admin-reschedule-slot-filters" aria-label="Filter reschedule bookings by slot"></div>
+        <div class="admin-reschedule-date-filter">
+          <label class="admin-inline-search admin-inline-search--date">
+            <span>Date</span>
+            <input id="adminRescheduleDate" type="date" />
+          </label>
+          <button id="adminRescheduleDateClearBtn" class="btn btn-secondary" type="button">Clear</button>
+          <button id="adminRescheduleViewToggleBtn" class="btn btn-secondary" type="button">Rescheduled</button>
+        </div>
+        <div id="adminRescheduleSlotFilters" class="admin-reschedule-slot-filters" aria-label="Reschedule slot filters"></div>
         <div id="adminRescheduleList" class="admin-reschedule-list"></div>
         <p id="adminRescheduleEmptyState" class="empty-state">No bookings to reschedule or track.</p>
       </section>
@@ -1092,7 +1045,7 @@
                   </div>
                 </div>
                 <label>
-                  Discount %
+                  Discount
                   <input id="adminDiscountBulkPercent" type="number" min="1" max="100" step="1" placeholder="10" />
                 </label>
                 <button id="adminDiscountBulkApplyBtn" class="btn btn-primary" type="button">Apply Discount</button>
@@ -1111,7 +1064,7 @@
                 <input id="adminDiscountPhone" type="tel" placeholder="Enter phone number" />
               </label>
               <label>
-                Discount %
+                Discount 
                 <input id="adminDiscountPercent" type="number" min="1" max="100" step="1" placeholder="10" />
               </label>
               <button id="adminDiscountSubmitBtn" class="btn btn-secondary" type="submit">Apply Discount</button>
@@ -1126,10 +1079,6 @@
             <input id="adminCouponRecipientEmail" type="email" placeholder="user@example.com" />
           </label>
           <label>
-            Festival Name
-            <input id="adminCouponFestivalName" type="text" placeholder="Optional festival name" />
-          </label>
-          <label>
             Coupon Code
             <input id="adminCouponCode" type="text" placeholder="Auto-generate" />
           </label>
@@ -1138,7 +1087,7 @@
             <input id="adminCouponDescription" type="text" placeholder="Optional description" />
           </label>
           <label>
-            Discount %
+            Discount 
             <input id="adminCouponValue" type="number" min="1" max="100" step="1" placeholder="10" required />
           </label>
           <label>
@@ -1258,7 +1207,7 @@
       <div class="admin-user-dialog">
         <div class="dialog-head">
           <div>
-            <h2 id="adminUserSessionTitle">Users Tracking</h2>
+            <h2 id="adminUserSessionTitle">Session Tracking</h2>
             <p id="adminUserSessionMeta" class="membership-copy"></p>
           </div>
           <button id="adminUserSessionCloseBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
@@ -1334,7 +1283,7 @@
                 </label>
                 <label>
                   Contact Number
-                  <input id="membershipAddPersonContact" type="tel" required maxlength="10" inputmode="numeric" pattern="\d{10}" />
+                  <input id="membershipAddPersonContact" type="tel" required />
                 </label>
               </div>
             </div>
@@ -1344,33 +1293,6 @@
         <div class="dialog-actions">
           <button class="btn btn-secondary" type="button" id="cancelMembershipAddPersonBtn">Cancel</button>
           <button class="btn btn-primary" type="submit" id="saveMembershipAddPersonBtn">Save</button>
-        </div>
-      </form>
-    </dialog>
-
-    <dialog id="adminCalendarCustomerDialog" class="booking-dialog">
-      <form id="adminCalendarCustomerForm" method="dialog">
-        <div class="dialog-head">
-          <h2>Complete Customer Details</h2>
-          <button id="closeAdminCalendarCustomerDialogBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
-        </div>
-        <div class="form-grid">
-          <label>
-            Customer Name
-            <input id="adminCalendarModalCustomerName" type="text" maxlength="20" required />
-          </label>
-          <label>
-            Email Address
-            <input id="adminCalendarModalCustomerEmail" type="email" required />
-          </label>
-          <label>
-            Contact Number
-            <input id="adminCalendarModalCustomerPhone" type="tel" maxlength="10" inputmode="numeric" pattern="\d{10}" required />
-          </label>
-        </div>
-        <div class="dialog-actions">
-          <button id="cancelAdminCalendarCustomerDialogBtn" class="btn btn-secondary" type="button">Cancel</button>
-          <button id="confirmAdminCalendarCustomerDialogBtn" class="btn btn-primary" type="submit">Confirm &amp; Book</button>
         </div>
       </form>
     </dialog>
@@ -1412,22 +1334,6 @@
       </form>
     </dialog>
 
-    <dialog id="adminPaymentChoiceDialog" class="booking-dialog">
-      <div class="admin-payment-choice">
-        <div class="dialog-head">
-          <div>
-            <h2>Payment?</h2>
-            <p id="adminPaymentChoiceMeta" class="membership-copy"></p>
-          </div>
-          <button id="adminPaymentChoiceCloseBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
-        </div>
-        <div class="dialog-actions admin-payment-choice-actions">
-          <button id="adminPaymentChoiceCashBtn" class="btn btn-secondary" type="button">Paid in cash</button>
-          <button id="adminPaymentChoiceLinkBtn" class="btn btn-primary" type="button">Send payment link to mobile / mail</button>
-        </div>
-      </div>
-    </dialog>
-
     <dialog id="noticeDialog" class="notice-dialog">
       <div class="notice-shell">
         <div class="dialog-head">
@@ -1442,6 +1348,6 @@
     </dialog>
 
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-    <script src="app.js?v=21"></script>
+    <script src="app.js?v=19"></script>
   </body>
 </html>

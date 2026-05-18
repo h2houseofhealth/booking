@@ -13271,10 +13271,12 @@ img {
 .admin-reschedule-date-filter {
   display: flex;
   align-items: end;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
 .admin-reschedule-date-filter .admin-inline-search {
+  flex: 1 1 220px;
   min-width: 168px;
 }
 
@@ -13352,12 +13354,33 @@ img {
   }
 
   .admin-reschedule-date-filter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
     width: 100%;
   }
 
-  .admin-reschedule-date-filter .admin-inline-search {
-    flex: 1;
+  .admin-reschedule-date-filter > * {
     min-width: 0;
+    margin: 0;
+  }
+
+  .admin-reschedule-date-filter .admin-inline-search {
+    grid-column: 1;
+    width: 100%;
+  }
+
+  .admin-reschedule-date-filter .admin-inline-search input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-reschedule-date-filter #adminRescheduleDateClearBtn {
+    grid-column: 2;
+    justify-self: end;
+    width: auto;
+    min-width: 92px;
+    white-space: nowrap;
   }
 }
 
@@ -13454,6 +13477,26 @@ img {
     flex: unset !important;
     justify-content: flex-start !important;
     align-content: flex-start !important;
+  }
+
+  .admin-section-toolbar {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    gap: 10px !important;
+  }
+
+  .admin-section-toolbar .membership-copy {
+    flex: 0 0 auto !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+
+  #adminUserCards {
+    max-height: none !important;
+    overflow: visible !important;
+    padding-right: 0 !important;
   }
 
   #adminCalendarSection [hidden],

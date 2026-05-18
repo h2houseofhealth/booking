@@ -2184,7 +2184,7 @@ app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req, res) => {
         id: Number(row.id),
         code: row.code || '',
         description: row.description || '',
-        discountType: row.discountType || 'percent',
+        discountType: row.discountType || 'flat',
         discountValue: Number(row.discountValue || 0),
         appliesTo: row.appliesTo || 'all',
         maxRedemptions: row.maxRedemptions == null ? null : Number(row.maxRedemptions),
@@ -2209,7 +2209,7 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
   let code = normalizeCouponCode(req.body?.code);
   const description = String(req.body?.description || '').trim();
   const festivalName = String(req.body?.festivalName || '').trim();
-  const discountType = String(req.body?.discountType || 'percent').trim().toLowerCase();
+  const discountType = 'flat';
   const discountValue = Number(req.body?.discountValue || 0);
   const appliesTo = 'all';
   const recipientEmail = String(req.body?.recipientEmail || '').trim().toLowerCase();
@@ -2223,14 +2223,11 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
   if (!code) {
     code = generateUniqueCouponCode();
   }
-  if (!['percent', 'flat'].includes(discountType)) {
-    return res.status(400).json({ message: 'discountType must be percent or flat.' });
-  }
   if (!Number.isFinite(discountValue) || discountValue <= 0) {
     return res.status(400).json({ message: 'discountValue must be greater than 0.' });
   }
-  if (discountType === 'percent' && discountValue > 100) {
-    return res.status(400).json({ message: 'Percent coupons cannot exceed 100.' });
+  if (discountValue > 10000000) {
+    return res.status(400).json({ message: 'discountValue is too large.' });
   }
   if (recipientEmail && !isValidEmail(recipientEmail)) {
     return res.status(400).json({ message: 'recipientEmail must be a valid email.' });
@@ -2244,8 +2241,18 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
   if (maxRedemptions != null && (!Number.isInteger(maxRedemptions) || maxRedemptions <= 0)) {
     return res.status(400).json({ message: 'maxRedemptions must be a positive integer.' });
   }
-  if (expiresAt && Number.isNaN(new Date(expiresAt).getTime())) {
-    return res.status(400).json({ message: 'expiresAt must be a valid date.' });
+  if (expiresAt) {
+    const parsedExpiry = new Date(expiresAt);
+    if (Number.isNaN(parsedExpiry.getTime())) {
+      return res.status(400).json({ message: 'expiresAt must be a valid date.' });
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const expiryDateOnly = new Date(parsedExpiry);
+    expiryDateOnly.setHours(0, 0, 0, 0);
+    if (expiryDateOnly < today) {
+      return res.status(400).json({ message: 'expiresAt cannot be in the past.' });
+    }
   }
 
   const recipient = recipientEmail ? getUserByEmail(recipientEmail) : null;
@@ -7025,7 +7032,7 @@ function getCouponByCode(code) {
     id: Number(row.id),
     code: row.code || '',
     description: row.description || '',
-    discountType: row.discountType || 'percent',
+    discountType: row.discountType || 'flat',
     discountValue: Number(row.discountValue || 0),
     appliesTo: row.appliesTo || 'all',
     maxRedemptions: row.maxRedemptions == null ? null : Number(row.maxRedemptions),
@@ -7073,7 +7080,7 @@ function getCouponById(couponId) {
     id: Number(row.id),
     code: row.code || '',
     description: row.description || '',
-    discountType: row.discountType || 'percent',
+    discountType: row.discountType || 'flat',
     discountValue: Number(row.discountValue || 0),
     appliesTo: row.appliesTo || 'all',
     maxRedemptions: row.maxRedemptions == null ? null : Number(row.maxRedemptions),
@@ -9454,12 +9461,13 @@ async function sendCouponEmail({ toEmail, recipientName, code, discountValue, ap
 
   const appliesLabel = 'all payments';
   const expiryLabel = expiresAt ? formatDateAsDayMonthYear(expiresAt) : 'No expiry date';
-  const subject = `Your ${Number(discountValue || 0)}% off coupon`;
+  const discountLabel = `Rs. ${Number(discountValue || 0).toLocaleString('en-IN')} off`;
+  const subject = `Your ${discountLabel} coupon`;
   const greeting = recipientName ? `Hi ${recipientName},` : 'Hi,';
   const text =
     `${greeting}\n\n` +
     `Here is your single-use coupon code: ${String(code || '').trim()}\n` +
-    `Discount: ${Number(discountValue || 0)}% off (${appliesLabel})\n` +
+    `Discount: ${discountLabel} (${appliesLabel})\n` +
     `Expiry: ${expiryLabel}\n\n` +
     `Use this code at checkout. It can be redeemed only once.\n\n` +
     `If you did not expect this email, please ignore it.`;
@@ -9470,7 +9478,7 @@ async function sendCouponEmail({ toEmail, recipientName, code, discountValue, ap
       <div style="display: inline-block; padding: 10px 14px; border-radius: 8px; background: #f3f4f6; font-size: 20px; font-weight: 700; letter-spacing: 1px;">
         ${escapeHtml(String(code || '').trim())}
       </div>
-      <p style="margin: 12px 0 0;">Discount: ${escapeHtml(String(discountValue || 0))}% off (${escapeHtml(appliesLabel)})</p>
+      <p style="margin: 12px 0 0;">Discount: ${escapeHtml(discountLabel)} (${escapeHtml(appliesLabel)})</p>
       <p style="margin: 6px 0 0;">Expiry: ${escapeHtml(expiryLabel)}</p>
       <p style="margin: 12px 0 0;">Use this code at checkout. It can be redeemed only once.</p>
       <p style="margin: 12px 0 0; color: #6b7280;">If you did not expect this email, please ignore it.</p>

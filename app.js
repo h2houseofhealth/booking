@@ -93,6 +93,10 @@ const state = {
     startDate: '',
     endDate: '',
   },
+  adminAllBookingDateFilters: {
+    startDate: '',
+    endDate: '',
+  },
   adminAllBookingSlotFilters: {
     date: '',
     time: '',
@@ -608,6 +612,9 @@ const elements = {
   adminAllBookingTitle: document.getElementById('adminAllBookingTitle'),
   adminAllBookingModeText: document.getElementById('adminAllBookingModeText'),
   adminAllBookingModeToggleBtn: document.getElementById('adminAllBookingModeToggleBtn'),
+  adminAllBookingStartDate: document.getElementById('adminAllBookingStartDate'),
+  adminAllBookingEndDate: document.getElementById('adminAllBookingEndDate'),
+  adminAllBookingDateResetBtn: document.getElementById('adminAllBookingDateResetBtn'),
   adminAllBookingSlotDate: document.getElementById('adminAllBookingSlotDate'),
   adminAllBookingSlotTime: document.getElementById('adminAllBookingSlotTime'),
   adminAllBookingSlotResetBtn: document.getElementById('adminAllBookingSlotResetBtn'),
@@ -1739,6 +1746,21 @@ function attachEvents() {
     state.adminAllBookingSlotFilters.time = String(elements.adminAllBookingSlotTime?.value || '').trim();
     render();
   };
+  const onAdminAllBookingDateFilterChange = () => {
+    state.adminAllBookingDateFilters.startDate = String(elements.adminAllBookingStartDate?.value || '').trim();
+    state.adminAllBookingDateFilters.endDate = String(elements.adminAllBookingEndDate?.value || '').trim();
+    render();
+  };
+  elements.adminAllBookingStartDate?.addEventListener('change', onAdminAllBookingDateFilterChange);
+  elements.adminAllBookingEndDate?.addEventListener('change', onAdminAllBookingDateFilterChange);
+  elements.adminAllBookingDateResetBtn?.addEventListener('click', () => {
+    state.adminAllBookingDateFilters = { startDate: '', endDate: '' };
+    state.adminAllBookingSearch = '';
+    if (elements.adminAllBookingStartDate) elements.adminAllBookingStartDate.value = '';
+    if (elements.adminAllBookingEndDate) elements.adminAllBookingEndDate.value = '';
+    if (elements.adminAllBookingSearch) elements.adminAllBookingSearch.value = '';
+    render();
+  });
   elements.adminAllBookingSlotDate?.addEventListener('change', () => {
     state.adminAllBookingSlotFilters.date = String(elements.adminAllBookingSlotDate?.value || '').trim();
     state.adminAllBookingSlotFilters.time = '';
@@ -1781,6 +1803,9 @@ function attachEvents() {
     if (elements.adminRescheduleDate) elements.adminRescheduleDate.value = '';
     render();
   });
+  if (elements.adminCouponExpiresAt) {
+    elements.adminCouponExpiresAt.min = `${getTodayIsoDate()}T00:00`;
+  }
   elements.adminRescheduleViewToggleBtn?.addEventListener('click', () => {
     state.adminRescheduleView = state.adminRescheduleView === 'rescheduled' ? 'queue' : 'rescheduled';
     state.adminRescheduleOtpRequested = {};
@@ -5463,23 +5488,33 @@ function getFilteredAdminPaymentPendingBookings(bookings = state.bookings) {
 
 function clearAdminAllBookingSlotFilters() {
   state.adminAllBookingSlotFilters = { date: '', time: '' };
+  state.adminAllBookingDateFilters = { startDate: '', endDate: '' };
+  if (elements.adminAllBookingStartDate) elements.adminAllBookingStartDate.value = '';
+  if (elements.adminAllBookingEndDate) elements.adminAllBookingEndDate.value = '';
   if (elements.adminAllBookingSlotDate) elements.adminAllBookingSlotDate.value = '';
   if (elements.adminAllBookingSlotTime) elements.adminAllBookingSlotTime.value = '';
 }
 
 function getFilteredAdminAllBookings(bookings = state.bookings) {
   const query = String(state.adminAllBookingSearch || '').trim().toLowerCase();
-  const mode = String(state.adminAllBookingViewMode || 'history').trim().toLowerCase();
-  const selectedDate = mode === 'today' ? getTodayIsoDate() : String(state.adminAllBookingSlotFilters?.date || '').trim();
-  const selectedTime = String(state.adminAllBookingSlotFilters?.time || '').trim();
-  const baseBookings = mode === 'today' ? getAdminPaidTodayBookings(bookings) : getAdminHistoryBookings(bookings);
-  const history = baseBookings.filter((booking) => {
-    if (selectedDate && String(booking?.bookingDate || '').trim() !== selectedDate) return false;
+  const filtered = getAdminHistoryBookings(bookings).filter((booking) => {
+    if (
+      !isIsoDateWithinRange(
+        booking?.bookingDate,
+        state.adminAllBookingDateFilters?.startDate,
+        state.adminAllBookingDateFilters?.endDate
+      )
+    ) {
+      return false;
+    }
+    const selectedTime = String(state.adminAllBookingSlotFilters?.time || '').trim();
     if (selectedTime && normalizeSlotStartTime(booking?.bookingTime) !== selectedTime) return false;
+    const selectedDate = String(state.adminAllBookingSlotFilters?.date || '').trim();
+    if (selectedDate && String(booking?.bookingDate || '').trim() !== selectedDate) return false;
     return true;
   });
-  if (!query) return history.length > 300 ? history.slice(0, 10) : history;
-  return history.filter((booking) => {
+  if (!query) return filtered.length > 300 ? filtered.slice(0, 10) : filtered;
+  return filtered.filter((booking) => {
     const haystack = [booking?.clientName, booking?.clientEmail, booking?.clientMobile, booking?.serviceName]
       .join(' ')
       .toLowerCase();
@@ -5512,6 +5547,8 @@ function renderAdminAllBookingControls(bookings = state.bookings) {
   const isTodayMode = mode === 'today';
   const selectedDate = isTodayMode ? getTodayIsoDate() : String(state.adminAllBookingSlotFilters?.date || '').trim();
   const selectedTime = String(state.adminAllBookingSlotFilters?.time || '').trim();
+  const startDate = String(state.adminAllBookingDateFilters?.startDate || '').trim();
+  const endDate = String(state.adminAllBookingDateFilters?.endDate || '').trim();
   if (isTodayMode && state.adminAllBookingSlotFilters?.date !== selectedDate) {
     state.adminAllBookingSlotFilters.date = selectedDate;
   }
@@ -5529,6 +5566,12 @@ function renderAdminAllBookingControls(bookings = state.bookings) {
   }
   if (elements.adminAllBookingSlotDate && elements.adminAllBookingSlotDate.value !== selectedDate) {
     elements.adminAllBookingSlotDate.value = selectedDate;
+  }
+  if (elements.adminAllBookingStartDate && elements.adminAllBookingStartDate.value !== startDate) {
+    elements.adminAllBookingStartDate.value = startDate;
+  }
+  if (elements.adminAllBookingEndDate && elements.adminAllBookingEndDate.value !== endDate) {
+    elements.adminAllBookingEndDate.value = endDate;
   }
 
   const slotCounts = getAdminAllBookingSlotCounts(bookings);
@@ -11715,10 +11758,7 @@ function renderAdminCoupons() {
   items.forEach((item) => {
     const row = document.createElement('article');
     row.className = 'admin-discount-card';
-    const discountLabel =
-      item.discountType === 'flat'
-        ? `Rs. ${Number(item.discountValue || 0).toLocaleString('en-IN')} off`
-        : `${Number(item.discountValue || 0)}% off`;
+    const discountLabel = `Rs. ${Number(item.discountValue || 0).toLocaleString('en-IN')} off`;
     const maxRedemptions = item.maxRedemptions == null ? '∞' : String(item.maxRedemptions);
     const expiresText = item.expiresAt ? formatDateOnly(item.expiresAt) : 'No expiry';
     const recipientLabel = item.recipientEmail
@@ -11791,8 +11831,25 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
     showNotice({ title: 'Notice', body: 'Recipient email is required to send a coupon.' });
     return;
   }
-  if (!Number.isFinite(discountValue) || discountValue <= 0 || discountValue > 100) {
-    showNotice({ title: 'Notice', body: 'Enter a valid discount percentage between 1 and 100.' });
+  if (!Number.isFinite(discountValue) || discountValue <= 0) {
+    showNotice({ title: 'Notice', body: 'Enter a valid fixed discount amount greater than 0.' });
+    return;
+  }
+  if (expiresAt) {
+    const expiresDate = new Date(expiresAt);
+    if (Number.isNaN(expiresDate.getTime())) {
+      showNotice({ title: 'Notice', body: 'Enter a valid coupon expiry date and time.' });
+      return;
+    }
+    const todayKey = getTodayIsoDate();
+    const expiryDateKey = expiresAt.slice(0, 10);
+    if (expiryDateKey < todayKey) {
+      showNotice({ title: 'Notice', body: 'Coupon expiry date cannot be in the past.' });
+      return;
+    }
+  }
+  if (Number(discountValue) > 10000000) {
+    showNotice({ title: 'Notice', body: 'Enter a reasonable fixed discount amount.' });
     return;
   }
   if (!code) {
@@ -11820,7 +11877,7 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
       body: JSON.stringify({
         code,
         description,
-        discountType: 'percent',
+        discountType: 'flat',
         discountValue,
         appliesTo,
         festivalName,

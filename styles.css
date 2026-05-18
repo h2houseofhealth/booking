@@ -3121,9 +3121,14 @@ h1, h2, h3 {
 
 .admin-calendar-controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 0.8rem;
   margin-bottom: 0.8rem;
+}
+
+.admin-calendar-service-field {
+  grid-column: span 2;
+  min-width: 0;
 }
 
 .admin-calendar-controls label {
@@ -3141,10 +3146,32 @@ h1, h2, h3 {
   min-width: 0;
 }
 
+#adminCalendarService {
+  min-height: 2.6rem;
+  font-size: 0.92rem;
+}
+
 .admin-calendar-controls button {
   align-self: end;
   justify-self: stretch;
   width: 100%;
+}
+
+#adminCalendarBookConsultationBtn,
+#adminCalendarClearDetailsBtn {
+  background: linear-gradient(135deg, var(--terracotta), var(--terracotta-deep));
+  color: #fff;
+  border: 1px solid rgba(147, 70, 38, 0.26);
+  border-radius: 30px;
+  height: 2.6rem;
+  padding: 10px 18px;
+  box-shadow: 0 12px 28px rgba(201, 106, 45, 0.28);
+}
+
+#adminCalendarBookConsultationBtn:hover,
+#adminCalendarClearDetailsBtn:hover {
+  background: linear-gradient(135deg, #d3753b, #8d3f21);
+  box-shadow: 0 16px 34px rgba(201, 106, 45, 0.34);
 }
 
 .admin-calendar-shell {
@@ -3177,14 +3204,21 @@ h1, h2, h3 {
 .admin-calendar-month-head,
 .admin-calendar-day-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.55rem;
   margin-bottom: 0.55rem;
 }
 
+.admin-calendar-month-head > div,
+.admin-calendar-day-head > div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
 .admin-calendar-kicker {
-  margin: 0 0 0.2rem;
+  margin: 0;
   font-size: 0.64rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -3196,7 +3230,8 @@ h1, h2, h3 {
 .admin-calendar-day-head h3 {
   margin: 0;
   font-size: 0.94rem;
-  line-height: 1.15;
+  line-height: 1.25;
+  padding-top: 0.05rem;
 }
 
 .admin-calendar-weekdays {
@@ -3217,7 +3252,7 @@ h1, h2, h3 {
 
 .admin-calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(42px, 1fr));
   gap: 0.2rem;
 }
 
@@ -12437,10 +12472,62 @@ img {
 :root {
   --terracotta: #c96a2d;
   --terracotta-deep: #934626;
+  --terracotta-brand-primary: #A34A33;
+  --terracotta-brand-hover: #8A3E2A;
   --terracotta-mist: #f4e3d7;
   --beige-cream: #fbf5ee;
   --beige-warm: #f3e7da;
   --sand-line: rgba(132, 82, 49, 0.16);
+}
+
+#adminCalendarCustomerForm {
+  padding: 24px;
+}
+
+#adminCalendarCustomerForm .dialog-head {
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+#adminCalendarCustomerForm .dialog-head h2 {
+  line-height: 1.2;
+}
+
+#adminCalendarRefreshBtn {
+  background: var(--terracotta-brand-primary);
+  color: #fff;
+  border: 1px solid var(--terracotta-brand-primary);
+}
+
+#adminCalendarRefreshBtn:hover {
+  background: var(--terracotta-brand-hover);
+  border-color: var(--terracotta-brand-hover);
+  color: #fff;
+}
+
+.admin-calendar-slot-btn {
+  background: var(--terracotta-brand-primary);
+  color: #fff;
+  border: 1px solid var(--terracotta-brand-primary);
+}
+
+.admin-calendar-slot-btn:hover {
+  background: var(--terracotta-brand-hover);
+  border-color: var(--terracotta-brand-hover);
+  color: #fff;
+}
+
+#cancelAdminCalendarCustomerDialogBtn {
+  background: transparent;
+  color: var(--terracotta-brand-primary);
+  border: 1.5px solid var(--terracotta-brand-primary);
+  box-shadow: none;
+}
+
+#cancelAdminCalendarCustomerDialogBtn:hover {
+  background: rgba(163, 74, 51, 0.08);
+  color: var(--terracotta-brand-hover);
+  border-color: var(--terracotta-brand-hover);
 }
 
 #userTabNav,
@@ -13184,10 +13271,12 @@ img {
 .admin-reschedule-date-filter {
   display: flex;
   align-items: end;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
 .admin-reschedule-date-filter .admin-inline-search {
+  flex: 1 1 220px;
   min-width: 168px;
 }
 
@@ -13265,12 +13354,33 @@ img {
   }
 
   .admin-reschedule-date-filter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
     width: 100%;
   }
 
-  .admin-reschedule-date-filter .admin-inline-search {
-    flex: 1;
+  .admin-reschedule-date-filter > * {
     min-width: 0;
+    margin: 0;
+  }
+
+  .admin-reschedule-date-filter .admin-inline-search {
+    grid-column: 1;
+    width: 100%;
+  }
+
+  .admin-reschedule-date-filter .admin-inline-search input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-reschedule-date-filter #adminRescheduleDateClearBtn {
+    grid-column: 2;
+    justify-self: end;
+    width: auto;
+    min-width: 92px;
+    white-space: nowrap;
   }
 }
 
@@ -13303,6 +13413,131 @@ img {
 }
 
 @media (max-width: 768px) {
+  main.portal {
+    margin-top: 0 !important;
+    padding-top: 10px !important;
+  }
+
+  #adminTabNav,
+  .admin-tab-nav {
+    height: auto !important;
+    min-height: 0 !important;
+    margin-bottom: 8px !important;
+    padding-bottom: 0 !important;
+  }
+
+  #adminTabNav .user-tab-grid,
+  #adminTabNav .admin-tab-grid {
+    min-height: 0 !important;
+    height: auto !important;
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+    align-content: flex-start !important;
+  }
+
+  #adminCalendarSection,
+  #adminUserSessionsSection,
+  #adminMembershipSection,
+  #adminRescheduledSection,
+  #adminHistorySection,
+  #adminAllBookingsSection,
+  #adminCouponsSection {
+    height: auto !important;
+    min-height: 0 !important;
+    flex: unset !important;
+    justify-content: flex-start !important;
+    align-content: flex-start !important;
+    margin-top: 10px !important;
+    padding-top: 12px !important;
+  }
+
+  #adminCalendarSection .panel-head,
+  #adminUserSessionsSection .panel-head,
+  #adminMembershipSection .panel-head,
+  #adminRescheduledSection .panel-head,
+  #adminHistorySection .panel-head,
+  #adminAllBookingsSection .panel-head,
+  #adminCouponsSection .panel-head {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    align-content: flex-start !important;
+    justify-content: flex-start !important;
+  }
+
+  .admin-section-toolbar,
+  .admin-calendar-shell,
+  .admin-calendar-tracker-grid,
+  .admin-user-grid,
+  .admin-user-kpi-grid,
+  .admin-membership-circles,
+  .admin-reschedule-list,
+  .admin-calendar-slot-list {
+    height: auto !important;
+    min-height: 0 !important;
+    flex: unset !important;
+    justify-content: flex-start !important;
+    align-content: flex-start !important;
+  }
+
+  .admin-section-toolbar {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    gap: 10px !important;
+  }
+
+  .admin-section-toolbar .membership-copy {
+    flex: 0 0 auto !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+
+  #adminUserCards {
+    max-height: none !important;
+    overflow: visible !important;
+    padding-right: 0 !important;
+  }
+
+  #adminCalendarSection [hidden],
+  #adminUserSessionsSection [hidden],
+  #adminMembershipSection [hidden],
+  #adminRescheduledSection [hidden],
+  #adminHistorySection [hidden],
+  #adminAllBookingsSection [hidden],
+  #adminCouponsSection [hidden] {
+    display: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    height: 0 !important;
+  }
+
+  /* 7. Selected Date and Calendar Layout Header Fixes */
+  .admin-calendar-day-head {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 0;
+  }
+
+  .admin-calendar-day-head .admin-calendar-kicker,
+  .admin-calendar-day-head h3,
+  #adminCalendarStatus {
+    position: static;
+    margin-top: 0;
+    margin-bottom: 8px;
+    line-height: 1.4;
+  }
+
+  #adminCalendarStatus {
+    width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* 8. User Bookings Sections & Tables Mobile Responsiveness */
   #userBookingsSection .my-bookings-session-stepper {
     display: none;
   }
@@ -13391,7 +13626,7 @@ img {
   #userBookingsSection .dialog-actions {
     margin-top: 0.9rem;
   }
-}
+} /* Final Closing Bracket for Media Query */
 
 /* Final mobile-first rebuild for My Bookings cards */
 @media (max-width: 700px) {

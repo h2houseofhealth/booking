@@ -8797,6 +8797,7 @@ function normalizeMembershipMembers(rawMembers, expectedCount) {
     const place = String(item.place || '').trim();
     const email = String(item.email || '').trim().toLowerCase();
     const contactNumber = String(item.contactNumber || '').trim();
+    const contactDigits = contactNumber.replace(/\D+/g, '');
 
     if (!name || !place || !email || !contactNumber) {
       return { error: `Member ${i + 1}: name, place, email, and contact number are required.` };
@@ -8804,12 +8805,15 @@ function normalizeMembershipMembers(rawMembers, expectedCount) {
     if (!isValidEmail(email)) {
       return { error: `Member ${i + 1}: valid email is required.` };
     }
+    if (contactDigits.length !== 10) {
+      return { error: `Member ${i + 1}: contact number must be exactly 10 digits.` };
+    }
     if (seenEmails.has(email)) {
       return { error: `Member ${i + 1}: duplicate email entries are not allowed.` };
     }
     seenEmails.add(email);
 
-    normalized.push({ name, place, email, contactNumber });
+    normalized.push({ name, place, email, contactNumber: contactDigits });
   }
 
   return { data: normalized };

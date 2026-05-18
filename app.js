@@ -9134,7 +9134,7 @@ function openMembershipCheckoutDialog(plan, additionalPeople) {
         </label>
         <label>
           Contact Number
-          <input type="tel" required data-member-index="${i}" data-member-field="contactNumber" value="${escapeHtml(member.contactNumber)}" />
+          <input type="tel" required maxlength="10" inputmode="numeric" pattern="\\d{10}" data-member-index="${i}" data-member-field="contactNumber" value="${escapeHtml(member.contactNumber)}" />
         </label>
       </div>
     `;
@@ -9290,7 +9290,7 @@ function openMembershipAddPersonUpgradeCheckoutDialog() {
         </label>
         <label>
           Contact Number
-          <input type="tel" required data-member-index="${i}" data-member-field="contactNumber" value="${escapeHtml(member.contactNumber)}" />
+          <input type="tel" required maxlength="10" inputmode="numeric" pattern="\\d{10}" data-member-index="${i}" data-member-field="contactNumber" value="${escapeHtml(member.contactNumber)}" />
         </label>
       </div>
     `;

@@ -11990,6 +11990,8 @@ function getBookingDisplayAmountInr(booking) {
 }
 
 function canShowBookingInvoice(booking) {
+  const bookingStatus = String(booking?.status || booking?.booking?.status || '').trim().toLowerCase();
+  if (bookingStatus === 'schedule_later') return false;
   const bookingPaid = String(booking?.paymentStatus || 'unpaid').trim().toLowerCase() === 'paid';
   return bookingPaid && Number(getBookingRowAmountInr(booking) || 0) > 0;
 }
@@ -12332,6 +12334,15 @@ function showNotice({ title = 'Notice', body = '', type = '' } = {}) {
   const normalizedTitle = String(title || 'Notice').trim() || 'Notice';
   const normalizedBody = normalizeNoticeBody(body);
   const normalizedType = normalizeNoticeType(type, normalizedTitle);
+  const noticeSignature = `${normalizedType}::${normalizedTitle}::${normalizedBody}`;
+  const now = Date.now();
+  const lastSignature = String(state._lastNoticeSignature || '');
+  const lastAt = Number(state._lastNoticeAt || 0);
+  if (lastSignature === noticeSignature && now - lastAt < 500) {
+    return;
+  }
+  state._lastNoticeSignature = noticeSignature;
+  state._lastNoticeAt = now;
 
   if (!elements.noticeDialog || !elements.noticeDialogTitle || !elements.noticeDialogBody) {
     alert([normalizedTitle, normalizedBody].filter(Boolean).join('\n\n'));
@@ -12345,6 +12356,10 @@ function showNotice({ title = 'Notice', body = '', type = '' } = {}) {
   } catch {}
 
   try {
+    if (elements.noticeDialog.open) {
+      // Dialog is already visible; updating content is enough and prevents duplicate popups.
+      return;
+    }
     if (typeof elements.noticeDialog.showModal === 'function') {
       elements.noticeDialog.showModal();
     } else {

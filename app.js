@@ -5997,6 +5997,20 @@ function getHydrogenSessionsUsedThisMembership() {
   }).length;
 }
 
+function getHydrogenSessionsCompletedThisMembership() {
+  const range = getCurrentMembershipIsoRange();
+  const bookings = Array.isArray(state.bookings) ? state.bookings : [];
+  return bookings.filter((booking) => {
+    if (getBookingCategory(booking.serviceName) !== 'HYDROGEN SESSION') return false;
+    if (String(booking.status || '').toLowerCase() !== 'completed') return false;
+    if (booking.holdExpired) return false;
+    if (!isMembershipCoveredHydrogenBooking(booking)) return false;
+    if (!range?.startIso || !range?.endIso) return true;
+    const bookingDate = String(booking.bookingDate || '').trim();
+    return bookingDate >= range.startIso && bookingDate <= range.endIso;
+  }).length;
+}
+
 function isBuyExtraHydrogenBooking(booking) {
   const category = getBookingCategory(booking?.serviceName);
   if (category !== 'HYDROGEN SESSION') return false;
@@ -6005,13 +6019,14 @@ function isBuyExtraHydrogenBooking(booking) {
   }
   const paymentReference = String(booking?.paymentReference || '').trim().toLowerCase();
   if (paymentReference === 'buy_extra') return true;
+  if (paymentReference === 'membership') return false;
   const notes = String(booking?.notes || '').toLowerCase();
   const match = notes.match(/hydrogen package\s+(\d+)\s*\+\s*extra\s*(\d+)/i);
   if (!match) return false;
   const packageSessions = Number(match[1] || 0);
   const extraSessions = Number(match[2] || 0);
   if (!Number.isFinite(packageSessions) || !Number.isFinite(extraSessions)) return false;
-  return extraSessions === 0 || packageSessions > 1;
+  return Boolean(paymentReference) && (extraSessions === 0 || packageSessions > 1);
 }
 
 function isChargeableHydrogenMembershipBooking(booking) {
@@ -6116,6 +6131,7 @@ function getMembershipHydrogenSessionSummary() {
       0
   );
   const usedSessions = active ? getHydrogenSessionsUsedThisMembership() : 0;
+  const completedSessions = active ? getHydrogenSessionsCompletedThisMembership() : 0;
   const missedSessions = active ? getHydrogenMissedSessionsThisMembership() : 0;
   const remainingSessions = totalSessions > 0 ? Math.max(0, totalSessions - usedSessions) : 0;
 
@@ -6123,9 +6139,10 @@ function getMembershipHydrogenSessionSummary() {
     active,
     totalSessions,
     usedSessions,
+    completedSessions,
     missedSessions,
     remainingSessions,
-    usagePercent: totalSessions > 0 ? Math.min(100, Math.round((usedSessions / totalSessions) * 100)) : 0,
+    usagePercent: totalSessions > 0 ? Math.min(100, Math.round((completedSessions / totalSessions) * 100)) : 0,
   };
 }
 
@@ -6496,8 +6513,8 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
       ? Math.max(0, serviceReportedRemainingSessions)
       : Math.max(0, Number(hydrogenSummary.remainingSessions || 0))
     : 0;
-  const usedIncludedSessions = Math.max(0, totalIncludedSessions - remainingIncludedSessions);
-  const nextIncludedSessionNumber = Math.min(totalIncludedSessions, usedIncludedSessions + 1);
+  const completedIncludedSessions = Math.max(0, Number(hydrogenSummary.completedSessions || 0));
+  const nextIncludedSessionNumber = Math.min(totalIncludedSessions, completedIncludedSessions + 1);
   const membershipScheduleTrimActive = Boolean(hydrogenSummary.active && isCurrentUserMembershipActive());
   const scheduleMinSessionNumber = membershipScheduleTrimActive ? Math.max(1, nextIncludedSessionNumber) : 1;
   const maxMembershipSessionCount = Math.max(1, remainingIncludedSessions);
@@ -8678,8 +8695,11 @@ function renderMembership() {
       String(booking.status || '').toLowerCase() === 'completed' &&
       String(booking.paymentStatus || '').toLowerCase() === 'paid'
   ).length;
+  const hydrogenSessionSummary = getMembershipHydrogenSessionSummary();
   if (elements.membershipStatSessions) {
-    const sessions = unifiedHydrogenTracking.totalSessions;
+    const sessions = active
+      ? Number(hydrogenSessionSummary.usedSessions || 0)
+      : unifiedHydrogenTracking.totalSessions;
     elements.membershipStatSessions.textContent = Number.isFinite(sessions) ? String(sessions) : '0';
   }
   if (elements.membershipStatSessionsLabel) {
@@ -8712,12 +8732,11 @@ function renderMembership() {
     elements.membershipStatValidMeta.textContent = active ? 'Plan end' : '/ session';
   }
 
-  const hydrogenSessionSummary = getMembershipHydrogenSessionSummary();
   const membershipRange = getCurrentMembershipIsoRange();
   const extraSessionsBought = active
     ? getHydrogenExtraSessionsThisMembership()
     : 0;
-  const topUpUsedSessions = active
+  const topUpCompletedSessions = active
     ? allBookings.filter(
         (booking) =>
           !booking.holdExpired &&
@@ -8727,8 +8746,8 @@ function renderMembership() {
           isBookingWithinMembershipRange(booking, membershipRange)
       ).length
     : 0;
-  const topUpRemainingSessions = Math.max(0, extraSessionsBought - topUpUsedSessions);
-  const topUpUsagePercent = extraSessionsBought > 0 ? Math.min(100, Math.round((topUpUsedSessions / extraSessionsBought) * 100)) : 0;
+  const topUpRemainingSessions = Math.max(0, extraSessionsBought - topUpCompletedSessions);
+  const topUpUsagePercent = extraSessionsBought > 0 ? Math.min(100, Math.round((topUpCompletedSessions / extraSessionsBought) * 100)) : 0;
   if (elements.membershipStatExtraLabel) {
     elements.membershipStatExtraLabel.textContent = active ? 'Top Up Sessions' : 'Become a Member';
   }
@@ -8750,6 +8769,9 @@ function renderMembership() {
     : unifiedHydrogenTracking.totalSessions;
   const usedSessions = active
     ? Number(hydrogenSessionSummary.usedSessions || 0)
+    : unifiedHydrogenTracking.completedSessions;
+  const completedSessions = active
+    ? Number(hydrogenSessionSummary.completedSessions || 0)
     : unifiedHydrogenTracking.completedSessions;
   const missedSessions = active ? Number(hydrogenSessionSummary.missedSessions || 0) : 0;
   const remainingSessions = active
@@ -8805,7 +8827,7 @@ function renderMembership() {
     topupProgressText.textContent = `${topUpUsagePercent}%`;
   }
   if (membershipTopUpCount) {
-    membershipTopUpCount.textContent = `${topUpUsedSessions} of ${extraSessionsBought}`;
+    membershipTopUpCount.textContent = `${topUpCompletedSessions} of ${extraSessionsBought}`;
   }
   if (topupRemainingSessionsText) {
     topupRemainingSessionsText.textContent = String(topUpRemainingSessions);
@@ -8852,7 +8874,7 @@ function renderMembership() {
     elements.membershipUsageBar.style.width = `${usagePercent}%`;
   }
   if (elements.membershipUsageNote) {
-    elements.membershipUsageNote.textContent = `${usedSessions} completed • ${remainingSessions} booked/scheduled remaining${
+    elements.membershipUsageNote.textContent = `${completedSessions} completed • ${remainingSessions} booked/scheduled remaining${
       active ? ` • Extra sessions bought: ${extraSessionsBought}` : ''
     }${missedSessions > 0 ? ` • Missed hydrogen sessions: ${missedSessions}` : ''}`;
   }
@@ -9659,7 +9681,10 @@ function isAdminHydrogenSessionBooking(booking) {
 function isAdminTopUpSessionBooking(booking) {
   if (!isAdminHydrogenSessionBooking(booking)) return false;
   if (Number(booking?.isTopUpSession || 0) === 1) return true;
-  return String(booking?.paymentReference || '').trim().toLowerCase() === 'buy_extra';
+  const paymentReference = String(booking?.paymentReference || '').trim().toLowerCase();
+  if (paymentReference === 'buy_extra') return true;
+  if (!paymentReference || paymentReference === 'membership') return false;
+  return /hydrogen package\s+\d+\s*\+\s*extra\s*\d+/i.test(String(booking?.notes || ''));
 }
 
 function isAdminMemberSessionBooking(booking) {

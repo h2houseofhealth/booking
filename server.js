@@ -3885,7 +3885,14 @@ app.post('/api/hydrogen/verify', requireAuth, async (req, res) => {
     `UPDATE bookings
      SET payment_status = 'paid',
          paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
-         payment_reference = ?,
+         payment_reference = CASE
+           WHEN LOWER(COALESCE(payment_reference, '')) IN ('membership', 'buy_extra') THEN payment_reference
+           ELSE ?
+         END,
+         is_topup_session = CASE
+           WHEN LOWER(COALESCE(payment_reference, '')) = 'buy_extra' THEN 1
+           ELSE COALESCE(is_topup_session, 0)
+         END,
          payment_method = CASE WHEN ? <> '' THEN ? ELSE payment_method END,
          status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
      WHERE user_id = ?
@@ -6395,7 +6402,15 @@ app.post('/api/payments/verify-cart', requireAuth, async (req, res) => {
      SET payment_status = 'paid',
          paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
          payment_order_id = CASE WHEN ? <> '' THEN ? ELSE payment_order_id END,
-         payment_reference = CASE WHEN ? <> '' THEN ? ELSE payment_reference END,
+         payment_reference = CASE
+           WHEN LOWER(COALESCE(payment_reference, '')) IN ('membership', 'buy_extra') THEN payment_reference
+           WHEN ? <> '' THEN ?
+           ELSE payment_reference
+         END,
+         is_topup_session = CASE
+           WHEN LOWER(COALESCE(payment_reference, '')) = 'buy_extra' THEN 1
+           ELSE COALESCE(is_topup_session, 0)
+         END,
          payment_method = CASE WHEN ? <> '' THEN ? ELSE payment_method END,
          status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
      WHERE user_id = ?
@@ -10308,7 +10323,12 @@ function migrate() {
   db.exec(`
     UPDATE bookings
     SET is_topup_session = 1
-    WHERE LOWER(COALESCE(payment_reference, '')) = 'buy_extra';
+    WHERE LOWER(COALESCE(payment_reference, '')) = 'buy_extra'
+       OR (
+         booking_group_id LIKE 'hydrogen_%'
+         AND LOWER(COALESCE(notes, '')) LIKE 'hydrogen package%'
+         AND LOWER(COALESCE(payment_reference, '')) NOT IN ('', 'membership', 'cash')
+       );
 
     UPDATE bookings
     SET reschedule_count = CASE

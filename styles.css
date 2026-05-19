@@ -786,12 +786,28 @@ h1, h2, h3 {
 }
 
 .progress-flex.is-single {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   justify-items: center;
 }
 
-.progress-flex.is-single .progress-cluster {
+.progress-flex.is-single .progress-cluster:first-child {
+  grid-column: 1 / -1;
   justify-content: center;
+}
+
+.progress-flex.is-single .progress-cluster:not(:first-child) {
+  justify-content: center;
+}
+
+.progress-flex.is-single .progress-cluster:not(:first-child) .progress-ring {
+  width: 90px;
+  height: 90px;
+  font-size: 15px;
+}
+
+.progress-flex.is-single .progress-cluster:not(:first-child) .progress-ring::after {
+  width: 60px;
+  height: 60px;
 }
 
 .progress-cluster {
@@ -13395,15 +13411,19 @@ img {
 }
 
 /* Non-member dashboard stat card order */
-#membershipDashboard.is-non-member #membershipStatValidCard {
-  order: 2;
-}
-
 #membershipDashboard.is-non-member #membershipStatMembersCard {
-  order: 3;
+  order: 1;
 }
 
 #membershipDashboard.is-non-member #membershipStatExtraCard {
+  order: 2;
+}
+
+#membershipDashboard.is-non-member #membershipStatValidCard {
+  order: 3;
+}
+
+#membershipDashboard.is-non-member #membershipStatBecomeCard {
   order: 4;
 }
 

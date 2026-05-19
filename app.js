@@ -430,6 +430,7 @@ const elements = {
   membershipWelcomeName: document.getElementById('membershipWelcomeName'),
   membershipDashboardStatus: document.getElementById('membershipDashboardStatus'),
   membershipTakeMembershipBtn: document.getElementById('membershipTakeMembershipBtn'),
+  membershipQuickBookBtn: document.getElementById('membershipQuickBookBtn'),
   membershipStatSessionsLabel: document.getElementById('membershipStatSessionsLabel'),
   membershipStatSessions: document.getElementById('membershipStatSessions'),
   membershipStatSessionsMeta: document.getElementById('membershipStatSessionsMeta'),
@@ -445,6 +446,7 @@ const elements = {
   membershipStatExtra: document.getElementById('membershipStatExtra'),
   membershipStatExtraMeta: document.getElementById('membershipStatExtraMeta'),
   membershipStatExtraCard: document.getElementById('membershipStatExtraCard'),
+  membershipStatBecomeCard: document.getElementById('membershipStatBecomeCard'),
   membershipUsageTitle: document.getElementById('membershipUsageTitle'),
   membershipUsageLabel: document.getElementById('membershipUsageLabel'),
   membershipUsageCount: document.getElementById('membershipUsageCount'),
@@ -1363,7 +1365,7 @@ function attachEvents() {
       elements.membershipBrowsePanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
-  elements.membershipStatExtraCard?.addEventListener('click', () => {
+  elements.membershipStatBecomeCard?.addEventListener('click', () => {
     if (isCurrentUserMembershipActive()) return;
     state.activeUserTab = 'membership';
     state.membershipBrowseVisible = true;
@@ -8814,6 +8816,9 @@ function renderMembership() {
 
   if (elements.membershipTakeMembershipBtn) {
     elements.membershipTakeMembershipBtn.hidden = active || state.membershipBrowseVisible;
+  }
+  if (elements.membershipQuickBookBtn) {
+    elements.membershipQuickBookBtn.hidden = !active;
   }
 
   const firstName = String(state.user?.name || 'Member').trim().split(/\s+/)[0] || 'Member';

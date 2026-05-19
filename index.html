@@ -496,63 +496,43 @@
             <div class="membership-progress-card">
               <div class="membership-progress-head">
                 <h4 id="membershipUsageTitle">Hydrogen Session Usage</h4>
-                <span id="membershipUsageLabel">0 of 0 used</span>
+                <span id="membershipUsageLabel" hidden>0 of 0 used</span>
               </div>
-              <div class="progress-flex">
-                <div class="progress-cluster">
-                  <div class="progress-ring" id="progressRing">
-                    <span id="progressText">0%</span>
+              <div class="usage-v2">
+                <div class="usage-v2-session-head">Membership Sessions</div>
+                <div id="membershipSessionBlocks" class="usage-v2-blocks" aria-label="Membership usage blocks"></div>
+                <div class="usage-v2-metrics">
+                  <div><strong id="membershipUsageCount">0</strong> Booked/Scheduled</div>
+                  <div><strong id="remainingSessions">0</strong> Available Later</div>
+                </div>
+                <hr class="usage-v2-sep" />
+                <div class="usage-v2-subhead">Add-ons & Extras</div>
+                <div class="usage-v2-addons-grid">
+                  <div class="usage-v2-addon-badge">
+                    <span>Top-up Sessions</span>
+                    <div id="membershipTopUpBlocks" class="usage-v2-mini-blocks"></div>
+                    <small><strong id="membershipTopUpCount">0</strong> remaining</small>
                   </div>
-                  <div class="progress-info">
-                    <strong id="membershipUsageCount">0 of 0</strong>
-                    <p class="progress-sub">Sessions used</p>
-                    <div class="progress-mini">
-                      <span id="remainingSessions">0</span>
-                      <small>remaining</small>
-                    </div>
+                  <div class="usage-v2-addon-badge">
+                    <span>IV Therapies</span>
+                    <div id="membershipTherapyBlocks" class="usage-v2-mini-blocks"></div>
+                    <small><strong id="therapyUsageCount">0</strong> remaining</small>
+                  </div>
+                  <div class="usage-v2-addon-badge">
+                    <span>IV Shots</span>
+                    <div id="membershipShotsBlocks" class="usage-v2-mini-blocks"></div>
+                    <small><strong id="shotsUsageCount">0</strong> available</small>
                   </div>
                 </div>
-                <div id="membershipTopUpMetrics" class="progress-cluster">
-                  <div class="progress-ring" id="topupProgressRing">
-                    <span id="topupProgressText">0%</span>
-                  </div>
-                  <div class="progress-info">
-                    <strong id="membershipTopUpCount">0 of 0</strong>
-                    <p class="progress-sub">Purchased</p>
-                    <div class="progress-mini">
-                      <span id="topupRemainingSessions">0</span>
-                      <small>remaining</small>
-                    </div>
-                  </div>
-                </div>
-                <div class="progress-cluster">
-                  <div class="progress-ring" id="therapyProgressRing">
-                    <span id="therapyProgressText">0%</span>
-                  </div>
-                  <div class="progress-info">
-                    <strong id="therapyUsageCount">0 of 0</strong>
-                    <p class="progress-sub">IV Therapies</p>
-                    <div class="progress-mini">
-                      <span id="therapyRemainingSessions">0</span>
-                      <small>remaining</small>
-                    </div>
-                  </div>
-                </div>
-                <div class="progress-cluster">
-                  <div class="progress-ring" id="shotsProgressRing">
-                    <span id="shotsProgressText">0%</span>
-                  </div>
-                  <div class="progress-info">
-                    <strong id="shotsUsageCount">0 of 0</strong>
-                    <p class="progress-sub">IV Shots</p>
-                    <div class="progress-mini">
-                      <span id="shotsRemainingSessions">0</span>
-                      <small>remaining</small>
-                    </div>
-                  </div>
+                <hr class="usage-v2-sep" />
+                <div class="usage-v2-subhead">Attendance History</div>
+                <div class="usage-v2-attendance">
+                  <div><strong id="attendanceCompleted">0</strong> Completed</div>
+                  <div><strong id="attendanceUpcoming">0</strong> Upcoming</div>
+                  <div><strong id="attendanceMissed">0</strong> Missed</div>
                 </div>
               </div>
-              <p id="membershipUsageNote" class="membership-copy"></p>
+              <p id="membershipUsageNote" class="membership-copy" hidden></p>
             </div>
             <div class="membership-calendar-card" aria-label="Monthly calendar">
               <div class="membership-calendar-head">

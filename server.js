@@ -5304,6 +5304,7 @@ app.get('/api/public/payments/booking', (req, res) => {
     .prepare(
       `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, service_name AS serviceName,
               booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus,
+              payment_reference AS paymentReference, is_topup_session AS isTopUpSession,
               created_at AS createdAt
        FROM bookings
        WHERE id = ?`
@@ -5324,6 +5325,7 @@ app.get('/api/public/payments/booking', (req, res) => {
         .prepare(
           `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, service_name AS serviceName,
                   booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus,
+                  payment_reference AS paymentReference, is_topup_session AS isTopUpSession,
                   created_at AS createdAt
            FROM bookings
            WHERE booking_group_id = ?
@@ -5399,6 +5401,7 @@ app.post('/api/public/payments/create-order', async (req, res) => {
   const booking = db
     .prepare(
       `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, status, payment_status AS paymentStatus,
+              payment_reference AS paymentReference, is_topup_session AS isTopUpSession,
               service_name AS serviceName, booking_date AS bookingDate, booking_time AS bookingTime,
               created_at AS createdAt
        FROM bookings
@@ -5435,7 +5438,8 @@ app.post('/api/public/payments/create-order', async (req, res) => {
     ? db
         .prepare(
           `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, service_name AS serviceName,
-                  booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus
+                  booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus,
+                  payment_reference AS paymentReference, is_topup_session AS isTopUpSession
            FROM bookings
            WHERE booking_group_id = ?
            ORDER BY booking_date, booking_time, id`
@@ -5759,6 +5763,7 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
 
   const booking = db.prepare(
     `SELECT b.id, b.user_id AS userId, b.booking_group_id AS bookingGroupId, b.status, b.payment_status AS paymentStatus,
+            b.payment_reference AS paymentReference, b.is_topup_session AS isTopUpSession,
             b.service_name AS serviceName, b.booking_date AS bookingDate, b.booking_time AS bookingTime,
             b.created_at AS createdAt
      FROM bookings b
@@ -5816,6 +5821,8 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
                   booking_time AS bookingTime,
                   status,
                   payment_status AS paymentStatus,
+                  payment_reference AS paymentReference,
+                  is_topup_session AS isTopUpSession,
                   created_at AS createdAt
            FROM bookings
            WHERE booking_group_id = ?
@@ -7954,6 +7961,32 @@ function buildHydrogenPackPricingSummary({
 
   const membershipBalance = getHydrogenFreeSessionBalance(Number(userId), user);
   if (membershipBalance.active) {
+    if (forceChargeable) {
+      const packagePriceInr = getEffectiveServicePriceInr(baseService, user);
+      const extraSessionPriceInr = getEffectiveServicePriceInr(singleSessionService, user);
+      const totalAmountInr =
+        Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * Number(extraSessions || 0) + addOnTotal;
+
+      return {
+        totalAmountInr,
+        summary: {
+          membershipActive: true,
+          freeSessionsApplied: 0,
+          chargeableHydrogenSessions: totalSessions,
+          memberSessionPriceInr: 0,
+          packageSessions: Number(packageSessions || 0),
+          extraSessions: Number(extraSessions || 0),
+          totalSessions,
+          packagePriceInr: Number(packagePriceInr || 0),
+          extraSessionPriceInr: Number(extraSessionPriceInr || 0),
+          addOnAmountInr: addOnTotal,
+          membershipSessionsRemaining: Number(membershipBalance.remaining || 0),
+          forceChargeable: true,
+          totalAmountInr,
+        },
+      };
+    }
+
     const freeSessionsApplied = forceChargeable ? 0 : Math.min(membershipBalance.remaining, totalSessions);
     const chargeableHydrogenSessions = Math.max(0, totalSessions - freeSessionsApplied);
     const memberSessionPriceInr = getEffectiveServicePriceInr(singleSessionService, user);
@@ -8038,6 +8071,33 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
     };
   });
   const addOnAmountInr = addOnItems.reduce((sum, item) => sum + Number(item.amountInr || 0), 0);
+  const isForceChargeableGroup = hydrogenBookings.some((entry) => {
+    const paymentReference = String(entry?.paymentReference || '').trim().toLowerCase();
+    return paymentReference === 'buy_extra' || Number(entry?.isTopUpSession || 0) === 1;
+  });
+
+  if (isMembershipActiveForUser(user) && isForceChargeableGroup) {
+    const pricing = buildHydrogenPackPricingSummary({
+      user,
+      userId: inferredUserId,
+      baseService,
+      packageSessions,
+      extraSessions,
+      addOnAmountInr,
+      forceChargeable: true,
+    });
+
+    return {
+      serviceName: baseService.name,
+      packageSessions,
+      extraSessions,
+      addOnItems,
+      addOnAmountInr,
+      bookingCount: bookings.length,
+      totalAmountInr: pricing.totalAmountInr,
+      ...pricing.summary,
+    };
+  }
 
   if (isMembershipActiveForUser(user)) {
     const singleSessionService =

@@ -405,7 +405,7 @@
 
       <section id="userTabNav" class="panel app-only user-only user-tab-nav" aria-label="User navigation" hidden>
         <div class="user-tab-grid">
-          <button id="userTabMembership" class="user-tab-btn" type="button">Membership</button>
+          <button id="userTabMembership" class="user-tab-btn" type="button">My Dashboard</button>
           <button id="userTabServices" class="user-tab-btn" type="button">Services</button>
           <button id="userTabBookings" class="user-tab-btn" type="button">My Bookings</button>
           <button id="userTabCart" class="user-tab-btn" type="button">Cart</button>
@@ -478,7 +478,7 @@
               <strong id="membershipStatValid">-</strong>
               <small id="membershipStatValidMeta">Plan end</small>
             </button>
-            <button class="membership-stat-card" type="button">
+            <button id="membershipStatBecomeCard" class="membership-stat-card" type="button">
               <span class="stat-icon stat-icon-session" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
                   <path d="M12 5v14" />
@@ -570,6 +570,9 @@
               </div>
               <div id="membershipCalendarGrid" class="membership-calendar-grid"></div>
               <div id="membershipCalendarDetails" class="membership-calendar-details"></div>
+              <button id="membershipScheduleLaterFooter" class="membership-calendar-footer-link" type="button" hidden>
+                Sessions Awaits in schedule later tab
+              </button>
             </div>
             <div class="membership-highlight-card">
               <div class="membership-highlight-visual" aria-hidden="true">
@@ -774,7 +777,7 @@
           <button id="myBookingsFilterAll" class="my-bookings-filter is-active" type="button" data-booking-filter="all">All Bookings</button>
           <button id="myBookingsFilterUpcoming" class="my-bookings-filter" type="button" data-booking-filter="upcoming">Upcoming</button>
           <button id="myBookingsFilterCompleted" class="my-bookings-filter" type="button" data-booking-filter="completed">Completed</button>
-          <button id="myBookingsFilterCancelled" class="my-bookings-filter" type="button" data-booking-filter="cancelled">Cancelled</button>
+          <button id="myBookingsFilterScheduleLater" class="my-bookings-filter" type="button" data-booking-filter="schedule_later">Schedule Later</button>
         </div>
         <div id="myBookingsSummary" class="my-bookings-summary">
           <div class="my-bookings-stats-grid">
@@ -834,6 +837,9 @@
           </div>
           <div id="myBookingsCalendarGrid" class="my-bookings-calendar-grid"></div>
           <div id="myBookingsCalendarDetails" class="my-bookings-calendar-details"></div>
+          <button id="myBookingsScheduleLaterFooter" class="my-bookings-calendar-footer" type="button" hidden>
+            Sessions Awaits in schedule later tab
+          </button>
         </div>
   
         <div class="table-wrap my-bookings-table-wrap">

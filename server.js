@@ -2536,6 +2536,7 @@ app.get('/api/bookings', requireAuth, (req, res) => {
            b.status,
            b.payment_status AS paymentStatus,
            b.payment_reference AS paymentReference,
+           b.paid_amount_paise AS paidAmountPaise,
            b.is_topup_session AS isTopUpSession,
            b.payment_method AS paymentMethod,
            b.paid_at AS paidAt,
@@ -2892,6 +2893,7 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
     const bookingGroupId = createBookingGroupId('hydrogen');
     let addOnSummary = null;
 
+    const createdIds = [];
     const txn = db.transaction((entries) => {
       entries.forEach((entry, index) => {
         const key = `${entry.bookingDate}|${entry.bookingTime}`;
@@ -2904,7 +2906,7 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
         }
         inRequestCounter.set(key, alreadyInRequest + 1);
 
-        insertBooking.run(
+        const result = insertBooking.run(
           req.user.id,
           null,
           req.user.name,
@@ -2919,6 +2921,7 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
           `Hydrogen package ${packageSessions} + extra ${extraSessions}`,
           getCurrentSqliteTimestamp()
         );
+        createdIds.push(Number(result.lastInsertRowid));
       });
 
       if (addOnService) {
@@ -2944,7 +2947,7 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
           throw new Error(holdAddOn > 0 ? buildHoldSlotMessage() : `Add-on slot full for ${addOnSlot.bookingDate} ${addOnSlot.bookingTime}`);
         }
 
-        insertBooking.run(
+        const result = insertBooking.run(
           req.user.id,
           null,
           req.user.name,
@@ -2959,6 +2962,7 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
           `IV add-on for ${service.name} (Session ${addOnSessionIndex + 1})`,
           getCurrentSqliteTimestamp()
         );
+        createdIds.push(Number(result.lastInsertRowid));
 
         addOnSummary = {
           serviceName: addOnService.name,
@@ -2971,6 +2975,7 @@ app.post('/api/hydrogen/create-order', requireAuth, async (req, res) => {
     });
 
     txn(normalizedSlots);
+    setPaymentAmountForBookingIds(createdIds, amountInPaise);
 
     return res.json({
       keyId: RAZORPAY_KEY_ID,
@@ -3747,6 +3752,7 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
              payment_order_id = CASE WHEN payment_status = 'paid' THEN payment_order_id ELSE NULL END,
              payment_reference = CASE WHEN payment_status = 'paid' THEN payment_reference ELSE NULL END,
              paid_at = CASE WHEN payment_status = 'paid' THEN paid_at ELSE NULL END,
+             paid_amount_paise = CASE WHEN payment_status = 'paid' THEN paid_amount_paise ELSE NULL END,
              status = CASE WHEN status = 'booked' THEN 'booked' ELSE 'pending' END
          WHERE id = ?`
       );
@@ -3761,6 +3767,7 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
              payment_order_id = CASE WHEN payment_status = 'paid' THEN payment_order_id ELSE NULL END,
              payment_reference = CASE WHEN payment_status = 'paid' THEN payment_reference ELSE NULL END,
              paid_at = CASE WHEN payment_status = 'paid' THEN paid_at ELSE NULL END,
+             paid_amount_paise = CASE WHEN payment_status = 'paid' THEN paid_amount_paise ELSE NULL END,
              status = CASE WHEN status = 'booked' THEN 'booked' ELSE 'pending' END
          WHERE id = ?`
       );
@@ -4702,7 +4709,8 @@ app.get('/api/bookings/:id/invoice-link', requireAuth, (req, res) => {
               booking_time AS bookingTime,
               status,
               payment_status AS paymentStatus,
-              payment_reference AS paymentReference
+              payment_reference AS paymentReference,
+              paid_amount_paise AS paidAmountPaise
        FROM bookings
        WHERE id = ?`
     )
@@ -4739,7 +4747,8 @@ app.get('/api/bookings/:id/invoice-link', requireAuth, (req, res) => {
                   booking_time AS bookingTime,
                   status,
                   payment_status AS paymentStatus,
-                  payment_reference AS paymentReference
+                  payment_reference AS paymentReference,
+                  paid_amount_paise AS paidAmountPaise
            FROM bookings
            WHERE booking_group_id = ?
            ORDER BY booking_date, booking_time, id`
@@ -5475,6 +5484,7 @@ app.post('/api/public/payments/create-order', async (req, res) => {
         `UPDATE bookings
          SET payment_status = 'paid',
              paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+             paid_amount_paise = 0,
              status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
          WHERE booking_group_id = ?
            AND status <> 'cancelled'
@@ -5485,6 +5495,7 @@ app.post('/api/public/payments/create-order', async (req, res) => {
         `UPDATE bookings
          SET payment_status = 'paid',
              paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+             paid_amount_paise = 0,
              status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
          WHERE id = ?`
       ).run(booking.id);
@@ -5513,6 +5524,7 @@ app.post('/api/public/payments/create-order', async (req, res) => {
     });
 
     if (booking.bookingGroupId) {
+      setPaymentAmountForBookings(payableBookings, amountInPaise);
       db.prepare(
         `UPDATE bookings
          SET payment_status = CASE WHEN payment_status = 'unpaid' THEN 'payment_pending' ELSE payment_status END,
@@ -5522,6 +5534,7 @@ app.post('/api/public/payments/create-order', async (req, res) => {
            AND payment_status <> 'paid'`
       ).run(order.id, booking.bookingGroupId);
     } else {
+      setPaymentAmountForBookings([booking], amountInPaise);
       db.prepare(
         `UPDATE bookings
          SET payment_status = CASE WHEN payment_status = 'unpaid' THEN 'payment_pending' ELSE payment_status END,
@@ -5734,6 +5747,7 @@ app.post('/api/payments/create-cart-order', requireAuth, async (req, res) => {
            payment_order_id = ?
        WHERE id IN (${ids.map(() => '?').join(', ')})`
     ).run(order.id, ...ids);
+    setPaymentAmountForBookings(payableBookings, amountInPaise);
 
     return res.json({
       keyId: RAZORPAY_KEY_ID,
@@ -5877,6 +5891,7 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
         `UPDATE bookings
          SET payment_status = 'paid',
              paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+             paid_amount_paise = 0,
              status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
          WHERE booking_group_id = ?
            AND status <> 'cancelled'
@@ -5887,6 +5902,7 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
         `UPDATE bookings
          SET payment_status = 'paid',
              paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+             paid_amount_paise = 0,
              status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
          WHERE id = ?`
       ).run(booking.id);
@@ -5915,6 +5931,7 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
     });
 
     if (booking.bookingGroupId) {
+      setPaymentAmountForBookings(payableBookings, amountInPaise);
       db.prepare(
         `UPDATE bookings
          SET payment_status = CASE WHEN payment_status = 'unpaid' THEN 'payment_pending' ELSE payment_status END,
@@ -5924,6 +5941,7 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
            AND payment_status <> 'paid'`
       ).run(order.id, booking.bookingGroupId);
     } else {
+      setPaymentAmountForBookings([booking], amountInPaise);
       db.prepare(
         `UPDATE bookings
          SET payment_status = CASE WHEN payment_status = 'unpaid' THEN 'payment_pending' ELSE payment_status END,
@@ -5974,6 +5992,7 @@ app.get('/invoice/booking', (req, res) => {
               status,
               payment_status AS paymentStatus,
               payment_reference AS paymentReference,
+              paid_amount_paise AS paidAmountPaise,
               paid_at AS paidAt,
               created_at AS createdAt
        FROM bookings
@@ -6006,7 +6025,8 @@ app.get('/invoice/booking', (req, res) => {
                   booking_time AS bookingTime,
                   status,
                   payment_status AS paymentStatus,
-                  payment_reference AS paymentReference
+                  payment_reference AS paymentReference,
+                  paid_amount_paise AS paidAmountPaise
            FROM bookings
            WHERE booking_group_id = ?
            ORDER BY booking_date, booking_time, id`
@@ -6511,8 +6531,14 @@ app.patch('/api/bookings/:id/status', requireAuth, (req, res) => {
     if (!['booked', 'confirmed'].includes(existingStatus)) {
       return res.status(409).json({ message: 'Only booked sessions can be moved to Schedule Later.' });
     }
-    if (isBookingSlotInPast(existing.bookingDate, existing.bookingTime)) {
-      return res.status(409).json({ message: 'Past sessions cannot be moved to Schedule Later.' });
+    const normalizedExistingTime = normalizeSlotStartTime(String(existing.bookingTime || '').trim()) || String(existing.bookingTime || '').trim();
+    const slotStart = new Date(`${String(existing.bookingDate || '').trim()}T${normalizedExistingTime}:00`).getTime();
+    if (!Number.isFinite(slotStart)) {
+      return res.status(409).json({ message: 'Current booking slot is invalid.' });
+    }
+    const scheduleLaterCutoffMs = 12 * 60 * 60 * 1000;
+    if (Date.now() > slotStart - scheduleLaterCutoffMs) {
+      return res.status(409).json({ message: 'Schedule Later can be used only up to 12 hours before slot start.' });
     }
     if (existingNotesLower.includes('moved to schedule later by user')) {
       return res.status(409).json({ message: 'Schedule Later can be used only once for this session.' });
@@ -6532,7 +6558,7 @@ app.patch('/api/bookings/:id/status', requireAuth, (req, res) => {
   } else {
     db.prepare('UPDATE bookings SET status = ? WHERE id = ?').run(status, bookingId);
   }
-  if (status === 'cancelled') {
+  if (status === 'cancelled' || status === 'schedule_later') {
     const targetUser = getUserProfileById(Number(existing.userId));
     if (targetUser) {
       syncMembershipForUser({ userId: Number(existing.userId) });
@@ -6553,8 +6579,14 @@ app.patch('/api/bookings/:id/mark-paid-cash', requireAuth, requireAdmin, (req, r
       `SELECT id,
               user_id AS userId,
               booking_group_id AS bookingGroupId,
+              service_name AS serviceName,
+              booking_date AS bookingDate,
+              booking_time AS bookingTime,
               status,
-              payment_status AS paymentStatus
+              payment_status AS paymentStatus,
+              payment_reference AS paymentReference,
+              is_topup_session AS isTopUpSession,
+              created_at AS createdAt
        FROM bookings
        WHERE id = ?`
     )
@@ -6571,6 +6603,32 @@ app.patch('/api/bookings/:id/mark-paid-cash', requireAuth, requireAdmin, (req, r
 
   const targetGroupId = String(booking.bookingGroupId || '').trim();
   if (targetGroupId) {
+    const groupBookings = db
+      .prepare(
+        `SELECT id,
+                user_id AS userId,
+                booking_group_id AS bookingGroupId,
+                service_name AS serviceName,
+                booking_date AS bookingDate,
+                booking_time AS bookingTime,
+                status,
+                payment_status AS paymentStatus,
+                payment_reference AS paymentReference,
+                is_topup_session AS isTopUpSession,
+                created_at AS createdAt
+         FROM bookings
+         WHERE booking_group_id = ?
+           AND status <> 'cancelled'
+         ORDER BY booking_date, booking_time, id`
+      )
+      .all(targetGroupId);
+    const targetUser = getUserProfileById(Number(booking.userId));
+    try {
+      const summary = buildHydrogenGroupPaymentSummary(groupBookings, targetUser || {});
+      setPaymentAmountForBookings(groupBookings, Math.round(Number(summary.totalAmountInr || 0) * 100));
+    } catch {
+      // Keep cash marking available even if historical pricing cannot be reconstructed.
+    }
     db.prepare(
       `UPDATE bookings
        SET payment_status = 'paid',
@@ -6585,10 +6643,17 @@ app.patch('/api/bookings/:id/mark-paid-cash', requireAuth, requireAdmin, (req, r
          AND status <> 'cancelled'`
     ).run(targetGroupId);
   } else {
+    const targetUser = getUserProfileById(Number(booking.userId));
+    const service = getServiceByName(booking.serviceName);
+    const amountPaise =
+      String(booking.paymentReference || '').trim().toLowerCase() === 'membership'
+        ? 0
+        : Math.round(Number(getEffectiveServicePriceInr(service, targetUser || {}) || 0) * 100);
     db.prepare(
       `UPDATE bookings
        SET payment_status = 'paid',
            paid_at = datetime('now'),
+           paid_amount_paise = ?,
            payment_reference = 'cash',
            payment_method = 'cash',
            status = CASE
@@ -6596,7 +6661,7 @@ app.patch('/api/bookings/:id/mark-paid-cash', requireAuth, requireAdmin, (req, r
              ELSE 'confirmed'
            END
        WHERE id = ?`
-    ).run(bookingId);
+    ).run(amountPaise, bookingId);
   }
 
   const token = createInvoiceAccessToken({
@@ -8176,6 +8241,18 @@ function buildBookingInvoiceSummary(bookings, user) {
   if (!activeBookings.length) {
     return { serviceName: 'Booking', totalAmountInr: 0, amountInr: 0, bookingCount: 0 };
   }
+  const storedPaidAmountPaise = activeBookings.reduce((sum, entry) => {
+    if (String(entry?.paymentStatus || '').trim().toLowerCase() !== 'paid') return sum;
+    return sum + Math.max(0, Math.round(Number(entry?.paidAmountPaise || 0)));
+  }, 0);
+  if (storedPaidAmountPaise > 0) {
+    return {
+      serviceName: activeBookings[0]?.serviceName || 'Booking',
+      totalAmountInr: storedPaidAmountPaise / 100,
+      amountInr: storedPaidAmountPaise / 100,
+      bookingCount: activeBookings.length,
+    };
+  }
 
   const hydrogenBookings = activeBookings.filter((entry) => {
     const service = getServiceByName(entry.serviceName);
@@ -8385,7 +8462,40 @@ async function getRazorpayPaymentMethod(paymentId) {
   }
 }
 
-function markBookingPaid(bookingId, paymentOrderId, paymentRef, paymentMethod = '') {
+function splitAmountPaise(totalAmountPaise, itemCount) {
+  const count = Math.max(0, Number(itemCount || 0));
+  const total = Math.max(0, Math.round(Number(totalAmountPaise || 0)));
+  if (!count) return [];
+  const base = Math.floor(total / count);
+  let remainder = total - base * count;
+  return Array.from({ length: count }, () => {
+    const value = base + (remainder > 0 ? 1 : 0);
+    remainder -= 1;
+    return value;
+  });
+}
+
+function setPaymentAmountForBookingIds(bookingIds, totalAmountPaise) {
+  const ids = (Array.isArray(bookingIds) ? bookingIds : [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+  if (!ids.length) return;
+  const amounts = splitAmountPaise(totalAmountPaise, ids.length);
+  const update = db.prepare('UPDATE bookings SET paid_amount_paise = ? WHERE id = ?');
+  const txn = db.transaction(() => {
+    ids.forEach((id, index) => update.run(Number(amounts[index] || 0), id));
+  });
+  txn();
+}
+
+function setPaymentAmountForBookings(bookings, totalAmountPaise) {
+  setPaymentAmountForBookingIds(
+    (Array.isArray(bookings) ? bookings : []).map((entry) => entry?.id),
+    totalAmountPaise
+  );
+}
+
+function markBookingPaid(bookingId, paymentOrderId, paymentRef, paymentMethod = '', paidAmountPaise = null) {
   if (!Number.isInteger(Number(bookingId))) return;
 
   const booking = db
@@ -8401,12 +8511,105 @@ function markBookingPaid(bookingId, paymentOrderId, paymentRef, paymentMethod = 
          payment_order_id = CASE WHEN ? <> '' THEN ? ELSE payment_order_id END,
          payment_reference = CASE WHEN ? <> '' THEN ? ELSE payment_reference END,
          payment_method = CASE WHEN ? <> '' THEN ? ELSE payment_method END,
+         paid_amount_paise = CASE WHEN ? IS NOT NULL THEN ? ELSE paid_amount_paise END,
          status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
      WHERE id = ?`
-  ).run(orderId, orderId, paymentId, paymentId, method, method, Number(bookingId));
+  ).run(orderId, orderId, paymentId, paymentId, method, method, paidAmountPaise, paidAmountPaise, Number(bookingId));
   if (booking) {
     consumeAdminDiscountForBooking(booking.userId, booking.id);
   }
+}
+
+function getHistoricalBookingAmountPaise(booking) {
+  if (!booking) return 0;
+  const paymentReference = String(booking.paymentReference || '').trim().toLowerCase();
+  if (paymentReference === 'membership') return 0;
+  const service = getServiceByName(booking.serviceName);
+  if (!service) return 0;
+  const category = String(service.category || '').toUpperCase();
+  if (category === 'HYDROGEN SESSION') {
+    if (paymentReference === 'buy_extra' || Number(booking.isTopUpSession || 0) === 1) {
+      const singleSessionService =
+        SERVICE_CATALOG.find(
+          (item) =>
+            String(item.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
+            getHydrogenSessionCountFromServiceName(item.name) === 1
+        ) || service;
+      return Math.round(Number(singleSessionService.memberPriceInr || singleSessionService.priceInr || 0) * 100);
+    }
+    return Math.round(Number(service.nonMemberPriceInr || service.priceInr || 0) * 100);
+  }
+  return Math.round(Number(service.priceInr || 0) * 100);
+}
+
+function backfillPaidBookingAmounts() {
+  if (!hasColumn('bookings', 'paid_amount_paise')) return;
+  const rows = db
+    .prepare(
+      `SELECT id,
+              booking_group_id AS bookingGroupId,
+              service_name AS serviceName,
+              payment_reference AS paymentReference,
+              is_topup_session AS isTopUpSession,
+              notes
+       FROM bookings
+       WHERE payment_status = 'paid'
+         AND (paid_amount_paise IS NULL OR paid_amount_paise < 0)`
+    )
+    .all();
+  if (!rows.length) return;
+  const byGroup = new Map();
+  for (const row of rows) {
+    const key = row.bookingGroupId || `single:${row.id}`;
+    if (!byGroup.has(key)) byGroup.set(key, []);
+    byGroup.get(key).push(row);
+  }
+  const updates = [];
+  for (const entries of byGroup.values()) {
+    const hydrogenEntries = entries.filter((entry) => {
+      const service = getServiceByName(entry.serviceName);
+      return String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION';
+    });
+    if (hydrogenEntries.length > 1) {
+      const firstHydrogen = hydrogenEntries[0];
+      const firstService = getServiceByName(firstHydrogen.serviceName);
+      const isTopUpGroup = hydrogenEntries.some(
+        (entry) =>
+          String(entry.paymentReference || '').trim().toLowerCase() === 'buy_extra' ||
+          Number(entry.isTopUpSession || 0) === 1
+      );
+      let hydrogenTotalPaise = 0;
+      if (isTopUpGroup) {
+        hydrogenTotalPaise = hydrogenEntries.reduce((sum, entry) => sum + getHistoricalBookingAmountPaise(entry), 0);
+      } else {
+        const packageSessions = getHydrogenSessionCountFromServiceName(firstService?.name || firstHydrogen.serviceName);
+        const extraSessions = Math.max(0, hydrogenEntries.length - packageSessions);
+        const singleSessionService =
+          SERVICE_CATALOG.find(
+            (item) =>
+              String(item.category || '').toUpperCase() === 'HYDROGEN SESSION' &&
+              getHydrogenSessionCountFromServiceName(item.name) === 1
+          ) || firstService;
+        hydrogenTotalPaise =
+          Math.round(Number(firstService?.nonMemberPriceInr || firstService?.priceInr || 0) * 100) +
+          extraSessions * Math.round(Number(singleSessionService?.nonMemberPriceInr || singleSessionService?.priceInr || 0) * 100);
+      }
+      const split = splitAmountPaise(hydrogenTotalPaise, hydrogenEntries.length);
+      hydrogenEntries.forEach((entry, index) => updates.push({ id: entry.id, amountPaise: split[index] || 0 }));
+      entries
+        .filter((entry) => !hydrogenEntries.some((hydrogenEntry) => hydrogenEntry.id === entry.id))
+        .forEach((entry) => updates.push({ id: entry.id, amountPaise: getHistoricalBookingAmountPaise(entry) }));
+      continue;
+    }
+    entries.forEach((entry) => updates.push({ id: entry.id, amountPaise: getHistoricalBookingAmountPaise(entry) }));
+  }
+  const update = db.prepare('UPDATE bookings SET paid_amount_paise = ? WHERE id = ?');
+  const txn = db.transaction((items) => {
+    for (const row of items) {
+      update.run(row.amountPaise, row.id);
+    }
+  });
+  txn(updates);
 }
 
 const USER_PROFILE_SELECT = `SELECT id, name, email, role, age, gender, mobile, avatar_url AS avatarUrl,
@@ -8979,7 +9182,7 @@ function countPaidHydrogenSessionsDuringMembership(userId, user) {
       `SELECT COUNT(*) AS total
        FROM bookings
        WHERE user_id = ?
-         AND status <> 'cancelled'
+         AND status NOT IN ('cancelled', 'schedule_later')
          AND COALESCE(payment_status, '') = 'paid'
          AND COALESCE(is_topup_session, 0) = 0
          AND LOWER(COALESCE(payment_reference, '')) = 'membership'
@@ -9045,6 +9248,7 @@ function syncMembershipCoveredHydrogenBookings(userId, user) {
     `UPDATE bookings
      SET payment_status = 'paid',
          paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+         paid_amount_paise = 0,
          payment_reference = 'membership',
          status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
      WHERE id = ?`
@@ -10026,6 +10230,7 @@ function migrate() {
       payment_status TEXT NOT NULL DEFAULT 'unpaid',
       paid_at TEXT,
       payment_order_id TEXT,
+      paid_amount_paise INTEGER,
       payment_reference TEXT,
       payment_method TEXT,
       is_topup_session INTEGER NOT NULL DEFAULT 0,
@@ -10392,6 +10597,9 @@ function migrate() {
   if (!hasColumn('bookings', 'payment_order_id')) {
     db.exec('ALTER TABLE bookings ADD COLUMN payment_order_id TEXT');
   }
+  if (!hasColumn('bookings', 'paid_amount_paise')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN paid_amount_paise INTEGER');
+  }
   if (!hasColumn('bookings', 'is_topup_session')) {
     db.exec("ALTER TABLE bookings ADD COLUMN is_topup_session INTEGER NOT NULL DEFAULT 0");
   }
@@ -10463,6 +10671,7 @@ function migrate() {
   db.exec("UPDATE users SET membership_status = 'inactive' WHERE membership_status IS NULL OR membership_status = ''");
   db.exec("UPDATE doctors SET approval_status = 'approved' WHERE approval_status IS NULL OR approval_status = ''");
 
+  backfillPaidBookingAmounts();
   backfillMembershipSubscriptionsFromOrders();
   refreshMembershipSubscriptionStates();
   const linkedSubscriptions = db

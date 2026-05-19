@@ -401,10 +401,12 @@ const elements = {
   myBookingsCalendarMonth: document.getElementById('myBookingsCalendarMonth'),
   myBookingsCalendarGrid: document.getElementById('myBookingsCalendarGrid'),
   myBookingsCalendarDetails: document.getElementById('myBookingsCalendarDetails'),
+  myBookingsScheduleLaterFooter: document.getElementById('myBookingsScheduleLaterFooter'),
   myBookingsFilterAll: document.getElementById('myBookingsFilterAll'),
   myBookingsFilterUpcoming: document.getElementById('myBookingsFilterUpcoming'),
   myBookingsFilterCompleted: document.getElementById('myBookingsFilterCompleted'),
-  myBookingsFilterCancelled: document.getElementById('myBookingsFilterCancelled'),
+  myBookingsFilterScheduleLater:
+    document.getElementById('myBookingsFilterScheduleLater') || document.getElementById('myBookingsFilterCancelled'),
   memberSessionCountDecBtn: document.getElementById('memberSessionCountDecBtn'),
   memberSessionCountIncBtn: document.getElementById('memberSessionCountIncBtn'),
   memberSessionCountValue: document.getElementById('memberSessionCountValue'),
@@ -430,6 +432,7 @@ const elements = {
   membershipWelcomeName: document.getElementById('membershipWelcomeName'),
   membershipDashboardStatus: document.getElementById('membershipDashboardStatus'),
   membershipTakeMembershipBtn: document.getElementById('membershipTakeMembershipBtn'),
+  membershipQuickBookBtn: document.getElementById('membershipQuickBookBtn'),
   membershipStatSessionsLabel: document.getElementById('membershipStatSessionsLabel'),
   membershipStatSessions: document.getElementById('membershipStatSessions'),
   membershipStatSessionsMeta: document.getElementById('membershipStatSessionsMeta'),
@@ -445,6 +448,7 @@ const elements = {
   membershipStatExtra: document.getElementById('membershipStatExtra'),
   membershipStatExtraMeta: document.getElementById('membershipStatExtraMeta'),
   membershipStatExtraCard: document.getElementById('membershipStatExtraCard'),
+  membershipStatBecomeCard: document.getElementById('membershipStatBecomeCard'),
   membershipUsageTitle: document.getElementById('membershipUsageTitle'),
   membershipUsageLabel: document.getElementById('membershipUsageLabel'),
   membershipUsageCount: document.getElementById('membershipUsageCount'),
@@ -453,6 +457,7 @@ const elements = {
   membershipCalendarMonth: document.getElementById('membershipCalendarMonth'),
   membershipCalendarGrid: document.getElementById('membershipCalendarGrid'),
   membershipCalendarDetails: document.getElementById('membershipCalendarDetails'),
+  membershipScheduleLaterFooter: document.getElementById('membershipScheduleLaterFooter'),
   membershipNextSessionTitle: document.getElementById('membershipNextSessionTitle'),
   membershipNextSessionMeta: document.getElementById('membershipNextSessionMeta'),
   membershipCardScheduleBtn: document.getElementById('membershipCardScheduleBtn'),
@@ -1246,7 +1251,7 @@ function attachEvents() {
       elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
-  [elements.myBookingsFilterAll, elements.myBookingsFilterUpcoming, elements.myBookingsFilterCompleted, elements.myBookingsFilterCancelled]
+  [elements.myBookingsFilterAll, elements.myBookingsFilterUpcoming, elements.myBookingsFilterCompleted, elements.myBookingsFilterScheduleLater]
     .filter(Boolean)
     .forEach((button) => {
       button.addEventListener('click', () => {
@@ -1254,6 +1259,26 @@ function attachEvents() {
         render();
       });
     });
+  elements.myBookingsScheduleLaterFooter?.addEventListener('click', () => {
+    state.activeUserTab = 'bookings';
+    state.userBookingsFilter = 'schedule_later';
+    window.location.hash = '#bookings';
+    render();
+    requestAnimationFrame(() => {
+      elements.myBookingsFilterScheduleLater?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      elements.myBookingsFilterScheduleLater?.focus?.();
+    });
+  });
+  elements.membershipScheduleLaterFooter?.addEventListener('click', () => {
+    state.activeUserTab = 'bookings';
+    state.userBookingsFilter = 'schedule_later';
+    window.location.hash = '#bookings';
+    render();
+    requestAnimationFrame(() => {
+      elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      elements.myBookingsFilterScheduleLater?.focus?.();
+    });
+  });
   elements.memberSessionCountDecBtn?.addEventListener('click', () => {
     const current = Number(state.memberSessionDisplayCount || 0);
     state.memberSessionDisplayCount = Math.max(0, current - 1);
@@ -1369,7 +1394,7 @@ function attachEvents() {
       elements.membershipBrowsePanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
-  elements.membershipStatExtraCard?.addEventListener('click', () => {
+  elements.membershipStatBecomeCard?.addEventListener('click', () => {
     if (isCurrentUserMembershipActive()) return;
     state.activeUserTab = 'membership';
     state.membershipBrowseVisible = true;
@@ -3465,9 +3490,18 @@ function openDialog(booking = null) {
     elements.dialogTitle.textContent = 'Edit Booking';
     elements.bookingId.value = String(booking.id);
     populateServiceOptions(booking.serviceName);
-    populateBookingDateOptions(booking.bookingDate);
-    populateTimeSlots(booking.bookingDate);
-    elements.bookingTime.value = booking.bookingTime;
+    const bookingStatus = String(booking?.status || '').trim().toLowerCase();
+    const requestedDate = String(booking?.bookingDate || '').trim();
+    const editableDate = bookingStatus === 'schedule_later' && requestedDate < getTodayIsoDate()
+      ? getTodayIsoDate()
+      : requestedDate;
+    populateBookingDateOptions(editableDate);
+    const selectedEditableDate = String(elements.bookingDate?.value || editableDate || getTodayIsoDate()).trim();
+    populateTimeSlots(selectedEditableDate);
+    const normalizedBookingTime = normalizeSlotStartTime(booking.bookingTime);
+    if ([...(elements.bookingTime?.options || [])].some((option) => option.value === normalizedBookingTime)) {
+      elements.bookingTime.value = normalizedBookingTime;
+    }
     elements.bookingNotes.value = booking.notes || '';
     elements.serviceName.disabled = Boolean(booking.bookingGroupId) || Boolean(state.bookingDialogContext.membershipEdit);
   } else {
@@ -5008,16 +5042,20 @@ function openSingleSessionBookingEditor(booking) {
   state.selectedServiceCategory = category;
   state.selectedSingleSessionServiceName = booking.serviceName;
   state.singleSessionEditingBookingId = String(booking.id);
+  const isScheduleLaterFlow = String(booking?.status || '').trim().toLowerCase() === 'schedule_later';
+  const editableDate = isScheduleLaterFlow && String(booking.bookingDate || '').trim() < getTodayIsoDate()
+    ? getTodayIsoDate()
+    : booking.bookingDate;
   state.ivSelections[booking.serviceName] = {
     editingBookingId: String(booking.id),
     bookingDate: booking.bookingDate,
     bookingTime: booking.bookingTime,
-    editingDate: booking.bookingDate,
+    editingDate: editableDate,
     editingTime: booking.bookingTime,
     notes: booking.notes || '',
     paymentStatus: booking.paymentStatus || 'unpaid',
   };
-  refreshSelectedCategoryAvailability(booking.bookingDate);
+  refreshSelectedCategoryAvailability(editableDate);
   render();
   requestAnimationFrame(() => {
     const categoryId = `service-category-details-${String(category).toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
@@ -5070,22 +5108,12 @@ function getGroupedHydrogenScheduleLaterOptions(row) {
     `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`)
   );
   return entries.map((entry, index) => {
-    const status = String(entry?.status || '').trim().toLowerCase();
-    const notesLower = String(entry?.notes || '').toLowerCase();
-    const wasAlreadyScheduledLater = notesLower.includes('moved to schedule later by user');
-    const isPastSlot = isBookingSlotInPast(entry?.bookingDate, entry?.bookingTime);
-    const allowed = !['completed', 'cancelled', 'schedule_later'].includes(status) && !wasAlreadyScheduledLater && !isPastSlot;
+    const eligibility = getUserScheduleLaterEligibility(entry);
     return {
       index,
       booking: entry,
-      allowed,
-      message: allowed
-        ? 'Can be scheduled later'
-        : wasAlreadyScheduledLater
-          ? 'Schedule Later was already used once for this session.'
-          : isPastSlot
-            ? 'Past sessions cannot be moved to Schedule Later.'
-            : 'This session is already completed, cancelled, or waiting to be scheduled.',
+      allowed: eligibility.allowed,
+      message: eligibility.message,
       label: `Hydrogen Session ${index + 1} - ${formatDateTime(entry.bookingDate, entry.bookingTime)}`,
     };
   });
@@ -5180,8 +5208,9 @@ async function handleScheduleLaterAction(row) {
     return;
   }
   const booking = row.booking || row;
-  if (isBookingSlotInPast(booking?.bookingDate, booking?.bookingTime)) {
-    showNotice({ title: 'Schedule later unavailable', body: 'Past sessions cannot be moved to Schedule Later.' });
+  const eligibility = getUserScheduleLaterEligibility(booking);
+  if (!eligibility.allowed) {
+    showNotice({ title: 'Schedule later unavailable', body: eligibility.message || 'This session cannot be moved to Schedule Later.' });
     return;
   }
   await changeStatus(booking.id, 'schedule_later');
@@ -5412,6 +5441,15 @@ function getFilteredUserHistoryBookings(sourceBookings = state.bookings) {
     includedMemberSessions += 1;
     return includedMemberSessions <= requestedCount;
   });
+}
+
+function getScheduleLaterDisplayRowCount(bookings = state.bookings) {
+  const scheduleLaterHydrogenBookings = (Array.isArray(bookings) ? bookings : []).filter(
+    (booking) =>
+      getBookingCategory(booking?.serviceName) === 'HYDROGEN SESSION' &&
+      String(booking?.status || '').trim().toLowerCase() === 'schedule_later'
+  );
+  return buildUserBookingRows(scheduleLaterHydrogenBookings, scheduleLaterHydrogenBookings).length;
 }
 
 function getFilteredAdminUsers() {
@@ -6081,7 +6119,7 @@ function render() {
     elements.myBookingsFilterAll?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'all');
     elements.myBookingsFilterUpcoming?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'upcoming');
     elements.myBookingsFilterCompleted?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'completed');
-    elements.myBookingsFilterCancelled?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'schedule_later');
+    elements.myBookingsFilterScheduleLater?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'schedule_later');
     if (elements.memberSessionCountValue) {
       const value = Number(state.memberSessionDisplayCount || 0);
       elements.memberSessionCountValue.textContent = value > 0 ? String(value) : 'All';
@@ -6233,7 +6271,7 @@ function getHydrogenSessionsUsedThisMembership() {
   return bookings.filter((booking) => {
     if (getBookingCategory(booking.serviceName) !== 'HYDROGEN SESSION') return false;
     const status = String(booking.status || '').toLowerCase();
-    if (status === 'cancelled') return false;
+    if (status === 'cancelled' || status === 'schedule_later') return false;
     if (booking.holdExpired) return false;
     // Included/free membership sessions are allocated when booked, not when completed.
     // Chargeable top-up sessions are tracked separately in the top-up counters.
@@ -6287,13 +6325,13 @@ function isMembershipCoveredHydrogenBooking(booking) {
 }
 
 function getHydrogenExtraSessionsThisMembership() {
-  const range = getCurrentMembershipIsoRange();
   const bookings = Array.isArray(state.bookings) ? state.bookings : [];
   return bookings.filter((booking) => {
-    if (String(booking.status || '').toLowerCase() === 'cancelled') return false;
+    const status = String(booking.status || '').toLowerCase();
+    if (status === 'cancelled' || status === 'schedule_later') return false;
     if (booking.holdExpired) return false;
     if (!isChargeableHydrogenMembershipBooking(booking)) return false;
-    return isBookingWithinMembershipRange(booking, range);
+    return String(booking.paymentStatus || '').toLowerCase() === 'paid';
   }).length;
 }
 
@@ -6314,7 +6352,8 @@ function getHydrogenMissedSessionsThisMembership() {
 function getUnifiedHydrogenTrackingSummary(bookings = state.bookings) {
   const all = Array.isArray(bookings) ? bookings : [];
   const hydrogenBookings = all.filter((booking) => {
-    if (String(booking?.status || '').toLowerCase() === 'cancelled') return false;
+    const status = String(booking?.status || '').toLowerCase();
+    if (status === 'cancelled' || status === 'schedule_later') return false;
     if (booking?.holdExpired) return false;
     return getBookingCategory(booking?.serviceName) === 'HYDROGEN SESSION';
   });
@@ -8753,6 +8792,50 @@ function isBookingSlotInPast(bookingDate, bookingTime) {
   return slotEndDateTime.getTime() <= Date.now();
 }
 
+function getBookingSlotStartTimestamp(bookingDate, bookingTime) {
+  const normalizedDate = String(bookingDate || '').trim();
+  const normalizedTime = normalizeSlotStartTime(String(bookingTime || '').trim());
+  if (!normalizedDate || !normalizedTime) return Number.NaN;
+  const dateMatch = normalizedDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const timeMatch = normalizedTime.match(/^(\d{2}):(\d{2})$/);
+  if (!dateMatch || !timeMatch) return Number.NaN;
+  const slotDateTime = new Date(
+    Number(dateMatch[1]),
+    Number(dateMatch[2]) - 1,
+    Number(dateMatch[3]),
+    Number(timeMatch[1]),
+    Number(timeMatch[2]),
+    0,
+    0
+  );
+  const timestamp = slotDateTime.getTime();
+  return Number.isFinite(timestamp) ? timestamp : Number.NaN;
+}
+
+function getUserScheduleLaterEligibility(booking, options = {}) {
+  const status = String(booking?.status || '').trim().toLowerCase();
+  const notesLower = String(booking?.notes || '').toLowerCase();
+  const enforcePreviousUse = options?.enforcePreviousUse !== false;
+  if (['completed', 'cancelled', 'schedule_later'].includes(status)) {
+    return { allowed: false, message: 'This session is already completed, cancelled, or waiting to be scheduled.' };
+  }
+  if (!['booked', 'confirmed'].includes(status)) {
+    return { allowed: false, message: 'Only booked sessions can be moved to Schedule Later.' };
+  }
+  if (enforcePreviousUse && notesLower.includes('moved to schedule later by user')) {
+    return { allowed: false, message: 'Schedule Later was already used once for this session.' };
+  }
+  const slotStart = getBookingSlotStartTimestamp(booking?.bookingDate, booking?.bookingTime);
+  if (!Number.isFinite(slotStart)) {
+    return { allowed: false, message: 'This booking slot is invalid.' };
+  }
+  const cutoffMs = 12 * 60 * 60 * 1000;
+  if (Date.now() > slotStart - cutoffMs) {
+    return { allowed: false, message: 'Schedule Later can be used only up to 12 hours before slot start.' };
+  }
+  return { allowed: true, message: 'Can be scheduled later' };
+}
+
 function getMaxBookingIsoDate() {
   const now = new Date();
   now.setDate(now.getDate() + BOOKING_WINDOW_DAYS);
@@ -8915,6 +8998,9 @@ function renderMembership() {
   if (elements.membershipTakeMembershipBtn) {
     elements.membershipTakeMembershipBtn.hidden = active || state.membershipBrowseVisible;
   }
+  if (elements.membershipQuickBookBtn) {
+    elements.membershipQuickBookBtn.hidden = !active;
+  }
 
   const firstName = String(state.user?.name || 'Member').trim().split(/\s+/)[0] || 'Member';
   if (elements.membershipWelcomeName) {
@@ -8979,7 +9065,6 @@ function renderMembership() {
     elements.membershipStatValidMeta.textContent = active ? 'Plan end' : '/ session';
   }
 
-  const membershipRange = getCurrentMembershipIsoRange();
   const extraSessionsBought = active
     ? getHydrogenExtraSessionsThisMembership()
     : 0;
@@ -8989,8 +9074,7 @@ function renderMembership() {
           !booking.holdExpired &&
           String(booking.status || '').toLowerCase() === 'completed' &&
           String(booking.paymentStatus || '').toLowerCase() === 'paid' &&
-          isChargeableHydrogenMembershipBooking(booking) &&
-          isBookingWithinMembershipRange(booking, membershipRange)
+          isChargeableHydrogenMembershipBooking(booking)
       ).length
     : 0;
   const topUpRemainingSessions = Math.max(0, extraSessionsBought - topUpCompletedSessions);
@@ -9145,6 +9229,11 @@ function renderMembership() {
     elements.membershipNextSessionMeta.textContent = upcoming
       ? formatDateTime(upcoming.bookingDate, upcoming.bookingTime)
       : active ? 'Book your next hydrogen session to keep momentum.' : 'Book your next session to start building your dashboard.';
+  }
+  if (elements.membershipScheduleLaterFooter) {
+    const scheduleLaterCount = getScheduleLaterDisplayRowCount(allBookings);
+    elements.membershipScheduleLaterFooter.hidden = scheduleLaterCount <= 0;
+    elements.membershipScheduleLaterFooter.textContent = `${scheduleLaterCount} Session${scheduleLaterCount === 1 ? '' : 's'} Awaits in schedule later tab`;
   }
   renderMembershipCalendar(allBookings);
 
@@ -10002,6 +10091,9 @@ function getUserRescheduleEligibility(row, options = {}) {
   if (status === 'completed' || status === 'cancelled') {
     return { allowed: false, message: 'Completed or cancelled bookings cannot be rescheduled.' };
   }
+  if (status === 'schedule_later') {
+    return { allowed: true, message: '' };
+  }
   const rescheduleCount = Number(booking?.rescheduleCount || 0);
   const hasUserRescheduleHistory = rescheduleCount >= 1;
   if (enforceRescheduleLimit && hasUserRescheduleHistory) {
@@ -10241,6 +10333,7 @@ function renderUserRows(bookings, membershipOrders = []) {
   elements.bookingTableBody.innerHTML = '';
 
   const displayRows = buildUserBookingRows(bookings, bookings);
+  const activeFilter = String(state.userBookingsFilter || 'all').trim().toLowerCase();
   const paidMembershipOrders = (Array.isArray(membershipOrders) ? membershipOrders : []).filter(
     (order) => String(order?.status || '').trim().toLowerCase() === 'paid'
   );
@@ -10256,7 +10349,11 @@ function renderUserRows(bookings, membershipOrders = []) {
         },
       ]
     : [];
-  const membershipRows = paidMembershipOrders.length ? paidMembershipOrders : fallbackMembershipRows;
+  const membershipRows = activeFilter === 'schedule_later'
+    ? []
+    : paidMembershipOrders.length
+      ? paidMembershipOrders
+      : fallbackMembershipRows;
   if (!displayRows.length && !membershipRows.length) {
     elements.emptyState.hidden = false;
     return;
@@ -10312,7 +10409,7 @@ function renderUserRows(bookings, membershipOrders = []) {
       : rowNotesLower.includes('moved to schedule later by user');
     const isScheduleLaterSlotEligible = row.isGroupedHydrogen
       ? getGroupedHydrogenScheduleLaterOptions(row).some((item) => item.allowed)
-      : !isBookingSlotInPast(row.booking?.bookingDate || row.bookingDate, row.booking?.bookingTime || row.bookingTime);
+      : getUserScheduleLaterEligibility(row.booking || row, { enforcePreviousUse: false }).allowed;
     if (isPaidBookingRow && !scheduleLaterAlreadyUsed && isScheduleLaterSlotEligible && !['cancelled', 'completed', 'schedule_later'].includes(rowStatus)) {
       actions.append(createActionButton('Schedule Later', () => handleScheduleLaterAction(row)));
     }
@@ -12272,6 +12369,13 @@ function getHydrogenSingleSessionPriceInr() {
 }
 
 function getBookingDisplayAmountInr(booking) {
+  if (
+    String(booking?.paymentStatus || '').trim().toLowerCase() === 'paid' &&
+    Number.isFinite(Number(booking?.paidAmountPaise)) &&
+    Number(booking.paidAmountPaise) > 0
+  ) {
+    return Number(booking.paidAmountPaise) / 100;
+  }
   if (String(booking?.paymentReference || '').trim().toLowerCase() === 'membership') return 0;
   if (isBuyExtraHydrogenBooking(booking)) return getHydrogenSingleSessionPriceInr();
   return Number(getDisplayedServicePriceInr(booking?.serviceName || '') || 0);
@@ -12425,6 +12529,23 @@ function hasStandaloneIvOnDateClient(bookingDate, excludeGroupId = '') {
 }
 
 function getHydrogenGroupBreakdown(hydrogenEntries, addOnEntries) {
+  const allEntries = [...(Array.isArray(hydrogenEntries) ? hydrogenEntries : []), ...(Array.isArray(addOnEntries) ? addOnEntries : [])];
+  const storedPaidAmountPaise = allEntries.reduce((sum, entry) => {
+    if (String(entry?.paymentStatus || '').trim().toLowerCase() !== 'paid') return sum;
+    return sum + Math.max(0, Math.round(Number(entry?.paidAmountPaise || 0)));
+  }, 0);
+  const activePaidEntries = allEntries.filter(
+    (entry) =>
+      String(entry?.status || '').trim().toLowerCase() !== 'cancelled' &&
+      String(entry?.paymentStatus || '').trim().toLowerCase() === 'paid'
+  );
+  if (storedPaidAmountPaise > 0 && activePaidEntries.length === allEntries.filter((entry) => String(entry?.status || '').trim().toLowerCase() !== 'cancelled').length) {
+    const totalAmountInr = storedPaidAmountPaise / 100;
+    return {
+      breakdownText: `Paid amount Rs. ${totalAmountInr.toLocaleString('en-IN')}`,
+      totalAmountInr,
+    };
+  }
   const membershipActive = isCurrentUserMembershipActive();
   const isAdditionalHydrogenPackage = hydrogenEntries.some((entry) => {
     const paymentReference = String(entry?.paymentReference || '').trim().toLowerCase();
@@ -13106,6 +13227,7 @@ function renderMyBookingsSessionTracking() {
   const todayKey = getTodayIsoDate();
   const tracking = getUnifiedHydrogenTrackingSummary(bookings);
   const hydrogenBookings = tracking.hydrogenBookings;
+  const scheduleLaterCount = getScheduleLaterDisplayRowCount(bookings);
   const totalSessions = tracking.totalSessions;
   const completedCount = tracking.completedSessions;
   const upcomingCount = tracking.upcomingSessions;
@@ -13139,6 +13261,10 @@ function renderMyBookingsSessionTracking() {
     elements.myBookingsProgressNote.textContent = totalSessions === 0
       ? 'No hydrogen sessions booked yet. Book your first hydrogen session to get started.'
       : `${totalSessions - completedCount} hydrogen sessions remaining`;
+  }
+  if (elements.myBookingsScheduleLaterFooter) {
+    elements.myBookingsScheduleLaterFooter.hidden = scheduleLaterCount <= 0;
+    elements.myBookingsScheduleLaterFooter.textContent = `${scheduleLaterCount} Session${scheduleLaterCount === 1 ? '' : 's'} Awaits in schedule later tab`;
   }
 
   // Upcoming sessions list

@@ -395,9 +395,8 @@
       <section id="adminTabNav" class="panel app-only admin-only user-tab-nav admin-tab-nav" aria-label="Admin navigation" hidden>
         <div class="user-tab-grid admin-tab-grid">
           <button id="adminTabCalendar" class="user-tab-btn" type="button">Calendar</button>
-          <button id="adminTabBookings" class="user-tab-btn" type="button">Bookings</button>
+          <button id="adminTabBookings" class="user-tab-btn" type="button">History</button>
           <button id="adminTabSessions" class="user-tab-btn" type="button">Session Tracking</button>
-          <button id="adminTabHistory" class="user-tab-btn" type="button">History</button>
           <button id="adminTabCoupons" class="user-tab-btn" type="button">Coupons</button>
           <button id="adminTabMemberships" class="user-tab-btn" type="button">Memberships</button>
           <button id="adminTabRescheduled" class="user-tab-btn" type="button">Reschedule</button>
@@ -1144,7 +1143,23 @@
 
         <input id="bookingId" type="hidden" />
 
-        <div class="form-grid">
+        <div id="bookingCustomerStep" class="form-grid" hidden>
+          <label>
+            Customer Name
+            <input id="bookingCustomerName" type="text" maxlength="20" placeholder="Enter customer name" />
+          </label>
+          <label>
+            Customer Email
+            <input id="bookingCustomerEmail" type="email" placeholder="Enter customer email" />
+          </label>
+          <label>
+            Contact Number
+            <input id="bookingCustomerPhone" type="tel" inputmode="numeric" maxlength="10" placeholder="Enter contact number" />
+          </label>
+          <p id="bookingCustomerInlineMessage" class="form-message full-width" hidden></p>
+        </div>
+
+        <div id="bookingSchedulerSection" class="form-grid">
           <label>
             Service
             <select id="serviceName" required></select>

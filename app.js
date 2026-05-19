@@ -657,6 +657,12 @@ const elements = {
   dialog: document.getElementById('bookingDialog'),
   addOnService: document.getElementById('addOnService'),
   addOnServiceLabel: document.getElementById('addOnServiceLabel'),
+  bookingCustomerStep: document.getElementById('bookingCustomerStep'),
+  bookingCustomerName: document.getElementById('bookingCustomerName'),
+  bookingCustomerEmail: document.getElementById('bookingCustomerEmail'),
+  bookingCustomerPhone: document.getElementById('bookingCustomerPhone'),
+  bookingCustomerInlineMessage: document.getElementById('bookingCustomerInlineMessage'),
+  bookingSchedulerSection: document.getElementById('bookingSchedulerSection'),
   bookingSummary: document.getElementById('bookingSummary'),
   summaryContent: document.getElementById('summaryContent'),
   totalPayable: document.getElementById('totalPayable'),
@@ -1669,6 +1675,10 @@ function attachEvents() {
     updateBookingAddOnOptions();
     updateBookingSummary();
   });
+  elements.bookingCustomerName?.addEventListener('input', syncAdminCustomerFromBookingModal);
+  elements.bookingCustomerEmail?.addEventListener('input', syncAdminCustomerFromBookingModal);
+  elements.bookingCustomerPhone?.addEventListener('input', syncAdminCustomerFromBookingModal);
+  enforceTenDigitMobileInput(elements.bookingCustomerPhone);
   elements.closeDialogBtn?.addEventListener('click', closeDialog);
   elements.cancelDialogBtn?.addEventListener('click', closeDialog);
 
@@ -1882,12 +1892,6 @@ function attachEvents() {
     render();
   });
   elements.adminTabUserBookings?.remove();
-  elements.adminTabHistory?.addEventListener('click', () => {
-    state.adminActiveTab = 'bookings';
-    state.adminAllBookingViewMode = 'history';
-    clearAdminAllBookingSlotFilters();
-    render();
-  });
   elements.adminTabSessions?.addEventListener('click', () => {
     state.adminActiveTab = 'sessions';
     render();
@@ -2303,6 +2307,86 @@ function isAdminCustomerFormReady() {
       String(state.adminCustomerForm.email || '').trim() &&
       String(state.adminCustomerForm.phone || '').trim()
   );
+}
+
+function getAdminCustomerValidationMessage() {
+  const name = String(state.adminCustomerForm.name || '').trim();
+  const email = String(state.adminCustomerForm.email || '').trim();
+  const phone = normalizeTenDigitMobile(state.adminCustomerForm.phone || '');
+  if (!name) return 'Customer name is required.';
+  if (!email || !isValidEmail(email)) return 'Enter a valid customer email.';
+  if (!phone || phone.length !== 10) return 'Enter a valid 10-digit contact number.';
+  return '';
+}
+
+function isAdminCustomerFormValid() {
+  return !getAdminCustomerValidationMessage();
+}
+
+function hasMembershipInBookingContext() {
+  if (state.user?.role === 'admin') {
+    return String(state.adminResolvedCustomer?.membershipStatus || '').trim().toLowerCase() === 'active';
+  }
+  return isCurrentUserMembershipActive();
+}
+
+function setBookingCustomerInlineMessage(message = '') {
+  if (!elements.bookingCustomerInlineMessage) return;
+  const text = String(message || '').trim();
+  elements.bookingCustomerInlineMessage.textContent = text;
+  elements.bookingCustomerInlineMessage.hidden = !text;
+}
+
+function syncBookingModalCustomerGate() {
+  const isAdmin = state.user?.role === 'admin';
+  const isValid = isAdminCustomerFormValid();
+  if (elements.bookingCustomerStep) elements.bookingCustomerStep.hidden = !isAdmin;
+  if (elements.bookingSchedulerSection) elements.bookingSchedulerSection.hidden = isAdmin && !isValid;
+  if (elements.bookingSummary) elements.bookingSummary.hidden = isAdmin && !isValid ? true : elements.bookingSummary.hidden;
+  if (isAdmin) {
+    setBookingCustomerInlineMessage(isValid ? '' : getAdminCustomerValidationMessage());
+  } else {
+    setBookingCustomerInlineMessage('');
+  }
+}
+
+function syncAdminCustomerFromBookingModal() {
+  const prevName = String(state.adminCustomerForm?.name || '').trim();
+  const prevEmail = String(state.adminCustomerForm?.email || '').trim();
+  const prevPhone = normalizeTenDigitMobile(state.adminCustomerForm?.phone || '');
+  const nextName = String(elements.bookingCustomerName?.value || '').trim().slice(0, 20);
+  const nextEmail = String(elements.bookingCustomerEmail?.value || '').trim();
+  const nextPhone = normalizeTenDigitMobile(elements.bookingCustomerPhone?.value || '');
+  state.adminCustomerForm = {
+    ...state.adminCustomerForm,
+    name: nextName,
+    email: nextEmail,
+    phone: nextPhone,
+  };
+  if (elements.bookingCustomerName && elements.bookingCustomerName.value !== nextName) elements.bookingCustomerName.value = nextName;
+  if (elements.bookingCustomerPhone && elements.bookingCustomerPhone.value !== nextPhone) elements.bookingCustomerPhone.value = nextPhone;
+  if (elements.adminCalendarCustomerName) elements.adminCalendarCustomerName.value = nextName;
+  if (elements.adminCalendarCustomerEmail) elements.adminCalendarCustomerEmail.value = nextEmail;
+  if (elements.adminCalendarCustomerPhone) elements.adminCalendarCustomerPhone.value = nextPhone;
+  syncBookingModalCustomerGate();
+  const detailsChanged = prevName !== nextName || prevEmail !== nextEmail || prevPhone !== nextPhone;
+  if (detailsChanged && isAdminCustomerFormValid()) {
+    clearTimeout(adminCustomerRefreshTimer);
+    adminCustomerRefreshTimer = window.setTimeout(async () => {
+      try {
+        await refreshAdminCustomerContext();
+        if (elements.dialog?.open) {
+          const selected = String(elements.serviceName?.value || '').trim();
+          populateServiceOptions(selected);
+          updateBookingAddOnOptions();
+          updateBookingSummary();
+          syncBookingModalCustomerGate();
+        }
+      } catch {
+        // Keep current modal state; inline gate will continue guiding input.
+      }
+    }, 250);
+  }
 }
 
 function hasAdminCustomerDetails() {
@@ -3208,7 +3292,7 @@ function populateServiceOptions(selectedService = '') {
     }
     const option = document.createElement('option');
     option.value = service.name;
-    const isIncluded = Boolean(service.membershipOnly) && isCurrentUserMembershipActive();
+    const isIncluded = Boolean(service.membershipOnly) && hasMembershipInBookingContext();
     option.textContent = lockMembershipService
       ? `${getServiceDisplayName(service)} - Included in Membership`
       : isIncluded
@@ -3329,8 +3413,14 @@ function updateBookingSummary() {
   
   const category = String(selectedService.category || '').toUpperCase();
   const forceMembershipPricing = Boolean(state.bookingDialogContext?.membershipEdit);
-  const hasMembership = isCurrentUserMembershipActive();
-  const hydrogenFreeRemaining = category === 'HYDROGEN SESSION' && hasMembership ? getHydrogenFreeSessionsRemainingClient() : 0;
+  const hasMembership = hasMembershipInBookingContext();
+  const customerHydrogenRemaining = Number(selectedService?.membershipRemainingHydrogenSessions);
+  const hydrogenFreeRemaining =
+    category === 'HYDROGEN SESSION' && hasMembership
+      ? Number.isFinite(customerHydrogenRemaining)
+        ? Math.max(0, customerHydrogenRemaining)
+        : getHydrogenFreeSessionsRemainingClient()
+      : 0;
   const isHydrogenFree = forceMembershipPricing || (category === 'HYDROGEN SESSION' && hasMembership && hydrogenFreeRemaining > 0);
   const basePrice = isHydrogenFree ? 0 : Number(selectedService.effectivePriceInr ?? selectedService.priceInr ?? 0);
   const isAdmin = state.user?.role === 'admin';
@@ -3341,7 +3431,7 @@ function updateBookingSummary() {
   
   const summaryLines = [];
   summaryLines.push(
-    `<div><span>${escapeHtml(getServiceDisplayName(selectedService))}${isHydrogenFree ? ` <small>(Free • ${hydrogenFreeRemaining} left)</small>` : ''}</span><span>Rs. ${basePrice.toLocaleString('en-IN')}</span></div>`
+    `<div><span>${escapeHtml(getServiceDisplayName(selectedService))}${isHydrogenFree ? ` <small>(Included in Membership • ${hydrogenFreeRemaining} left)</small>` : ''}</span><span>Rs. ${basePrice.toLocaleString('en-IN')}</span></div>`
   );
   
   if (selectedAddOn) {
@@ -3387,6 +3477,14 @@ function openDialog(booking = null) {
     populateServiceOptions();
     populateBookingDateOptions();
     populateTimeSlots();
+  }
+  if (state.user?.role === 'admin') {
+    if (elements.bookingCustomerName) elements.bookingCustomerName.value = String(state.adminCustomerForm.name || '');
+    if (elements.bookingCustomerEmail) elements.bookingCustomerEmail.value = String(state.adminCustomerForm.email || '');
+    if (elements.bookingCustomerPhone) elements.bookingCustomerPhone.value = String(state.adminCustomerForm.phone || '');
+    syncAdminCustomerFromBookingModal();
+  } else {
+    syncBookingModalCustomerGate();
   }
   const submitBtn = elements.bookingForm?.querySelector('button[type="submit"]');
   if (submitBtn) {
@@ -3438,6 +3536,7 @@ function closeDialog() {
     elements.serviceName.hidden = false;
     elements.serviceName.disabled = false;
   }
+  setBookingCustomerInlineMessage('');
 }
 
 function openProfileDialog() {
@@ -3572,8 +3671,9 @@ async function upsertBooking() {
   
   const isAdmin = state.user?.role === 'admin';
   if (isAdmin) {
-    if (!isAdminCustomerFormReady()) {
-      showNotice({ title: 'Missing customer details', body: 'Enter customer name, email, and contact number first.' });
+    if (!isAdminCustomerFormValid()) {
+      setBookingCustomerInlineMessage(getAdminCustomerValidationMessage());
+      syncBookingModalCustomerGate();
       return;
     }
     payload.customerName = state.adminCustomerForm.name;
@@ -5520,7 +5620,7 @@ function getFilteredAdminAllBookings(bookings = state.bookings) {
 
 function getAdminAllBookingBaseBookings(bookings = state.bookings) {
   const mode = String(state.adminAllBookingViewMode || 'history').trim().toLowerCase();
-  return mode === 'today' ? getAdminPaidTodayBookings(bookings) : getAdminHistoryBookings(bookings);
+  return mode === 'today' ? getTodayAdminBookings(bookings) : getAdminHistoryBookings(bookings);
 }
 
 function getAdminAllBookingSlotCounts(bookings = state.bookings) {
@@ -5554,7 +5654,7 @@ function renderAdminAllBookingControls(bookings = state.bookings) {
   }
   if (elements.adminAllBookingModeText) {
     elements.adminAllBookingModeText.textContent = isTodayMode
-      ? "Paid bookings scheduled for today."
+      ? "All bookings scheduled for today."
       : 'Paid and cancelled bookings across all users.';
   }
   if (elements.adminAllBookingModeToggleBtn) {

@@ -8667,6 +8667,23 @@ table tbody td {
     min-height: 2rem;
   }
 
+  .my-bookings-calendar-footer {
+    width: 100%;
+    min-height: 38px;
+    margin-top: 0.75rem;
+    border: 1px solid rgba(var(--brand-primary-rgb), 0.26);
+    border-radius: 8px;
+    background: rgba(var(--brand-primary-rgb), 0.12);
+    color: rgba(var(--ink-rgb), 0.9);
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .my-bookings-calendar-footer:hover {
+    background: rgba(var(--brand-primary-rgb), 0.18);
+  }
+
   .my-bookings-calendar-detail-item {
     display: flex;
     justify-content: space-between;
@@ -13215,6 +13232,46 @@ img {
 .my-bookings-progress-bar span,
 .my-bookings-progress-bar-fill {
   background: linear-gradient(90deg, var(--terracotta), #e2a474);
+}
+
+.my-bookings-calendar-footer {
+  width: 100%;
+  min-height: 38px;
+  margin-top: 0.75rem;
+  border: 1px solid rgba(201, 106, 45, 0.2);
+  border-radius: 8px;
+  background: rgba(201, 106, 45, 0.1);
+  color: #7e3f25;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.my-bookings-calendar-footer:hover {
+  border-color: rgba(201, 106, 45, 0.32);
+  background: rgba(201, 106, 45, 0.16);
+  transform: translateY(-1px);
+}
+
+.membership-calendar-footer-link {
+  width: 100%;
+  min-height: 38px;
+  margin-top: 0.75rem;
+  border: 1px solid rgba(201, 106, 45, 0.2);
+  border-radius: 8px;
+  background: rgba(201, 106, 45, 0.1);
+  color: #7e3f25;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.membership-calendar-footer-link:hover {
+  border-color: rgba(201, 106, 45, 0.32);
+  background: rgba(201, 106, 45, 0.16);
+  transform: translateY(-1px);
 }
 
 .my-bookings-session-card {

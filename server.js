@@ -164,16 +164,6 @@ const SERVICE_CATALOG = [
   },
   {
     category: 'HYDROGEN SESSION',
-    name: 'H2 Intensive 1 Month (30 Sessions)',
-    priceInr: 46000,
-    nonMemberPriceInr: 90000,
-    memberPriceInr: 46000,
-    includes: '30 Hydrogen Sessions in 1 month',
-    description:
-      'High-frequency monthly program for users seeking accelerated therapeutic benefits. Non-member pricing: Rs. 90,000.',
-  },
-  {
-    category: 'HYDROGEN SESSION',
     name: 'H2 Intensive 3 Month (90 Sessions)',
     priceInr: 100000,
     nonMemberPriceInr: 150000,
@@ -373,7 +363,7 @@ const corsOptions = {
       callback(null, true);
       return;
     }
-    if (ALLOWED_CORS_ORIGINS.includes(origin)) {
+    if (ALLOWED_CORS_ORIGINS.includes(origin) || isLocalDevOrigin(origin)) {
       callback(null, true);
       return;
     }
@@ -457,6 +447,18 @@ function normalizeOriginValue(value) {
   const normalized = normalizeEnvValue(value);
   if (!normalized) return '';
   return normalized.replace(/\/+$/, '');
+}
+
+function isLocalDevOrigin(origin) {
+  const normalized = normalizeOriginValue(origin);
+  if (!normalized) return false;
+  try {
+    const parsed = new URL(normalized);
+    const host = String(parsed.hostname || '').toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1';
+  } catch {
+    return false;
+  }
 }
 
 function deriveBookingSenderEmail(email) {

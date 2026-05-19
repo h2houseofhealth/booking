@@ -416,7 +416,7 @@
       <section id="membershipSection" class="panel app-only user-only" aria-label="Membership" hidden>
         <div class="panel-head membership-head">
           <div>
-            <h2>Membership Subscription</h2>
+            <h2 id="membershipSectionTitle">Membership Subscription</h2>
             <p id="memberFlowLabel" class="service-panel-lead"></p>
           </div>
           <p id="membershipStatusText" class="membership-status"></p>
@@ -441,7 +441,7 @@
             />
           </div>
           <div class="membership-stat-grid">
-            <button class="membership-stat-card" type="button">
+            <button id="membershipStatMembersCard" class="membership-stat-card" type="button">
               <span class="stat-icon stat-icon-session" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
                   <path d="M12 2.75c2.08 3.02 5.54 6.8 5.54 10.42A5.54 5.54 0 1 1 6.46 13.17C6.46 9.55 9.92 5.77 12 2.75Z" />
@@ -452,7 +452,7 @@
               <strong id="membershipStatSessions">0</strong>
               <small id="membershipStatSessionsMeta">Included</small>
             </button>
-            <button class="membership-stat-card" type="button">
+            <button id="membershipStatValidCard" class="membership-stat-card" type="button">
               <span class="stat-icon stat-icon-members" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
                   <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
@@ -465,7 +465,7 @@
               <strong id="membershipStatMembers">0</strong>
               <small id="membershipStatMembersMeta">Covered</small>
             </button>
-            <button class="membership-stat-card" type="button">
+            <button id="membershipStatExtraCard" class="membership-stat-card" type="button">
               <span class="stat-icon stat-icon-valid" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
                   <path d="M7 3.5v3" />
@@ -513,7 +513,7 @@
                     </div>
                   </div>
                 </div>
-                <div class="progress-cluster">
+                <div id="membershipTopUpMetrics" class="progress-cluster">
                   <div class="progress-ring" id="topupProgressRing">
                     <span id="topupProgressText">0%</span>
                   </div>
@@ -522,6 +522,32 @@
                     <p class="progress-sub">Purchased</p>
                     <div class="progress-mini">
                       <span id="topupRemainingSessions">0</span>
+                      <small>remaining</small>
+                    </div>
+                  </div>
+                </div>
+                <div class="progress-cluster">
+                  <div class="progress-ring" id="therapyProgressRing">
+                    <span id="therapyProgressText">0%</span>
+                  </div>
+                  <div class="progress-info">
+                    <strong id="therapyUsageCount">0 of 0</strong>
+                    <p class="progress-sub">IV Therapies</p>
+                    <div class="progress-mini">
+                      <span id="therapyRemainingSessions">0</span>
+                      <small>remaining</small>
+                    </div>
+                  </div>
+                </div>
+                <div class="progress-cluster">
+                  <div class="progress-ring" id="shotsProgressRing">
+                    <span id="shotsProgressText">0%</span>
+                  </div>
+                  <div class="progress-info">
+                    <strong id="shotsUsageCount">0 of 0</strong>
+                    <p class="progress-sub">IV Shots</p>
+                    <div class="progress-mini">
+                      <span id="shotsRemainingSessions">0</span>
                       <small>remaining</small>
                     </div>
                   </div>
@@ -561,6 +587,10 @@
               <span class="membership-highlight-kicker">Upcoming</span>
               <h4 id="membershipNextSessionTitle">No hydrogen sessions scheduled</h4>
               <p id="membershipNextSessionMeta" class="membership-copy"></p>
+              <div class="service-sticky-actions">
+                <button id="membershipCardScheduleBtn" class="btn btn-primary" type="button">Schedule Hydrogen Session</button>
+                <button id="membershipCardTopUpBtn" class="btn btn-secondary" type="button">Buy Additional</button>
+              </div>
             </div>
             <div id="membershipPeopleCard" class="membership-progress-card membership-people-card" hidden>
               <div class="membership-progress-head">

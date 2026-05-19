@@ -2699,10 +2699,6 @@ function openAdminCalendarBooking(serviceName, bookingTime = '') {
     updateBookingAddOnOptions();
     updateBookingSummary();
   };
-  if (!isAdminCustomerFormReady()) {
-    openAdminCalendarCustomerDialog(continueBooking);
-    return;
-  }
   continueBooking();
 }
 
@@ -8931,6 +8927,8 @@ function renderMembership() {
   const usagePercent = active
     ? Number(hydrogenSessionSummary.usagePercent || 0)
     : unifiedHydrogenTracking.usagePercent;
+  const safeUsagePercent = Number.isFinite(usagePercent) ? Math.max(0, Math.min(100, usagePercent)) : 0;
+  const safeTopUpPercent = Number.isFinite(topUpUsagePercent) ? Math.max(0, Math.min(100, topUpUsagePercent)) : 0;
 
   if (elements.membershipUsageTitle) {
     elements.membershipUsageTitle.textContent = active ? 'Hydrogen Session Usage' : 'Booking Activity';
@@ -8962,20 +8960,20 @@ function renderMembership() {
   const membershipTopUpInfo = membershipTopUpMetrics?.querySelector('.progress-info') || null;
   const progressFlex = progressRing?.closest('.progress-flex') || null;
   if (progressRing) {
-    const ringPercent = usagePercent;
+    const ringPercent = safeUsagePercent;
     progressRing.style.background = `conic-gradient(#d2602d ${ringPercent * 3.6}deg, #f0ddd1 0deg)`;
   }
   if (progressText) {
-    progressText.textContent = `${usagePercent}%`;
+    progressText.textContent = `${Math.round(safeUsagePercent)}%`;
   }
   if (remainingSessionsText) {
     remainingSessionsText.textContent = String(remainingSessions);
   }
   if (topupProgressRing) {
-    topupProgressRing.style.background = `conic-gradient(#d2602d ${topUpUsagePercent * 3.6}deg, #f0ddd1 0deg)`;
+    topupProgressRing.style.background = `conic-gradient(#d2602d ${safeTopUpPercent * 3.6}deg, #f0ddd1 0deg)`;
   }
   if (topupProgressText) {
-    topupProgressText.textContent = `${topUpUsagePercent}%`;
+    topupProgressText.textContent = `${Math.round(safeTopUpPercent)}%`;
   }
   if (membershipTopUpCount) {
     membershipTopUpCount.textContent = `${topUpCompletedSessions} of ${extraSessionsBought}`;
@@ -9022,7 +9020,7 @@ function renderMembership() {
   if (shotsRemainingSessions) shotsRemainingSessions.textContent = String(Math.max(0, shotsTotal - shotsUsed));
 
   if (elements.membershipUsageBar) {
-    elements.membershipUsageBar.style.width = `${usagePercent}%`;
+    elements.membershipUsageBar.style.width = `${safeUsagePercent}%`;
   }
   if (elements.membershipUsageNote) {
     elements.membershipUsageNote.textContent = `${completedSessions} completed • ${remainingSessions} booked/scheduled remaining${

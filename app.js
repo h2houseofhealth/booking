@@ -9112,7 +9112,6 @@ function renderMembership() {
     ? Number(hydrogenSessionSummary.usagePercent || 0)
     : unifiedHydrogenTracking.usagePercent;
   const safeUsagePercent = Number.isFinite(usagePercent) ? Math.max(0, Math.min(100, usagePercent)) : 0;
-  const safeTopUpPercent = Number.isFinite(topUpUsagePercent) ? Math.max(0, Math.min(100, topUpUsagePercent)) : 0;
 
   if (elements.membershipUsageTitle) {
     elements.membershipUsageTitle.textContent = active ? 'Hydrogen Session Usage' : 'Booking Activity';
@@ -9125,59 +9124,31 @@ function renderMembership() {
   if (elements.membershipUsageCount) {
     elements.membershipUsageCount.textContent = `${usedSessions} of ${totalSessions}`;
   }
-  const progressRing = document.getElementById('progressRing');
-  const progressText = document.getElementById('progressText');
-  const remainingSessionsText = document.getElementById('remainingSessions');
-  const topupProgressRing = document.getElementById('topupProgressRing');
-  const topupProgressText = document.getElementById('topupProgressText');
-  const membershipTopUpCount = document.getElementById('membershipTopUpCount');
-  const topupRemainingSessionsText = document.getElementById('topupRemainingSessions');
-  const therapyProgressRing = document.getElementById('therapyProgressRing');
-  const therapyProgressText = document.getElementById('therapyProgressText');
-  const therapyUsageCount = document.getElementById('therapyUsageCount');
-  const therapyRemainingSessions = document.getElementById('therapyRemainingSessions');
-  const shotsProgressRing = document.getElementById('shotsProgressRing');
-  const shotsProgressText = document.getElementById('shotsProgressText');
-  const shotsUsageCount = document.getElementById('shotsUsageCount');
-  const shotsRemainingSessions = document.getElementById('shotsRemainingSessions');
-  const membershipTopUpMetrics = document.getElementById('membershipTopUpMetrics');
-  const membershipTopUpInfo = membershipTopUpMetrics?.querySelector('.progress-info') || null;
-  const progressFlex = progressRing?.closest('.progress-flex') || null;
-  if (progressRing) {
-    const ringPercent = safeUsagePercent;
-    progressRing.style.background = `conic-gradient(#d2602d ${ringPercent * 3.6}deg, #f0ddd1 0deg)`;
-  }
-  if (progressText) {
-    progressText.textContent = `${Math.round(safeUsagePercent)}%`;
-  }
-  if (remainingSessionsText) {
-    remainingSessionsText.textContent = String(remainingSessions);
-  }
-  if (topupProgressRing) {
-    topupProgressRing.style.background = `conic-gradient(#d2602d ${safeTopUpPercent * 3.6}deg, #f0ddd1 0deg)`;
-  }
-  if (topupProgressText) {
-    topupProgressText.textContent = `${Math.round(safeTopUpPercent)}%`;
-  }
-  if (membershipTopUpCount) {
-    membershipTopUpCount.textContent = `${topUpCompletedSessions} of ${extraSessionsBought}`;
-  }
-  if (topupRemainingSessionsText) {
-    topupRemainingSessionsText.textContent = String(topUpRemainingSessions);
-  }
-  const topupCluster = topupProgressRing?.closest('.progress-cluster') || null;
-  if (topupCluster) {
-    topupCluster.hidden = !active;
-  }
-  if (membershipTopUpMetrics) {
-    membershipTopUpMetrics.hidden = !active;
-  }
-  if (membershipTopUpInfo) {
-    membershipTopUpInfo.hidden = !active;
-  }
-  if (progressFlex) {
-    progressFlex.classList.toggle('is-single', !active);
-  }
+  const renderUsageBlocks = (containerId, activeCount, totalCount) => {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const total = Math.max(0, Number(totalCount || 0));
+    const activeTotal = Math.max(0, Math.min(total, Number(activeCount || 0)));
+    container.innerHTML = '';
+    for (let i = 0; i < total; i += 1) {
+      const block = document.createElement('span');
+      block.className = i < activeTotal ? 'usage-v2-block is-active' : 'usage-v2-block';
+      container.appendChild(block);
+    }
+  };
+
+  const renderMiniBlocks = (containerId, activeCount, totalCount) => {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const total = Math.max(0, Number(totalCount || 0));
+    const activeTotal = Math.max(0, Math.min(total, Number(activeCount || 0)));
+    container.innerHTML = '';
+    for (let i = 0; i < total; i += 1) {
+      const block = document.createElement('span');
+      block.className = i < activeTotal ? 'usage-v2-mini-block is-active' : 'usage-v2-mini-block';
+      container.appendChild(block);
+    }
+  };
   const nonCancelledBookings = allBookings.filter((booking) => String(booking.status || '').toLowerCase() !== 'cancelled');
   const completedBookings = nonCancelledBookings.filter((booking) => String(booking.status || '').toLowerCase() === 'completed');
   const isTherapyBooking = (booking) => String(getServiceCatalogEntry(booking?.serviceName || '')?.category || '').toUpperCase() === 'IV THERAPIES';
@@ -9189,27 +9160,35 @@ function renderMembership() {
   const therapyPercent = therapyTotal > 0 ? Math.min(100, Math.round((therapyUsed / therapyTotal) * 100)) : 0;
   const shotsPercent = shotsTotal > 0 ? Math.min(100, Math.round((shotsUsed / shotsTotal) * 100)) : 0;
 
-  if (therapyProgressRing) {
-    therapyProgressRing.style.background = `conic-gradient(#d2602d ${therapyPercent * 3.6}deg, #f0ddd1 0deg)`;
-  }
-  if (therapyProgressText) therapyProgressText.textContent = `${therapyPercent}%`;
-  if (therapyUsageCount) therapyUsageCount.textContent = `${therapyUsed} of ${therapyTotal}`;
-  if (therapyRemainingSessions) therapyRemainingSessions.textContent = String(Math.max(0, therapyTotal - therapyUsed));
+  renderUsageBlocks('membershipSessionBlocks', usedSessions, totalSessions || 16);
+  renderMiniBlocks('membershipTopUpBlocks', topUpCompletedSessions, Math.max(1, extraSessionsBought || 1));
+  renderMiniBlocks('membershipTherapyBlocks', therapyUsed, Math.max(1, therapyTotal || 1));
+  renderMiniBlocks('membershipShotsBlocks', shotsUsed, Math.max(1, shotsTotal || 1));
 
-  if (shotsProgressRing) {
-    shotsProgressRing.style.background = `conic-gradient(#d2602d ${shotsPercent * 3.6}deg, #f0ddd1 0deg)`;
-  }
-  if (shotsProgressText) shotsProgressText.textContent = `${shotsPercent}%`;
-  if (shotsUsageCount) shotsUsageCount.textContent = `${shotsUsed} of ${shotsTotal}`;
-  if (shotsRemainingSessions) shotsRemainingSessions.textContent = String(Math.max(0, shotsTotal - shotsUsed));
+  const membershipUsageCount = document.getElementById('membershipUsageCount');
+  const remainingSessionsText = document.getElementById('remainingSessions');
+  const membershipTopUpCount = document.getElementById('membershipTopUpCount');
+  const therapyUsageCount = document.getElementById('therapyUsageCount');
+  const shotsUsageCount = document.getElementById('shotsUsageCount');
+  const attendanceCompleted = document.getElementById('attendanceCompleted');
+  const attendanceUpcoming = document.getElementById('attendanceUpcoming');
+  const attendanceMissed = document.getElementById('attendanceMissed');
+
+  if (membershipUsageCount) membershipUsageCount.textContent = String(usedSessions);
+  if (remainingSessionsText) remainingSessionsText.textContent = String(remainingSessions);
+  if (membershipTopUpCount) membershipTopUpCount.textContent = String(topUpRemainingSessions);
+  if (therapyUsageCount) therapyUsageCount.textContent = String(Math.max(0, therapyTotal - therapyUsed));
+  if (shotsUsageCount) shotsUsageCount.textContent = String(Math.max(0, shotsTotal - shotsUsed));
+  if (attendanceCompleted) attendanceCompleted.textContent = String(completedSessions);
+  if (attendanceUpcoming) attendanceUpcoming.textContent = String(upcomingHydrogenBookings.length);
+  if (attendanceMissed) attendanceMissed.textContent = String(missedSessions);
 
   if (elements.membershipUsageBar) {
     elements.membershipUsageBar.style.width = `${safeUsagePercent}%`;
   }
   if (elements.membershipUsageNote) {
-    elements.membershipUsageNote.textContent = `${completedSessions} completed • ${remainingSessions} booked/scheduled remaining${
-      active ? ` • Extra sessions bought: ${extraSessionsBought}` : ''
-    }${missedSessions > 0 ? ` • Missed hydrogen sessions: ${missedSessions}` : ''}`;
+    elements.membershipUsageNote.textContent = '';
+    elements.membershipUsageNote.hidden = true;
   }
   if (elements.membershipCardTopUpBtn) {
     elements.membershipCardTopUpBtn.textContent = 'Buy Additional';

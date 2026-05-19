@@ -5936,6 +5936,13 @@ function isCurrentUserMembershipActive() {
   return Number.isFinite(expiresAt) && expiresAt > Date.now();
 }
 
+function hasHydrogenMemberPricingAccess(service = null) {
+  if (service && typeof service.membershipActive === 'boolean') {
+    return service.membershipActive;
+  }
+  return isCurrentUserMembershipActive();
+}
+
 function getEffectiveMembershipExpiryDate(startedAtValue, expiresAtValue) {
   const startedAt = startedAtValue ? new Date(startedAtValue).getTime() : NaN;
   if (Number.isFinite(startedAt)) {
@@ -6659,7 +6666,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
       const option = document.createElement('option');
       option.value = optionData.service.name;
       const sessionsCount = Number(optionData.sessions || 1);
-      const isMember = isCurrentUserMembershipActive();
+      const isMember = hasHydrogenMemberPricingAccess(optionData.service);
       const packagePriceInr = Number(
         isMember
           ? optionData.service?.memberPriceInr ?? optionData.service?.effectivePriceInr ?? optionData.service?.priceInr
@@ -10294,10 +10301,10 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       return paymentReference === 'buy_extra' || Number(entry?.isTopUpSession || 0) === 1;
     });
     const displayPackageName =
-      packageSessionCount > 1
-        ? 'Membership Sessions'
-        : isAdditionalHydrogenPackage
-          ? 'H2 Additional Sessions'
+      isAdditionalHydrogenPackage
+        ? 'H2 Additional Sessions'
+        : packageSessionCount > 1
+          ? 'Hydrogen Package'
           : baseServiceName;
     const payableHydrogenEntries = hydrogenEntries.filter(
       (entry) => entry.status !== 'cancelled' && String(entry.paymentStatus || 'unpaid').toLowerCase() !== 'paid'
@@ -12163,6 +12170,10 @@ function hasStandaloneIvOnDateClient(bookingDate, excludeGroupId = '') {
 
 function getHydrogenGroupBreakdown(hydrogenEntries, addOnEntries) {
   const membershipActive = isCurrentUserMembershipActive();
+  const isAdditionalHydrogenPackage = hydrogenEntries.some((entry) => {
+    const paymentReference = String(entry?.paymentReference || '').trim().toLowerCase();
+    return paymentReference === 'buy_extra' || Number(entry?.isTopUpSession || 0) === 1;
+  });
   const chargeableHydrogenEntries = hydrogenEntries.filter(
     (entry) => String(entry?.paymentReference || '').trim().toLowerCase() !== 'membership'
   );
@@ -12175,7 +12186,7 @@ function getHydrogenGroupBreakdown(hydrogenEntries, addOnEntries) {
   const breakdownParts = [];
 
   let hydrogenAmountInr = 0;
-  if (membershipActive && extraSessionPriceInr > 0) {
+  if (membershipActive && !isAdditionalHydrogenPackage && extraSessionPriceInr > 0) {
     hydrogenAmountInr = chargeableHydrogenEntries.length * extraSessionPriceInr;
     if (hydrogenAmountInr > 0) {
       breakdownParts.push(

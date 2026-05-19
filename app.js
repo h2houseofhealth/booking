@@ -2699,10 +2699,6 @@ function openAdminCalendarBooking(serviceName, bookingTime = '') {
     updateBookingAddOnOptions();
     updateBookingSummary();
   };
-  if (!isAdminCustomerFormReady()) {
-    openAdminCalendarCustomerDialog(continueBooking);
-    return;
-  }
   continueBooking();
 }
 

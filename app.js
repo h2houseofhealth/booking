@@ -432,7 +432,6 @@ const elements = {
   membershipWelcomeName: document.getElementById('membershipWelcomeName'),
   membershipDashboardStatus: document.getElementById('membershipDashboardStatus'),
   membershipTakeMembershipBtn: document.getElementById('membershipTakeMembershipBtn'),
-  membershipQuickBookBtn: document.getElementById('membershipQuickBookBtn'),
   membershipStatSessionsLabel: document.getElementById('membershipStatSessionsLabel'),
   membershipStatSessions: document.getElementById('membershipStatSessions'),
   membershipStatSessionsMeta: document.getElementById('membershipStatSessionsMeta'),
@@ -8971,6 +8970,9 @@ function renderMembership() {
 
   const current = state.membership.current || {};
   const active = Boolean(state.membership.active);
+  if (elements.membershipCardScheduleBtn) {
+    elements.membershipCardScheduleBtn.textContent = active ? 'Schedule Hydrogen Session' : 'Book a Session';
+  }
   const currentPeopleCount = Number(current.peopleCount || 0);
   const activePlan =
     (state.membership.plans || []).find((plan) => String(plan.id) === String(current.plan || '')) ||
@@ -8997,9 +8999,6 @@ function renderMembership() {
 
   if (elements.membershipTakeMembershipBtn) {
     elements.membershipTakeMembershipBtn.hidden = active || state.membershipBrowseVisible;
-  }
-  if (elements.membershipQuickBookBtn) {
-    elements.membershipQuickBookBtn.hidden = !active;
   }
 
   const firstName = String(state.user?.name || 'Member').trim().split(/\s+/)[0] || 'Member';

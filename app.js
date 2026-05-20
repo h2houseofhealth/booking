@@ -1,4 +1,4 @@
-﻿const API_URL = (() => {
+﻿function resolveApiUrl() {
   const configuredWindowValue =
     typeof window !== 'undefined' ? String(window.__API_URL__ || '').trim() : '';
   const configuredMetaValue =
@@ -14,7 +14,9 @@
   if (configuredWindowValue) return configuredWindowValue;
   if (isLocalHost) return '';
   return configuredMetaValue || '';
-})();
+}
+
+const API_URL = resolveApiUrl();
 
 function buildApiUrl(url = '') {
   const normalized = String(url || '').trim();
@@ -13387,22 +13389,6 @@ function renderMyBookingsSessionTracking() {
           ${moreLine}
         `;
       }
-    }
-    function updateProgressRing(used, total) {
-      const percent = total === 0 ? 0 : Math.round((used / total) * 100);
-
-      const circle = document.getElementById("progressRing");
-      const text = document.getElementById("progressText");
-      const remaining = document.getElementById("remainingSessions");
-
-      if (!circle) return;
-
-      circle.style.background = `conic-gradient(
-        var(--primary) ${percent * 3.6}deg,
-        #eee 0deg
-      )`;
-      text.textContent = percent + "%";
-      if (remaining) remaining.textContent = total - used;
     }
   }
 }

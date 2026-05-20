@@ -926,18 +926,16 @@ function attachEvents() {
   elements.noticeDialogCloseBtn?.addEventListener('click', closeNoticeDialog);
 
   elements.logoutBtn?.addEventListener('click', async () => {
-    const response = await fetch(buildApiUrl('/api/auth/logout'), withApiCredentials({ method: 'POST' }));
-    if (!response.ok) {
-      let message = 'Logout failed.';
-      try {
-        const data = await response.json();
-        message = data?.message || message;
-      } catch {
-        // ignore json parsing errors for empty responses
+    let logoutWarning = '';
+    try {
+      const response = await fetch(buildApiUrl('/api/auth/logout'), withApiCredentials({ method: 'POST' }));
+      if (!response.ok) {
+        logoutWarning = 'Signed out on this device, but server logout returned an error.';
       }
-      showNotice({ title: 'Logout failed', body: message });
-      return;
+    } catch {
+      logoutWarning = 'Signed out on this device, but server logout could not be reached.';
     }
+
     state.user = null;
     state.bookings = [];
     state.services = [];
@@ -1031,6 +1029,10 @@ function attachEvents() {
     if (elements.adminUserSessionDialog?.open) elements.adminUserSessionDialog.close();
     renderAuthMode();
     render();
+
+    if (logoutWarning) {
+      showNotice({ title: 'Logout notice', body: logoutWarning });
+    }
   });
   const updateAdminCustomerField = (field) => (event) => {
     const target = event?.target;

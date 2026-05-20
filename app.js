@@ -739,6 +739,16 @@ function ensurePostLoginDashboardChoice() {
   state.postLoginChoice = isCurrentUserMembershipActive() ? 'continue-member' : 'continue-non-member';
 }
 
+function resetMyBookingsViewState() {
+  state.userBookingsFilter = 'all';
+}
+
+function resetServicesUiStateForUserSwitch() {
+  resetServiceBrowserState();
+  state.expandedServiceCategories = {};
+  state.serviceDetailSelections = {};
+}
+
 function routeAfterAuthSuccess() {
   ensurePostLoginDashboardChoice();
   if (state.user?.role === 'admin') {
@@ -751,6 +761,8 @@ function routeAfterAuthSuccess() {
 }
 
 async function finishAuthSuccess(result) {
+  resetMyBookingsViewState();
+  resetServicesUiStateForUserSwitch();
   state.user = result.user;
   storeAuthToken(result.token || result.authToken || '');
   state.postLoginChoice = state.pendingPreAuthChoice || '';
@@ -781,6 +793,8 @@ async function bootstrap() {
   populateTimeSlots();
   await loadCurrentUser();
   if (state.user) {
+    resetMyBookingsViewState();
+    resetServicesUiStateForUserSwitch();
     await loadProfile();
     await loadDashboardData();
     ensurePostLoginDashboardChoice();
@@ -935,6 +949,8 @@ function attachEvents() {
     state.adminResolvedCustomer = null;
     state.adminCustomerForm = { name: '', email: '', phone: '' };
     state.postLoginChoice = '';
+    resetMyBookingsViewState();
+    resetServicesUiStateForUserSwitch();
     state.pendingPreAuthChoice = '';
     state.showAuthCard = false;
     state.activeUserTab = 'services';
@@ -3229,6 +3245,8 @@ function renderAdminCalendar() {
 function resetServiceBrowserState() {
   resetHydrogenComposer();
   resetSingleSessionComposer();
+  state.expandedServiceCategories = {};
+  state.serviceDetailSelections = {};
   state.selectedServiceCategory = null;
   state.selectedServiceDate = getTodayIsoDate();
   state.slotAvailability = {};
@@ -5418,7 +5436,7 @@ function getFilteredUserHistoryBookings(sourceBookings = state.bookings) {
   const bookings = Array.isArray(sourceBookings) ? sourceBookings : [];
   const activeFilter = String(state.userBookingsFilter || 'all').trim().toLowerCase();
   const statusFiltered = activeFilter === 'all'
-    ? bookings
+    ? bookings.filter((booking) => String(booking?.status || '').trim().toLowerCase() !== 'schedule_later')
     : bookings.filter((booking) => {
     const status = String(booking?.status || '').trim().toLowerCase();
     if (activeFilter === 'completed') return status === 'completed';
@@ -6126,7 +6144,7 @@ function render() {
     if (elements.memberSessionCountDecBtn) {
       elements.memberSessionCountDecBtn.disabled = Number(state.memberSessionDisplayCount || 0) <= 0;
     }
-    renderUserRows(filteredHistoryBookings, state.userMembershipOrders || []);
+    renderUserRows(filteredHistoryBookings, state.userMembershipOrders || [], historyBookings);
     renderCartRows(cartDisplayBookings);
     renderUserCheckoutSummary(cartPayableBookings);
 
@@ -6364,12 +6382,14 @@ function getUnifiedHydrogenTrackingSummary(bookings = state.bookings) {
     if (status === 'completed' || status === 'cancelled' || status === 'schedule_later') return false;
     return !isBookingSlotInPast(booking.bookingDate, booking.bookingTime);
   }).length;
+  const missedSessions = hydrogenBookings.filter(isBookingMissed).length;
   const totalSessions = hydrogenBookings.length;
   const remainingSessions = Math.max(0, totalSessions - completedSessions);
   return {
     totalSessions,
     completedSessions,
     upcomingSessions,
+    missedSessions,
     remainingSessions,
     usagePercent: totalSessions > 0 ? Math.min(100, Math.round((completedSessions / totalSessions) * 100)) : 0,
     hydrogenBookings,
@@ -9103,7 +9123,7 @@ function renderMembership() {
   const completedSessions = active
     ? Number(hydrogenSessionSummary.completedSessions || 0)
     : unifiedHydrogenTracking.completedSessions;
-  const missedSessions = active ? Number(hydrogenSessionSummary.missedSessions || 0) : 0;
+  const missedSessions = Number(unifiedHydrogenTracking.missedSessions || 0);
   const remainingSessions = active
     ? Number(hydrogenSessionSummary.remainingSessions || 0)
     : unifiedHydrogenTracking.remainingSessions;
@@ -9172,9 +9192,10 @@ function renderMembership() {
   const attendanceCompleted = document.getElementById('attendanceCompleted');
   const attendanceUpcoming = document.getElementById('attendanceUpcoming');
   const attendanceMissed = document.getElementById('attendanceMissed');
+  const scheduleLaterCount = getScheduleLaterDisplayRowCount(allBookings);
 
   if (membershipUsageCount) membershipUsageCount.textContent = String(usedSessions);
-  if (remainingSessionsText) remainingSessionsText.textContent = String(remainingSessions);
+  if (remainingSessionsText) remainingSessionsText.textContent = String(scheduleLaterCount);
   if (membershipTopUpCount) membershipTopUpCount.textContent = String(topUpRemainingSessions);
   if (therapyUsageCount) therapyUsageCount.textContent = String(Math.max(0, therapyTotal - therapyUsed));
   if (shotsUsageCount) shotsUsageCount.textContent = String(Math.max(0, shotsTotal - shotsUsed));
@@ -9209,7 +9230,6 @@ function renderMembership() {
       : active ? 'Book your next hydrogen session to keep momentum.' : 'Book your next session to start building your dashboard.';
   }
   if (elements.membershipScheduleLaterFooter) {
-    const scheduleLaterCount = getScheduleLaterDisplayRowCount(allBookings);
     elements.membershipScheduleLaterFooter.hidden = scheduleLaterCount <= 0;
     elements.membershipScheduleLaterFooter.textContent = `${scheduleLaterCount} Session${scheduleLaterCount === 1 ? '' : 's'} Awaits in schedule later tab`;
   }
@@ -10306,11 +10326,11 @@ function renderAdminUserSessionDialog() {
     });
 }
 
-function renderUserRows(bookings, membershipOrders = []) {
+function renderUserRows(bookings, membershipOrders = [], allBookings = bookings) {
   if (!elements.bookingTableBody || !elements.emptyState) return;
   elements.bookingTableBody.innerHTML = '';
 
-  const displayRows = buildUserBookingRows(bookings, bookings);
+  const displayRows = buildUserBookingRows(bookings, allBookings);
   const activeFilter = String(state.userBookingsFilter || 'all').trim().toLowerCase();
   const paidMembershipOrders = (Array.isArray(membershipOrders) ? membershipOrders : []).filter(
     (order) => String(order?.status || '').trim().toLowerCase() === 'paid'
@@ -10558,6 +10578,7 @@ function buildUserRescheduleMissNotice(booking) {
 }
 
 function buildUserBookingRows(bookings, allBookings = bookings) {
+  const includedEntryIds = new Set((Array.isArray(bookings) ? bookings : []).map((booking) => String(booking?.id || '')));
   const byGroup = new Map();
   for (const booking of allBookings) {
     const key = booking.bookingGroupId || `single_${booking.id}`;
@@ -10576,8 +10597,23 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
     const sortedEntries = [...entries].sort((a, b) =>
       `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`)
     );
-    const hydrogenEntries = sortedEntries.filter((entry) => getBookingCategory(entry.serviceName) === 'HYDROGEN SESSION');
-    const addOnEntries = sortedEntries.filter((entry) => getBookingCategory(entry.serviceName) === 'IV ADD-ON');
+    const includedEntries = sortedEntries.filter((entry) => includedEntryIds.has(String(entry?.id || '')));
+    const hydrogenEntries = includedEntries.filter((entry) => getBookingCategory(entry.serviceName) === 'HYDROGEN SESSION');
+    const addOnEntries = includedEntries.filter((entry) => getBookingCategory(entry.serviceName) === 'IV ADD-ON');
+    const groupHydrogenEntries = [...entries]
+      .filter((entry) => getBookingCategory(entry.serviceName) === 'HYDROGEN SESSION')
+      .sort((a, b) => {
+        const seqA = Number(a?.sessionSequence || a?.sessionNumber || 0);
+        const seqB = Number(b?.sessionSequence || b?.sessionNumber || 0);
+        if (seqA > 0 && seqB > 0 && seqA !== seqB) return seqA - seqB;
+        const createdA = String(a?.createdAt || '').trim();
+        const createdB = String(b?.createdAt || '').trim();
+        if (createdA && createdB && createdA !== createdB) return createdA.localeCompare(createdB);
+        return String(a?.id || '').localeCompare(String(b?.id || ''));
+      });
+    const hydrogenSequenceById = new Map(
+      groupHydrogenEntries.map((entry, index) => [String(entry?.id || ''), index + 1])
+    );
     const isGroupedHydrogen = Boolean(groupKey.startsWith('hydrogen_') || (sortedEntries[0]?.bookingGroupId && hydrogenEntries.length));
 
     if (!isGroupedHydrogen) {
@@ -10606,10 +10642,11 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
     }
 
     const booking =
-      sortedEntries.find(
+      includedEntries.find(
         (entry) => entry.status !== 'cancelled' && String(entry.paymentStatus || 'unpaid').toLowerCase() !== 'paid'
       ) ||
       hydrogenEntries[0] ||
+      includedEntries[0] ||
       sortedEntries[0];
     const baseServiceName = hydrogenEntries[0]?.serviceName || booking.serviceName || 'Hydrogen Package';
     const packageSessionCount = Math.max(1, Number(hydrogenEntries.length || 0));
@@ -10634,17 +10671,20 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
     const breakdown = getHydrogenGroupBreakdown(displayHydrogenEntries, displayAddOnEntries);
     const payableBreakdown = getHydrogenGroupBreakdown(payableHydrogenEntries, payableAddOnEntries);
     const addOnDetails = addOnEntries.map((entry) => {
-      const linkedIndex = hydrogenEntries.findIndex(
+      const linkedHydrogen = groupHydrogenEntries.find(
         (slot) => slot.bookingDate === entry.bookingDate && slot.bookingTime === entry.bookingTime
       );
-      return linkedIndex >= 0 ? `${entry.serviceName} (Hydrogen Session ${linkedIndex + 1})` : entry.serviceName;
+      const linkedSequence = linkedHydrogen ? Number(hydrogenSequenceById.get(String(linkedHydrogen?.id || '')) || 0) : 0;
+      return linkedSequence > 0 ? `${entry.serviceName} (Hydrogen Session ${linkedSequence})` : entry.serviceName;
     });
-    const holdNotice = buildHoldNotice(sortedEntries);
+    const holdNotice = buildHoldNotice(includedEntries);
     const rescheduleMissNotice = buildUserRescheduleMissNotice(booking);
 
-    const slotLines = hydrogenEntries.map(
-      (entry, index) => `S${index + 1}: ${formatDateTime(entry.bookingDate, entry.bookingTime)}`
-    );
+    const slotLines = hydrogenEntries.map((entry) => {
+      const sequence = Number(hydrogenSequenceById.get(String(entry?.id || '')) || 0);
+      const label = sequence > 0 ? `S${sequence}` : 'Session';
+      return `${label}: ${formatDateTime(entry.bookingDate, entry.bookingTime)}`;
+    });
     if (addOnEntries.length) {
       addOnEntries.forEach((entry) => {
         slotLines.push(`Add-on: ${entry.serviceName} with ${formatDateTime(entry.bookingDate, entry.bookingTime)}`);
@@ -10661,8 +10701,8 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       hydrogenEntries,
       addOnEntries,
       isGroupedHydrogen: true,
-      status: summarizeGroupStatus(sortedEntries),
-      paymentStatus: summarizeGroupPaymentStatus(sortedEntries),
+      status: summarizeGroupStatus(includedEntries),
+      paymentStatus: summarizeGroupPaymentStatus(includedEntries),
       amountInr: Number(breakdown.totalAmountInr || 0),
       serviceTitle: 'Hydrogen Package Booking',
       serviceMetaLines: [

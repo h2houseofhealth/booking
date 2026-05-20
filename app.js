@@ -449,6 +449,7 @@ const elements = {
   membershipStatExtraCard: document.getElementById('membershipStatExtraCard'),
   membershipStatBecomeCard: document.getElementById('membershipStatBecomeCard'),
   membershipUsageTitle: document.getElementById('membershipUsageTitle'),
+  membershipUsageSessionHead: document.getElementById('membershipUsageSessionHead'),
   membershipUsageLabel: document.getElementById('membershipUsageLabel'),
   membershipUsageCount: document.getElementById('membershipUsageCount'),
   membershipUsageBar: document.getElementById('membershipUsageBar'),
@@ -5466,9 +5467,9 @@ function getScheduleLaterDisplayRowCount(bookings = state.bookings) {
   const scheduleLaterHydrogenBookings = (Array.isArray(bookings) ? bookings : []).filter(
     (booking) =>
       getBookingCategory(booking?.serviceName) === 'HYDROGEN SESSION' &&
-      String(booking?.status || '').trim().toLowerCase() === 'schedule_later'
+      normalizeBookingStatusValue(booking?.status) === 'schedule_later'
   );
-  return buildUserBookingRows(scheduleLaterHydrogenBookings, scheduleLaterHydrogenBookings).length;
+  return scheduleLaterHydrogenBookings.length;
 }
 
 function getFilteredAdminUsers() {
@@ -8667,6 +8668,7 @@ function getHydrogenPlanOptions(services) {
       const holdCount = Number(serviceHolds[slot.value] || 0);
       const capacity = Number(state.slotCapacityByService[service.name] || 8);
       const isPastSlot = isBookingSlotInPast(state.selectedServiceDate, slot.value);
+      if (isPastSlot) continue;
       const slotRow = document.createElement('div');
       slotRow.className = 'service-slot-row';
       const slotTime = document.createElement('span');
@@ -8808,9 +8810,7 @@ function isBookingSlotInPast(bookingDate, bookingTime) {
   const minutes = Number(timeMatch[2]);
   const slotDateTime = new Date(year, monthIndex, day, hours, minutes, 0, 0);
   if (Number.isNaN(slotDateTime.getTime())) return false;
-  const slotEndDateTime = new Date(slotDateTime.getTime());
-  slotEndDateTime.setHours(slotEndDateTime.getHours() + 1);
-  return slotEndDateTime.getTime() <= Date.now();
+  return slotDateTime.getTime() <= Date.now();
 }
 
 function getBookingSlotStartTimestamp(bookingDate, bookingTime) {
@@ -9122,6 +9122,9 @@ function renderMembership() {
   const usedSessions = active
     ? Number(hydrogenSessionSummary.usedSessions || 0)
     : unifiedHydrogenTracking.completedSessions;
+  const usageCompletedSessions = active
+    ? Number(hydrogenSessionSummary.completedSessions || 0)
+    : Number(unifiedHydrogenTracking.completedSessions || 0);
   const completedSessions = Number(unifiedHydrogenTracking.completedSessions || 0);
   const upcomingSessions = Number(unifiedHydrogenTracking.upcomingSessions || 0);
   const missedSessions = Number(unifiedHydrogenTracking.missedSessions || 0);
@@ -9136,13 +9139,16 @@ function renderMembership() {
   if (elements.membershipUsageTitle) {
     elements.membershipUsageTitle.textContent = active ? 'Hydrogen Session Usage' : 'Booking Activity';
   }
+  if (elements.membershipUsageSessionHead) {
+    elements.membershipUsageSessionHead.textContent = active ? 'Membership Sessions' : 'Sessions';
+  }
   if (elements.membershipUsageLabel) {
     elements.membershipUsageLabel.textContent = totalSessions
-      ? `${usedSessions} of ${totalSessions} used`
-      : '0 of 0 used';
+      ? `${usageCompletedSessions} of ${totalSessions} completed`
+      : '0 of 0 completed';
   }
   if (elements.membershipUsageCount) {
-    elements.membershipUsageCount.textContent = `${usedSessions} of ${totalSessions}`;
+    elements.membershipUsageCount.textContent = `${usageCompletedSessions} of ${totalSessions}`;
   }
   const renderUsageBlocks = (containerId, activeCount, totalCount) => {
     const container = document.getElementById(containerId);
@@ -9180,7 +9186,7 @@ function renderMembership() {
   const therapyPercent = therapyTotal > 0 ? Math.min(100, Math.round((therapyUsed / therapyTotal) * 100)) : 0;
   const shotsPercent = shotsTotal > 0 ? Math.min(100, Math.round((shotsUsed / shotsTotal) * 100)) : 0;
 
-  renderUsageBlocks('membershipSessionBlocks', usedSessions, totalSessions || 16);
+  renderUsageBlocks('membershipSessionBlocks', usageCompletedSessions, totalSessions || 16);
   renderMiniBlocks('membershipTopUpBlocks', topUpCompletedSessions, Math.max(1, extraSessionsBought || 1));
   renderMiniBlocks('membershipTherapyBlocks', therapyUsed, Math.max(1, therapyTotal || 1));
   renderMiniBlocks('membershipShotsBlocks', shotsUsed, Math.max(1, shotsTotal || 1));
@@ -9195,7 +9201,7 @@ function renderMembership() {
   const attendanceScheduleLater = document.getElementById('attendanceScheduleLater');
   const scheduleLaterCount = getScheduleLaterDisplayRowCount(allBookings);
 
-  if (membershipUsageCount) membershipUsageCount.textContent = String(usedSessions);
+  if (membershipUsageCount) membershipUsageCount.textContent = String(usageCompletedSessions);
   if (membershipTopUpCount) membershipTopUpCount.textContent = String(topUpRemainingSessions);
   if (therapyUsageCount) therapyUsageCount.textContent = String(Math.max(0, therapyTotal - therapyUsed));
   if (shotsUsageCount) shotsUsageCount.textContent = String(Math.max(0, shotsTotal - shotsUsed));

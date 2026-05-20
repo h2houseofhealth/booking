@@ -9122,9 +9122,8 @@ function renderMembership() {
   const usedSessions = active
     ? Number(hydrogenSessionSummary.usedSessions || 0)
     : unifiedHydrogenTracking.completedSessions;
-  const completedSessions = active
-    ? Number(hydrogenSessionSummary.completedSessions || 0)
-    : unifiedHydrogenTracking.completedSessions;
+  const completedSessions = Number(unifiedHydrogenTracking.completedSessions || 0);
+  const upcomingSessions = Number(unifiedHydrogenTracking.upcomingSessions || 0);
   const missedSessions = Number(unifiedHydrogenTracking.missedSessions || 0);
   const remainingSessions = active
     ? Number(hydrogenSessionSummary.remainingSessions || 0)
@@ -9187,23 +9186,23 @@ function renderMembership() {
   renderMiniBlocks('membershipShotsBlocks', shotsUsed, Math.max(1, shotsTotal || 1));
 
   const membershipUsageCount = document.getElementById('membershipUsageCount');
-  const remainingSessionsText = document.getElementById('remainingSessions');
   const membershipTopUpCount = document.getElementById('membershipTopUpCount');
   const therapyUsageCount = document.getElementById('therapyUsageCount');
   const shotsUsageCount = document.getElementById('shotsUsageCount');
   const attendanceCompleted = document.getElementById('attendanceCompleted');
   const attendanceUpcoming = document.getElementById('attendanceUpcoming');
   const attendanceMissed = document.getElementById('attendanceMissed');
+  const attendanceScheduleLater = document.getElementById('attendanceScheduleLater');
   const scheduleLaterCount = getScheduleLaterDisplayRowCount(allBookings);
 
   if (membershipUsageCount) membershipUsageCount.textContent = String(usedSessions);
-  if (remainingSessionsText) remainingSessionsText.textContent = String(scheduleLaterCount);
   if (membershipTopUpCount) membershipTopUpCount.textContent = String(topUpRemainingSessions);
   if (therapyUsageCount) therapyUsageCount.textContent = String(Math.max(0, therapyTotal - therapyUsed));
   if (shotsUsageCount) shotsUsageCount.textContent = String(Math.max(0, shotsTotal - shotsUsed));
   if (attendanceCompleted) attendanceCompleted.textContent = String(completedSessions);
-  if (attendanceUpcoming) attendanceUpcoming.textContent = String(upcomingHydrogenBookings.length);
+  if (attendanceUpcoming) attendanceUpcoming.textContent = String(upcomingSessions);
   if (attendanceMissed) attendanceMissed.textContent = String(missedSessions);
+  if (attendanceScheduleLater) attendanceScheduleLater.textContent = String(scheduleLaterCount);
 
   if (elements.membershipUsageBar) {
     elements.membershipUsageBar.style.width = `${safeUsagePercent}%`;
@@ -13397,7 +13396,7 @@ function renderMyBookingsSessionTracking() {
         #eee 0deg
       )`;
       text.textContent = percent + "%";
-      remaining.textContent = total - used;
+      if (remaining) remaining.textContent = total - used;
     }
   }
 }

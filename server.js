@@ -47,6 +47,7 @@ const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000
 const ALLOWED_CORS_ORIGINS = Array.from(
   new Set([...DEFAULT_ALLOWED_ORIGINS, ...FRONTEND_ORIGINS, ...DEPLOYMENT_ORIGINS].map(normalizeOriginValue).filter(Boolean))
 );
+const HAS_EXPLICIT_CORS_ORIGINS = FRONTEND_ORIGINS.length > 0 || DEPLOYMENT_ORIGINS.length > 0;
 const ADMIN_DISCOUNT_GATE_PASSWORD = normalizeEnvValue(process.env.ADMIN_DISCOUNT_GATE_PASSWORD || 'H2-FOUNDERS-2026');
 const RAZORPAY_KEY_ID = normalizeEnvValue(process.env.RAZORPAY_KEY_ID);
 const RAZORPAY_KEY_SECRET = normalizeEnvValue(process.env.RAZORPAY_KEY_SECRET);
@@ -363,11 +364,18 @@ const corsOptions = {
       callback(null, true);
       return;
     }
+    if (!HAS_EXPLICIT_CORS_ORIGINS) {
+      // Fallback for deployments where FRONTEND_ORIGINS/API_BASE_URL is not configured yet.
+      callback(null, true);
+      return;
+    }
     if (ALLOWED_CORS_ORIGINS.includes(origin) || isLocalDevOrigin(origin)) {
       callback(null, true);
       return;
     }
-    callback(new Error(`CORS origin not allowed: ${origin}`));
+    const error = new Error(`CORS origin not allowed: ${origin}`);
+    error.status = 403;
+    callback(error);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -375,6 +383,15 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 app.options('/{*any}', cors(corsOptions));
+app.use((err, req, res, next) => {
+  if (String(err?.message || '').toLowerCase().includes('cors origin not allowed')) {
+    return res.status(Number(err?.status || 403)).json({
+      message: 'CORS origin not allowed for this API. Add your frontend URL to FRONTEND_ORIGINS.',
+      origin: String(req.headers.origin || ''),
+    });
+  }
+  return next(err);
+});
 app.set('trust proxy', 1);
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const uploadsDir = path.resolve(process.env.UPLOADS_DIR || path.join(__dirname, 'uploads'));

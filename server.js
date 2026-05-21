@@ -3523,7 +3523,9 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
               booking_date AS bookingDate,
               booking_time AS bookingTime,
               status,
-              payment_status AS paymentStatus
+              payment_status AS paymentStatus,
+              reschedule_count AS rescheduleCount,
+              notes
        FROM bookings
        WHERE booking_group_id = ?
        ORDER BY booking_date, booking_time, id`
@@ -3646,6 +3648,21 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
     );
 
     if (hydrogenSlotChanged || addOnSlotChanged) {
+      const changedHydrogenAlreadyRescheduled = sortedExistingHydrogenBookings.some((entry, index) => {
+        const nextSlot = normalizedSlots[index] || {};
+        const slotChanged =
+          entry.bookingDate !== nextSlot.bookingDate ||
+          normalizeSlotStartTime(entry.bookingTime) !== nextSlot.bookingTime;
+        return slotChanged && Number(entry.rescheduleCount || 0) >= 1;
+      });
+      const changedAddOnAlreadyRescheduled =
+        addOnSlotChanged && existingAddOnBookings.some((entry) => Number(entry.rescheduleCount || 0) >= 1);
+      const alreadyRescheduled = changedHydrogenAlreadyRescheduled || changedAddOnAlreadyRescheduled;
+      if (alreadyRescheduled) {
+        return res.status(409).json({
+          message: 'You can reschedule only once. Please contact admin for further reschedule changes.',
+        });
+      }
       const rescheduleCutoffMs = 12 * 60 * 60 * 1000;
       const tooLateBooking = existingBookings.find((entry) => {
         const normalizedExistingTime = normalizeSlotStartTime(String(entry.bookingTime || '').trim()) || String(entry.bookingTime || '').trim();
@@ -3769,6 +3786,7 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
              booking_time = ?,
              assigned_staff = 'H2 House Of Health',
              notes = ?,
+             reschedule_count = CASE WHEN ? = 1 THEN COALESCE(reschedule_count, 0) + 1 ELSE COALESCE(reschedule_count, 0) END,
              payment_status = CASE WHEN payment_status = 'paid' THEN 'paid' ELSE 'unpaid' END,
              payment_order_id = CASE WHEN payment_status = 'paid' THEN payment_order_id ELSE NULL END,
              payment_reference = CASE WHEN payment_status = 'paid' THEN payment_reference ELSE NULL END,
@@ -3784,6 +3802,7 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
              booking_time = ?,
              assigned_staff = 'H2 House Of Health',
              notes = ?,
+             reschedule_count = CASE WHEN ? = 1 THEN COALESCE(reschedule_count, 0) + 1 ELSE COALESCE(reschedule_count, 0) END,
              payment_status = CASE WHEN payment_status = 'paid' THEN 'paid' ELSE 'unpaid' END,
              payment_order_id = CASE WHEN payment_status = 'paid' THEN payment_order_id ELSE NULL END,
              payment_reference = CASE WHEN payment_status = 'paid' THEN payment_reference ELSE NULL END,
@@ -3801,11 +3820,20 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
 
       sortedHydrogenBookings.forEach((entry, index) => {
         const slot = normalizedSlots[index];
+        const slotChanged =
+          entry.bookingDate !== slot.bookingDate ||
+          normalizeSlotStartTime(String(entry.bookingTime || '').trim()) !== slot.bookingTime;
+        const baseNote = `Hydrogen package ${packageSessions} + extra ${extraSessions}`;
+        const rescheduleNote = slotChanged
+          ? `Rescheduled by user from ${entry.bookingDate} ${entry.bookingTime} to ${slot.bookingDate} ${slot.bookingTime}`
+          : '';
+        const nextNotes = [baseNote, String(entry.notes || '').trim(), rescheduleNote].filter(Boolean).join('\n');
         updateHydrogenBooking.run(
           service.name,
           slot.bookingDate,
           slot.bookingTime,
-          `Hydrogen package ${packageSessions} + extra ${extraSessions}`,
+          nextNotes,
+          slotChanged ? 1 : 0,
           entry.id
         );
       });
@@ -3814,11 +3842,19 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
         const addOnSlot = normalizedSlots[addOnSessionIndex];
         const addOnNote = `IV add-on for ${service.name} (Session ${addOnSessionIndex + 1})`;
         if (existingAddOnBooking) {
+          const addOnSlotChanged =
+            existingAddOnBooking.bookingDate !== addOnSlot.bookingDate ||
+            normalizeSlotStartTime(String(existingAddOnBooking.bookingTime || '').trim()) !== addOnSlot.bookingTime;
+          const rescheduleNote = addOnSlotChanged
+            ? `Rescheduled by user from ${existingAddOnBooking.bookingDate} ${existingAddOnBooking.bookingTime} to ${addOnSlot.bookingDate} ${addOnSlot.bookingTime}`
+            : '';
+          const nextAddOnNote = [addOnNote, String(existingAddOnBooking.notes || '').trim(), rescheduleNote].filter(Boolean).join('\n');
           updateAddOnBooking.run(
             addOnService.name,
             addOnSlot.bookingDate,
             addOnSlot.bookingTime,
-            addOnNote,
+            nextAddOnNote,
+            addOnSlotChanged ? 1 : 0,
             existingAddOnBooking.id
           );
         } else {

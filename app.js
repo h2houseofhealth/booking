@@ -449,6 +449,8 @@ const elements = {
   membershipStatExtra: document.getElementById('membershipStatExtra'),
   membershipStatExtraMeta: document.getElementById('membershipStatExtraMeta'),
   membershipStatExtraCard: document.getElementById('membershipStatExtraCard'),
+  membershipTopUpBadge: document.getElementById('membershipTopUpBadge'),
+  membershipConvertedTopUpNote: document.getElementById('membershipConvertedTopUpNote'),
   membershipStatBecomeCard: document.getElementById('membershipStatBecomeCard'),
   membershipUsageTitle: document.getElementById('membershipUsageTitle'),
   membershipUsageSessionHead: document.getElementById('membershipUsageSessionHead'),
@@ -5809,6 +5811,27 @@ function getAdminRescheduleHistory(booking) {
   };
 }
 
+function getBookingRescheduleHistory(booking) {
+  const notes = String(booking?.notes || '');
+  const matches = [
+    ...notes.matchAll(
+      /(?:Rescheduled by (?:user|admin)|Scheduled later by user) from\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/gi
+    ),
+  ];
+  const latest = matches[matches.length - 1];
+  if (!latest) return null;
+  return {
+    previousDate: latest[1],
+    previousTime: latest[2],
+    rescheduledDate: latest[3],
+    rescheduledTime: latest[4],
+  };
+}
+
+function isBookingRescheduled(booking) {
+  return Boolean(getBookingRescheduleHistory(booking)) || Number(booking?.rescheduleCount || 0) > 0;
+}
+
 function getFilteredAdminRescheduleBookings(bookings = state.bookings) {
   const query = String(state.adminRescheduleSearch || '').trim().toLowerCase();
   const selectedDate = String(state.adminRescheduleDateFilter || '').trim();
@@ -6355,6 +6378,23 @@ function getHydrogenExtraSessionsThisMembership() {
     if (booking.holdExpired) return false;
     if (!isChargeableHydrogenMembershipBooking(booking)) return false;
     return String(booking.paymentStatus || '').toLowerCase() === 'paid';
+  }).length;
+}
+
+function getConvertedNonMemberTopUpSessionsThisMembership() {
+  if (!isCurrentUserMembershipActive()) return 0;
+  const membershipStartedAt = state.user?.membershipStartedAt ? new Date(state.user.membershipStartedAt).getTime() : NaN;
+  if (!Number.isFinite(membershipStartedAt)) return 0;
+  const bookings = Array.isArray(state.bookings) ? state.bookings : [];
+  return bookings.filter((booking) => {
+    const status = String(booking.status || '').toLowerCase();
+    if (status === 'cancelled' || status === 'schedule_later') return false;
+    if (booking.holdExpired) return false;
+    if (!isChargeableHydrogenMembershipBooking(booking)) return false;
+    if (String(booking.paymentStatus || '').toLowerCase() !== 'paid') return false;
+    const paidAt = booking.paidAt ? new Date(booking.paidAt).getTime() : NaN;
+    const createdAt = booking.createdAt ? new Date(booking.createdAt).getTime() : NaN;
+    return [paidAt, createdAt].some((time) => Number.isFinite(time) && time < membershipStartedAt);
   }).length;
 }
 
@@ -8896,6 +8936,14 @@ function buildBookingsByDate(bookings, year, monthIndex) {
   return map;
 }
 
+function hasUpcomingBookedSession(bookings = []) {
+  return bookings.some((booking) => {
+    const status = String(booking?.status || '').toLowerCase();
+    if (status === 'completed' || status === 'cancelled' || status === 'schedule_later') return false;
+    return !isBookingSlotInPast(booking?.bookingDate, booking?.bookingTime);
+  });
+}
+
 function renderMembershipCalendarDetails(dateKey, bookings) {
   if (!elements.membershipCalendarDetails) return;
   if (!dateKey) {
@@ -8966,6 +9014,7 @@ function renderMembershipCalendar(bookings) {
       if (dateKey === todayKey) cell.classList.add('is-today');
       if (dateKey === state.membershipCalendarSelectedDate) cell.classList.add('is-selected');
       if (bookedByDate.has(dateKey)) cell.classList.add('is-booked');
+      if (hasUpcomingBookedSession(bookedByDate.get(dateKey) || [])) cell.classList.add('is-upcoming-booked');
       cell.addEventListener('click', () => {
         state.membershipCalendarSelectedDate = dateKey;
         renderMembershipCalendar(bookings);
@@ -9092,6 +9141,9 @@ function renderMembership() {
   const extraSessionsBought = active
     ? getHydrogenExtraSessionsThisMembership()
     : 0;
+  const convertedNonMemberTopUpSessions = active
+    ? getConvertedNonMemberTopUpSessionsThisMembership()
+    : 0;
   const topUpCompletedSessions = active
     ? allBookings.filter(
         (booking) =>
@@ -9111,6 +9163,9 @@ function renderMembership() {
   }
   if (elements.membershipStatExtraMeta) {
     elements.membershipStatExtraMeta.textContent = active ? 'Top Up' : 'Unlock benefits';
+  }
+  if (elements.membershipTopUpBadge) {
+    elements.membershipTopUpBadge.hidden = !active;
   }
   const hydrogenSessions = unifiedHydrogenTracking.hydrogenBookings;
   const upcomingHydrogenBookings = hydrogenSessions
@@ -9220,6 +9275,12 @@ function renderMembership() {
   if (attendanceUpcoming) attendanceUpcoming.textContent = String(upcomingSessions);
   if (attendanceMissed) attendanceMissed.textContent = String(missedSessions);
   if (attendanceScheduleLater) attendanceScheduleLater.textContent = String(scheduleLaterCount);
+  if (elements.membershipConvertedTopUpNote) {
+    elements.membershipConvertedTopUpNote.textContent = convertedNonMemberTopUpSessions > 0
+      ? 'Note: Your previously purchased non-member hydrogen sessions were added to Top-up Sessions because you took membership after purchasing those sessions.'
+      : '';
+    elements.membershipConvertedTopUpNote.hidden = convertedNonMemberTopUpSessions <= 0;
+  }
 
   if (elements.membershipUsageBar) {
     elements.membershipUsageBar.style.width = `${safeUsagePercent}%`;
@@ -9249,7 +9310,7 @@ function renderMembership() {
   }
   if (elements.membershipScheduleLaterFooter) {
     elements.membershipScheduleLaterFooter.hidden = scheduleLaterCount <= 0;
-    elements.membershipScheduleLaterFooter.textContent = `${scheduleLaterCount} Session${scheduleLaterCount === 1 ? '' : 's'} Awaits in schedule later tab`;
+    elements.membershipScheduleLaterFooter.textContent = `${scheduleLaterCount} Session${scheduleLaterCount === 1 ? '' : 's'} ${scheduleLaterCount === 1 ? 'Awaits' : 'Await'} in Schedule Later`;
   }
   renderMembershipCalendar(allBookings);
 
@@ -10155,6 +10216,9 @@ function getDerivedBookingStatus(booking) {
   if (isBookingMissed(booking) && !['completed', 'cancelled', 'missed'].includes(status)) {
     return 'missed';
   }
+  if (!['completed', 'cancelled', 'schedule_later'].includes(status) && isBookingRescheduled(booking)) {
+    return 'rescheduled';
+  }
   return status || 'pending';
 }
 
@@ -10647,12 +10711,13 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       const booking = sortedEntries[0];
       const holdNotice = buildHoldNotice([booking]);
       const rescheduleMissNotice = buildUserRescheduleMissNotice(booking);
+      const rescheduleHistory = getBookingRescheduleHistory(booking);
       rows.push({
         id: booking.id,
         booking,
         sortTime: getBookingStartTime(booking),
         isGroupedHydrogen: false,
-        status: booking.status,
+        status: getDerivedBookingStatus(booking),
         paymentStatus: booking.paymentStatus || 'unpaid',
         amountInr: getBookingDisplayAmountInr(booking),
         serviceTitle: getServiceDisplayName(booking.serviceName),
@@ -10662,6 +10727,17 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
           ...(rescheduleMissNotice ? [rescheduleMissNotice] : []),
         ],
         scheduleLines: [formatDateTime(booking.bookingDate, booking.bookingTime)],
+        detailSections: rescheduleHistory
+          ? [
+              {
+                title: 'Reschedule',
+                lines: [
+                  `Previous booked slot: ${formatDateTime(rescheduleHistory.previousDate, rescheduleHistory.previousTime)}`,
+                  `Rescheduled slot: ${formatDateTime(rescheduleHistory.rescheduledDate, rescheduleHistory.rescheduledTime)}`,
+                ],
+              },
+            ]
+          : [],
         serviceText: getServiceDisplayName(booking.serviceName),
         dateTimeText: formatDateTime(booking.bookingDate, booking.bookingTime),
       });
@@ -10718,6 +10794,19 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
         slotLines.push(`Add-on: ${entry.serviceName} with ${formatDateTime(entry.bookingDate, entry.bookingTime)}`);
       });
     }
+    const rescheduleLines = [];
+    [...hydrogenEntries, ...addOnEntries].forEach((entry) => {
+      const history = getBookingRescheduleHistory(entry);
+      if (!history) return;
+      const sequence = Number(hydrogenSequenceById.get(String(entry?.id || '')) || 0);
+      const label = getBookingCategory(entry.serviceName) === 'IV ADD-ON'
+        ? `Add-on: ${entry.serviceName}`
+        : sequence > 0
+          ? `S${sequence}`
+          : 'Session';
+      rescheduleLines.push(`${label} previous booked slot: ${formatDateTime(history.previousDate, history.previousTime)}`);
+      rescheduleLines.push(`${label} rescheduled slot: ${formatDateTime(history.rescheduledDate, history.rescheduledTime)}`);
+    });
 
     rows.push({
       id: booking.id,
@@ -10742,6 +10831,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       scheduleLines: [hydrogenEntries[0] ? formatDateTime(hydrogenEntries[0].bookingDate, hydrogenEntries[0].bookingTime) : '-'],
       detailSections: [
         { title: 'Hydrogen Sessions', lines: slotLines },
+        ...(rescheduleLines.length ? [{ title: 'Reschedule', lines: rescheduleLines }] : []),
         ...(addOnDetails.length ? [{ title: 'Add-on', lines: addOnDetails }] : []),
         ...(breakdown.totalAmountInr > 0
           ? [
@@ -12659,6 +12749,12 @@ function summarizeGroupStatus(bookings) {
   const statuses = bookings.map((booking) => String(booking.status || '').toLowerCase());
   if (statuses.every((status) => status === 'cancelled')) return 'cancelled';
   if (statuses.every((status) => status === 'schedule_later')) return 'schedule_later';
+  if (
+    bookings.some((booking) => {
+      const status = String(booking?.status || '').trim().toLowerCase();
+      return !['completed', 'cancelled', 'schedule_later'].includes(status) && isBookingRescheduled(booking);
+    })
+  ) return 'rescheduled';
   if (statuses.some((status) => status === 'pending')) return 'pending';
   if (statuses.some((status) => status === 'booked')) return 'booked';
   if (statuses.some((status) => status === 'confirmed')) return 'confirmed';
@@ -12727,6 +12823,7 @@ function summarizeGroupPaymentStatus(bookings) {
 function formatBookingStatusLabel(status) {
   const normalized = String(status || '').trim().toLowerCase();
   if (normalized === 'schedule_later') return 'Schedule Later';
+  if (normalized === 'rescheduled') return 'Rescheduled';
   return normalized || 'pending';
 }
 
@@ -13315,7 +13412,7 @@ function renderMyBookingsSessionTracking() {
   }
   if (elements.myBookingsScheduleLaterFooter) {
     elements.myBookingsScheduleLaterFooter.hidden = scheduleLaterCount <= 0;
-    elements.myBookingsScheduleLaterFooter.textContent = `${scheduleLaterCount} Session${scheduleLaterCount === 1 ? '' : 's'} Awaits in schedule later tab`;
+    elements.myBookingsScheduleLaterFooter.textContent = `${scheduleLaterCount} Session${scheduleLaterCount === 1 ? '' : 's'} ${scheduleLaterCount === 1 ? 'Awaits' : 'Await'} in Schedule Later`;
   }
 
   // Upcoming sessions list
@@ -13368,7 +13465,7 @@ function renderMyBookingsSessionTracking() {
       const dayNumber = index - startDay + 1;
       const cell = document.createElement('button');
       cell.type = 'button';
-      cell.className = 'mybookings-calendar-day';
+      cell.className = 'my-bookings-calendar-day';
       if (dayNumber < 1 || dayNumber > daysInMonth) {
         cell.classList.add('is-outside');
         cell.disabled = true;
@@ -13379,6 +13476,7 @@ function renderMyBookingsSessionTracking() {
         if (dateKey === todayKey2) cell.classList.add('is-today');
         if (dateKey === state.myBookingsCalendarSelectedDate) cell.classList.add('is-selected');
         if (bookedByDate.has(dateKey)) cell.classList.add('is-booked');
+        if (hasUpcomingBookedSession(bookedByDate.get(dateKey) || [])) cell.classList.add('is-upcoming-booked');
         cell.addEventListener('click', () => {
           state.myBookingsCalendarSelectedDate = dateKey;
           renderMyBookingsSessionTracking();
@@ -13400,7 +13498,7 @@ function renderMyBookingsSessionTracking() {
         `;
       } else {
         const lines = dayBookings.slice(0, 3).map((booking) => `
-          <div class="mybookings-calendar-detail-item">
+          <div class="my-bookings-calendar-detail-item">
             <strong>${escapeHtml(booking.serviceName || 'Hydrogen Session')}</strong>
             <span>${escapeHtml(formatBookingTimeLabel(booking.bookingTime))} • ${escapeHtml(getDerivedBookingStatus(booking))}</span>
           </div>

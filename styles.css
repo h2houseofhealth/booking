@@ -13383,79 +13383,63 @@ img {
   background: linear-gradient(90deg, var(--terracotta), #e2a474);
 }
 
-.my-bookings-calendar-footer {
-  width: auto;
-  min-height: 34px;
-  margin-top: 0;
-  padding: 0 0.95rem;
-  border: 1px solid rgba(201, 106, 45, 0.32);
-  border-radius: 999px;
-  background: rgba(255, 246, 238, 0.96);
-  color: #7e3f25;
-  font-size: 0.82rem;
-  font-weight: 700;
-  cursor: pointer;
-  position: absolute;
-  right: 1rem;
-  bottom: -0.9rem;
-  box-shadow: 0 14px 24px rgba(126, 63, 37, 0.16);
-  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.my-bookings-calendar-footer:hover {
-  border-color: rgba(201, 106, 45, 0.32);
-  background: #fff8f1;
-  box-shadow: 0 16px 30px rgba(126, 63, 37, 0.2);
-  transform: translateY(-1px);
-}
-
-.membership-calendar-footer-link {
-  width: auto;
-  min-height: 34px;
-  margin-top: 0;
-  padding: 0 0.95rem;
-  border: 1px solid rgba(201, 106, 45, 0.32);
-  border-radius: 999px;
-  background: rgba(255, 246, 238, 0.96);
-  color: #7e3f25;
-  font-size: 0.82rem;
-  font-weight: 700;
-  cursor: pointer;
-  position: absolute;
-  right: 1rem;
-  bottom: -0.9rem;
-  box-shadow: 0 14px 24px rgba(126, 63, 37, 0.16);
-  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.membership-calendar-footer-link:hover {
-  border-color: rgba(201, 106, 45, 0.32);
-  background: #fff8f1;
-  box-shadow: 0 16px 30px rgba(126, 63, 37, 0.2);
-  transform: translateY(-1px);
-}
-
 .my-bookings-calendar-footer,
 .membership-calendar-footer-link {
-  width: auto;
-  min-height: 34px;
-  margin: 0.8rem auto 0;
+  min-height: 38px;
   padding: 0 0.95rem;
-  position: relative;
-  inset: auto;
-  display: flex;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #d07a4b, #b75f35);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  position: absolute;
+  left: 50%;
+  right: auto;
+  bottom: 20px;
+  transform: translateX(-50%);
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  writing-mode: horizontal-tb;
-  text-orientation: mixed;
-  transform: none;
   white-space: nowrap;
-  z-index: 3;
+  max-width: calc(100% - 2rem);
+  box-shadow: 0 12px 24px rgba(126, 63, 37, 0.28);
+  transition: transform 0.24s ease, box-shadow 0.24s ease, filter 0.24s ease, background 0.24s ease;
+  z-index: 5;
 }
 
 .my-bookings-calendar-footer:hover,
 .membership-calendar-footer-link:hover {
-  transform: translateY(-1px);
+  transform: translateX(-50%) translateY(-2px);
+  box-shadow: 0 16px 30px rgba(126, 63, 37, 0.36);
+  filter: saturate(1.06) brightness(1.04);
+}
+
+@media (max-width: 768px) {
+  .my-bookings-calendar-footer,
+  .membership-calendar-footer-link {
+    position: fixed;
+    left: 50%;
+    right: auto;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    width: min(88vw, 320px);
+    min-height: 44px;
+    padding: 0 1rem;
+    box-shadow: 0 16px 30px rgba(126, 63, 37, 0.32);
+  }
+
+  .my-bookings-calendar-footer:hover,
+  .membership-calendar-footer-link:hover {
+    transform: translateX(-50%) translateY(-1px);
+  }
+
+  #membershipSection:not([hidden]),
+  #userBookingsSection:not([hidden]) {
+    padding-bottom: 5.4rem;
+  }
 }
 
 .my-bookings-session-card {

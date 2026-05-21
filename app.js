@@ -9104,7 +9104,7 @@ function renderMembership() {
   const hydrogenSessionSummary = getMembershipHydrogenSessionSummary();
   if (elements.membershipStatSessions) {
     const sessions = active
-      ? Number(hydrogenSessionSummary.usedSessions || 0)
+      ? Number(hydrogenSessionSummary.totalSessions || 0)
       : unifiedHydrogenTracking.totalSessions;
     elements.membershipStatSessions.textContent = Number.isFinite(sessions) ? String(sessions) : '0';
   }
@@ -9310,7 +9310,7 @@ function renderMembership() {
   }
   if (elements.membershipScheduleLaterFooter) {
     elements.membershipScheduleLaterFooter.hidden = scheduleLaterCount <= 0;
-    elements.membershipScheduleLaterFooter.textContent = `${scheduleLaterCount} Session${scheduleLaterCount === 1 ? '' : 's'} ${scheduleLaterCount === 1 ? 'Awaits' : 'Await'} in Schedule Later`;
+    elements.membershipScheduleLaterFooter.textContent = `Schedule ${scheduleLaterCount} Session${scheduleLaterCount === 1 ? '' : 's'} in Schedule Later`;
   }
   renderMembershipCalendar(allBookings);
 
@@ -13412,7 +13412,7 @@ function renderMyBookingsSessionTracking() {
   }
   if (elements.myBookingsScheduleLaterFooter) {
     elements.myBookingsScheduleLaterFooter.hidden = scheduleLaterCount <= 0;
-    elements.myBookingsScheduleLaterFooter.textContent = `${scheduleLaterCount} Session${scheduleLaterCount === 1 ? '' : 's'} ${scheduleLaterCount === 1 ? 'Awaits' : 'Await'} in Schedule Later`;
+    elements.myBookingsScheduleLaterFooter.textContent = `Schedule ${scheduleLaterCount} Session${scheduleLaterCount === 1 ? '' : 's'} in Schedule Later`;
   }
 
   // Upcoming sessions list

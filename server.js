@@ -48,6 +48,9 @@ const ALLOWED_CORS_ORIGINS = Array.from(
   new Set([...DEFAULT_ALLOWED_ORIGINS, ...FRONTEND_ORIGINS, ...DEPLOYMENT_ORIGINS].map(normalizeOriginValue).filter(Boolean))
 );
 const HAS_EXPLICIT_CORS_ORIGINS = FRONTEND_ORIGINS.length > 0 || DEPLOYMENT_ORIGINS.length > 0;
+console.log('FRONTEND_ORIGINS:', process.env.FRONTEND_ORIGINS || '');
+console.log('HAS_EXPLICIT_CORS_ORIGINS:', HAS_EXPLICIT_CORS_ORIGINS);
+console.log('ALLOWED_CORS_ORIGINS:', ALLOWED_CORS_ORIGINS);
 const ADMIN_DISCOUNT_GATE_PASSWORD = normalizeEnvValue(process.env.ADMIN_DISCOUNT_GATE_PASSWORD || 'H2-FOUNDERS-2026');
 const RAZORPAY_KEY_ID = normalizeEnvValue(process.env.RAZORPAY_KEY_ID);
 const RAZORPAY_KEY_SECRET = normalizeEnvValue(process.env.RAZORPAY_KEY_SECRET);
@@ -364,16 +367,17 @@ const corsOptions = {
       callback(null, true);
       return;
     }
+    const normalizedOrigin = normalizeOriginValue(origin);
     if (!HAS_EXPLICIT_CORS_ORIGINS) {
       // Fallback for deployments where FRONTEND_ORIGINS/API_BASE_URL is not configured yet.
       callback(null, true);
       return;
     }
-    if (ALLOWED_CORS_ORIGINS.includes(origin) || isLocalDevOrigin(origin)) {
+    if (ALLOWED_CORS_ORIGINS.includes(normalizedOrigin) || isLocalDevOrigin(normalizedOrigin)) {
       callback(null, true);
       return;
     }
-    const error = new Error(`CORS origin not allowed: ${origin}`);
+    const error = new Error(`CORS origin not allowed: ${normalizedOrigin || origin}`);
     error.status = 403;
     callback(error);
   },

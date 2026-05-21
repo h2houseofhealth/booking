@@ -5453,11 +5453,12 @@ function getFilteredUserHistoryBookings(sourceBookings = state.bookings) {
     }
     return true;
   });
+  const latestFirst = [...statusFiltered].sort(compareBookingsByScheduleDesc);
 
   const requestedCount = Number(state.memberSessionDisplayCount || 0);
-  if (requestedCount <= 0) return statusFiltered;
+  if (requestedCount <= 0) return latestFirst;
   let includedMemberSessions = 0;
-  return statusFiltered.filter((booking) => {
+  return latestFirst.filter((booking) => {
     if (getBookingCategory(booking?.serviceName) !== 'HYDROGEN SESSION') return true;
     if (isChargeableHydrogenMembershipBooking(booking)) return true;
     includedMemberSessions += 1;
@@ -10099,6 +10100,15 @@ function getBookingStartTime(booking) {
   return Number.isFinite(timestamp) ? timestamp : Number.NaN;
 }
 
+function compareBookingsByScheduleDesc(a, b) {
+  const aTs = getBookingStartTime(a);
+  const bTs = getBookingStartTime(b);
+  const safeA = Number.isFinite(aTs) ? aTs : 0;
+  const safeB = Number.isFinite(bTs) ? bTs : 0;
+  if (safeB !== safeA) return safeB - safeA;
+  return Number(b?.id || 0) - Number(a?.id || 0);
+}
+
 function getUserRescheduleEligibility(row, options = {}) {
   const booking = row?.booking || row;
   const enforceRescheduleLimit = options?.enforceRescheduleLimit !== false;
@@ -10640,7 +10650,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       rows.push({
         id: booking.id,
         booking,
-        sortKey: `${booking.bookingDate}T${booking.bookingTime}`,
+        sortTime: getBookingStartTime(booking),
         isGroupedHydrogen: false,
         status: booking.status,
         paymentStatus: booking.paymentStatus || 'unpaid',
@@ -10696,6 +10706,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
     });
     const holdNotice = buildHoldNotice(includedEntries);
     const rescheduleMissNotice = buildUserRescheduleMissNotice(booking);
+    const latestIncludedEntry = [...includedEntries].sort(compareBookingsByScheduleDesc)[0] || booking;
 
     const slotLines = hydrogenEntries.map((entry) => {
       const sequence = Number(hydrogenSequenceById.get(String(entry?.id || '')) || 0);
@@ -10711,7 +10722,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
     rows.push({
       id: booking.id,
       booking,
-      sortKey: `${booking.bookingDate}T${booking.bookingTime}`,
+      sortTime: getBookingStartTime(latestIncludedEntry),
       bookingGroupId: booking.bookingGroupId || '',
       baseServiceName,
       extraSessions: Math.max(0, hydrogenEntries.length - getHydrogenSessionCountFromServiceName(baseServiceName)),
@@ -10752,7 +10763,12 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
     });
   }
 
-  return rows.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  return rows.sort((a, b) => {
+    const aTs = Number.isFinite(a?.sortTime) ? a.sortTime : 0;
+    const bTs = Number.isFinite(b?.sortTime) ? b.sortTime : 0;
+    if (bTs !== aTs) return bTs - aTs;
+    return Number(b?.id || 0) - Number(a?.id || 0);
+  });
 }
 
 function getBookingGroupKey(booking) {

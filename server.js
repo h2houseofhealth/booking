@@ -2579,7 +2579,7 @@ app.get('/api/bookings', requireAuth, (req, res) => {
   const rows = req.user.role === 'admin'
     ? db.prepare(`${baseQuery} ORDER BY b.booking_date, b.booking_time`).all()
     : db
-        .prepare(`${baseQuery} WHERE b.user_id = ? ORDER BY b.booking_date, b.booking_time`)
+        .prepare(`${baseQuery} WHERE b.user_id = ? ORDER BY b.booking_date DESC, b.booking_time DESC, b.id DESC`)
         .all(req.user.id);
 
   const mapped = rows.map(applyHoldMeta);

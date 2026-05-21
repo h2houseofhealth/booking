@@ -423,7 +423,6 @@
         <section id="membershipDashboard" class="membership-dashboard">
           <div class="membership-dashboard-head">
             <div class="dashboard-left">
-              <span class="membership-dashboard-kicker">WELCOME BACK</span>
               <h3 id="membershipWelcomeName">Member</h3>
               <p id="membershipDashboardStatus" class="membership-copy"></p>
             </div>
@@ -507,7 +506,7 @@
                 <hr class="usage-v2-sep" />
                 <div class="usage-v2-subhead">Add-ons & Extras</div>
                 <div class="usage-v2-addons-grid">
-                  <div class="usage-v2-addon-badge">
+                  <div id="membershipTopUpBadge" class="usage-v2-addon-badge">
                     <span>Top-up Sessions</span>
                     <div id="membershipTopUpBlocks" class="usage-v2-mini-blocks"></div>
                     <small><strong id="membershipTopUpUsage">0 / 0</strong> Used</small>
@@ -534,6 +533,7 @@
                   <div><strong id="attendanceMissed">0</strong> Missed</div>
                   <div><strong id="attendanceScheduleLater">0</strong> Scheduled Later</div>
                 </div>
+                <p id="membershipConvertedTopUpNote" class="usage-v2-note" hidden></p>
               </div>
               <p id="membershipUsageNote" class="membership-copy" hidden></p>
             </div>
@@ -554,7 +554,7 @@
               <div id="membershipCalendarGrid" class="membership-calendar-grid"></div>
               <div id="membershipCalendarDetails" class="membership-calendar-details"></div>
               <button id="membershipScheduleLaterFooter" class="membership-calendar-footer-link" type="button" hidden>
-                Sessions Awaits in schedule later tab
+                Sessions Await in Schedule Later
               </button>
             </div>
             <div class="membership-highlight-card">
@@ -821,7 +821,7 @@
           <div id="myBookingsCalendarGrid" class="my-bookings-calendar-grid"></div>
           <div id="myBookingsCalendarDetails" class="my-bookings-calendar-details"></div>
           <button id="myBookingsScheduleLaterFooter" class="my-bookings-calendar-footer" type="button" hidden>
-            Sessions Awaits in schedule later tab
+            Sessions Await in Schedule Later
           </button>
         </div>
   

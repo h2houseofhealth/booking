@@ -6823,8 +6823,8 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
       ? Math.max(0, serviceReportedRemainingSessions)
       : Math.max(0, Number(hydrogenSummary.remainingSessions || 0))
     : 0;
-  const completedIncludedSessions = Math.max(0, Number(hydrogenSummary.completedSessions || 0));
-  const nextIncludedSessionNumber = Math.min(totalIncludedSessions, completedIncludedSessions + 1);
+  const usedIncludedSessions = Math.max(0, Number(hydrogenSummary.usedSessions || 0));
+  const nextIncludedSessionNumber = Math.min(totalIncludedSessions, usedIncludedSessions + 1);
   const membershipScheduleTrimActive = Boolean(hydrogenSummary.active && isCurrentUserMembershipActive());
   const scheduleMinSessionNumber = membershipScheduleTrimActive ? Math.max(1, nextIncludedSessionNumber) : 1;
   const maxMembershipSessionCount = Math.max(1, remainingIncludedSessions);
@@ -9188,14 +9188,18 @@ function renderMembership() {
   const therapyPercent = therapyTotal > 0 ? Math.min(100, Math.round((therapyUsed / therapyTotal) * 100)) : 0;
   const shotsPercent = shotsTotal > 0 ? Math.min(100, Math.round((shotsUsed / shotsTotal) * 100)) : 0;
 
-  renderUsageBlocks('membershipSessionBlocks', usageCompletedSessions, totalSessions || 16);
-  renderMiniBlocks('membershipTopUpBlocks', topUpCompletedSessions, Math.max(1, extraSessionsBought || 1));
-  renderMiniBlocks('membershipTherapyBlocks', therapyUsed, Math.max(1, therapyTotal || 1));
-  renderMiniBlocks('membershipShotsBlocks', shotsUsed, Math.max(1, shotsTotal || 1));
+  renderUsageBlocks('membershipSessionBlocks', usageCompletedSessions, Math.max(0, totalSessions));
+  renderMiniBlocks('membershipTopUpBlocks', topUpCompletedSessions, Math.max(0, extraSessionsBought));
+  renderMiniBlocks('membershipTherapyBlocks', therapyUsed, Math.max(0, therapyTotal));
+  renderMiniBlocks('membershipShotsBlocks', shotsUsed, Math.max(0, shotsTotal));
 
   const membershipUsageCount = document.getElementById('membershipUsageCount');
+  const membershipUsageRemaining = document.getElementById('membershipUsageRemaining');
+  const membershipTopUpUsage = document.getElementById('membershipTopUpUsage');
   const membershipTopUpCount = document.getElementById('membershipTopUpCount');
+  const therapyUsageUsed = document.getElementById('therapyUsageUsed');
   const therapyUsageCount = document.getElementById('therapyUsageCount');
+  const shotsUsageUsed = document.getElementById('shotsUsageUsed');
   const shotsUsageCount = document.getElementById('shotsUsageCount');
   const attendanceCompleted = document.getElementById('attendanceCompleted');
   const attendanceUpcoming = document.getElementById('attendanceUpcoming');
@@ -9203,9 +9207,13 @@ function renderMembership() {
   const attendanceScheduleLater = document.getElementById('attendanceScheduleLater');
   const scheduleLaterCount = getScheduleLaterDisplayRowCount(allBookings);
 
-  if (membershipUsageCount) membershipUsageCount.textContent = String(usageCompletedSessions);
+  if (membershipUsageCount) membershipUsageCount.textContent = `${usageCompletedSessions} / ${totalSessions}`;
+  if (membershipUsageRemaining) membershipUsageRemaining.textContent = String(Math.max(0, totalSessions - usageCompletedSessions));
+  if (membershipTopUpUsage) membershipTopUpUsage.textContent = `${topUpCompletedSessions} / ${Math.max(0, extraSessionsBought)}`;
   if (membershipTopUpCount) membershipTopUpCount.textContent = String(topUpRemainingSessions);
+  if (therapyUsageUsed) therapyUsageUsed.textContent = `${therapyUsed} / ${therapyTotal}`;
   if (therapyUsageCount) therapyUsageCount.textContent = String(Math.max(0, therapyTotal - therapyUsed));
+  if (shotsUsageUsed) shotsUsageUsed.textContent = `${shotsUsed} / ${shotsTotal}`;
   if (shotsUsageCount) shotsUsageCount.textContent = String(Math.max(0, shotsTotal - shotsUsed));
   if (attendanceCompleted) attendanceCompleted.textContent = String(completedSessions);
   if (attendanceUpcoming) attendanceUpcoming.textContent = String(upcomingSessions);

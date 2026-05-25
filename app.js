@@ -3525,6 +3525,19 @@ function updateBookingSummary() {
   const selectedAddOnName = isAdmin || elements.addOnServiceLabel.hidden ? '' : elements.addOnService.value;
   const selectedAddOn = selectedAddOnName ? state.services.find((s) => s.name === selectedAddOnName) : null;
   const addOnPrice = selectedAddOn ? Number(selectedAddOn.effectivePriceInr || selectedAddOn.priceInr || 0) : 0;
+  const isEditingExistingBooking = Boolean(String(elements.bookingId?.value || '').trim());
+  if (isEditingExistingBooking && !selectedAddOn) {
+    elements.bookingSummary.hidden = true;
+    elements.summaryContent.innerHTML = '';
+    elements.totalPayable.textContent = '';
+    return;
+  }
+  if (isEditingExistingBooking && selectedAddOn) {
+    elements.summaryContent.innerHTML = `<div><span>Add-on: ${escapeHtml(selectedAddOn.name)}</span><span>Rs. ${addOnPrice.toLocaleString('en-IN')}</span></div>`;
+    elements.totalPayable.textContent = `Rs. ${addOnPrice.toLocaleString('en-IN')}`;
+    elements.bookingSummary.hidden = false;
+    return;
+  }
   const totalPrice = basePrice + addOnPrice;
   
   const summaryLines = [];
@@ -4464,6 +4477,8 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
   const membershipIncludedSessions = Number(summary.membershipIncludedSessions || 0);
   const membershipSessionsRemaining = Number(summary.membershipSessionsRemaining || 0);
   const totalAmountInr = Number(summary.totalAmountInr || 0);
+  const requiresPayment = Boolean(result.requiresPayment || summary.requiresPayment);
+  const paymentBookingId = Number(result.paymentBookingId || 0);
   const lines = [`Service: ${serviceName}`];
   if (membershipIncludedSessions > 0) {
     lines.push(`Membership Included: ${membershipIncludedSessions} hydrogen session${membershipIncludedSessions === 1 ? '' : 's'}`);
@@ -4490,7 +4505,7 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
     state.user?.role !== 'admin' ? state.returnUserTabAfterEdit || 'cart' : '';
   const returnTab =
     state.user?.role !== 'admin'
-      ? totalAmountInr > 0
+      ? requiresPayment
         ? 'cart'
         : preferredReturnTab === 'services'
           ? 'services'
@@ -4512,6 +4527,11 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
             : elements.userBookingsSection
       )?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
+  }
+  if (state.user?.role !== 'admin' && requiresPayment && Number.isInteger(paymentBookingId) && paymentBookingId > 0) {
+    showNotice({ title: 'Booking updated', body: [...lines, '', 'Opening payment for the selected add-on.'] });
+    await openPaymentWithBookingId(paymentBookingId);
+    return;
   }
   showNotice({ title: 'Booking updated', body: lines });
 }
@@ -10905,6 +10925,15 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
         if (createdA && createdB && createdA !== createdB) return createdA.localeCompare(createdB);
         return String(a?.id || '').localeCompare(String(b?.id || ''));
       });
+    const groupAddOnEntries = [...entries]
+      .filter((entry) => getBookingCategory(entry.serviceName) === 'IV ADD-ON')
+      .sort((a, b) => `${a.bookingDate}T${a.bookingTime}`.localeCompare(`${b.bookingDate}T${b.bookingTime}`));
+    const pricingHydrogenEntries = groupHydrogenEntries.filter(
+      (entry) => String(entry.status || '').toLowerCase() !== 'cancelled'
+    );
+    const pricingAddOnEntries = groupAddOnEntries.filter(
+      (entry) => String(entry.status || '').toLowerCase() !== 'cancelled'
+    );
     const hydrogenSequenceById = new Map(
       groupHydrogenEntries.map((entry, index) => [String(entry?.id || ''), index + 1])
     );
@@ -10954,9 +10983,9 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       hydrogenEntries[0] ||
       includedEntries[0] ||
       sortedEntries[0];
-    const baseServiceName = hydrogenEntries[0]?.serviceName || booking.serviceName || 'Hydrogen Package';
-    const packageSessionCount = Math.max(1, Number(hydrogenEntries.length || 0));
-    const isAdditionalHydrogenPackage = hydrogenEntries.some((entry) => {
+    const baseServiceName = pricingHydrogenEntries[0]?.serviceName || hydrogenEntries[0]?.serviceName || booking.serviceName || 'Hydrogen Package';
+    const packageSessionCount = Math.max(1, Number(pricingHydrogenEntries.length || hydrogenEntries.length || 0));
+    const isAdditionalHydrogenPackage = pricingHydrogenEntries.some((entry) => {
       const paymentReference = String(entry?.paymentReference || '').trim().toLowerCase();
       return paymentReference === 'buy_extra' || Number(entry?.isTopUpSession || 0) === 1;
     });
@@ -10972,9 +11001,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
     const payableAddOnEntries = addOnEntries.filter(
       (entry) => entry.status !== 'cancelled' && String(entry.paymentStatus || 'unpaid').toLowerCase() !== 'paid'
     );
-    const displayHydrogenEntries = hydrogenEntries.filter((entry) => entry.status !== 'cancelled');
-    const displayAddOnEntries = addOnEntries.filter((entry) => entry.status !== 'cancelled');
-    const breakdown = getHydrogenGroupBreakdown(displayHydrogenEntries, displayAddOnEntries);
+    const breakdown = getHydrogenGroupBreakdown(pricingHydrogenEntries, pricingAddOnEntries);
     const payableBreakdown = getHydrogenGroupBreakdown(payableHydrogenEntries, payableAddOnEntries);
     const addOnDetails = addOnEntries.map((entry) => {
       const linkedHydrogen = groupHydrogenEntries.find(

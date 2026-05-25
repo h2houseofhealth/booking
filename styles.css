@@ -14175,3 +14175,215 @@ img {
     white-space: normal !important;
   }
 }
+
+/* Final responsive alignment overrides */
+.membership-stat-grid,
+.membership-dashboard-row,
+.doctor-grid,
+#serviceGrid,
+.service-card-grid,
+.admin-user-grid,
+.admin-user-kpi-grid {
+  align-items: stretch !important;
+}
+
+.membership-stat-card,
+.membership-progress-card,
+.membership-calendar-card,
+.membership-highlight-card,
+.doctor-card,
+.service-card,
+.service-plan-card,
+.admin-user-card,
+.admin-user-kpi-card,
+#memberChoiceGate .member-choice-experience-card,
+#membershipPlans .membership-card {
+  min-width: 0;
+}
+
+#memberChoiceGate .member-choice-experience-card,
+#membershipPlans .membership-card,
+#membershipPlans .membership-card-body {
+  height: 100%;
+}
+
+#memberChoiceGate .member-choice-card-list,
+#membershipPlans .membership-feature-list {
+  align-content: start;
+}
+
+#memberChoiceGate .member-choice-card-cta,
+#membershipPlans .membership-card-actions,
+.service-item-actions,
+.service-plan-card .service-item-actions {
+  margin-top: auto;
+}
+
+.booking-dialog,
+.profile-dialog,
+.comparison-dialog,
+.notice-dialog {
+  max-height: min(92vh, calc(100dvh - 24px));
+}
+
+.booking-dialog,
+.profile-dialog,
+.notice-shell {
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.comparison-dialog-inner {
+  height: min(92vh, calc(100dvh - 24px));
+  max-height: min(92vh, calc(100dvh - 24px));
+}
+
+.comparison-dialog-body {
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.notice-shell {
+  max-height: min(92vh, calc(100dvh - 24px));
+}
+
+@media (max-width: 900px) {
+  .booking-dialog,
+  .profile-dialog,
+  .comparison-dialog,
+  .notice-dialog {
+    width: min(100vw - 16px, 980px) !important;
+    max-width: calc(100vw - 16px) !important;
+    max-height: calc(100dvh - 16px) !important;
+  }
+
+  .comparison-dialog-inner {
+    height: calc(100dvh - 16px) !important;
+    max-height: calc(100dvh - 16px) !important;
+  }
+
+  #memberChoiceGate .cards,
+  #memberChoiceGate .member-choice-experience-grid {
+    gap: 18px !important;
+  }
+
+  #memberChoiceGate .member-choice-experience-card {
+    min-height: 0 !important;
+    padding: 22px 20px 16px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .booking-dialog,
+  .profile-dialog,
+  .comparison-dialog,
+  .notice-dialog {
+    width: calc(100vw - 12px) !important;
+    max-width: calc(100vw - 12px) !important;
+    max-height: calc(100dvh - 12px) !important;
+    border-radius: 14px;
+  }
+
+  .comparison-dialog-inner {
+    height: calc(100dvh - 12px) !important;
+    max-height: calc(100dvh - 12px) !important;
+  }
+
+  #bookingForm,
+  #profileForm,
+  #membershipForm,
+  #membershipAddPersonForm,
+  #bookingNotesDialog form,
+  #bookingEmailTimelineDialog form,
+  .user-reschedule-picker form {
+    padding: 0.9rem !important;
+  }
+
+  .notice-shell {
+    padding: 16px;
+  }
+
+  #memberChoiceGate .cards,
+  #memberChoiceGate .member-choice-experience-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    margin-top: 16px !important;
+  }
+
+  #memberChoiceGate .member-choice-card-price-row {
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
+
+  #memberChoiceGate .member-choice-card-cta,
+  #membershipPlans .membership-card-actions .btn {
+    min-height: 48px;
+  }
+
+  .doctor-grid,
+  #serviceGrid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .portal {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  .panel,
+  .membership-dashboard,
+  .my-bookings-dashboard {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .booking-dialog,
+  .profile-dialog,
+  .comparison-dialog,
+  .notice-dialog {
+    width: calc(100vw - 8px) !important;
+    max-width: calc(100vw - 8px) !important;
+    max-height: calc(100dvh - 8px) !important;
+  }
+
+  .comparison-dialog-inner {
+    height: calc(100dvh - 8px) !important;
+    max-height: calc(100dvh - 8px) !important;
+  }
+
+  #bookingForm,
+  #profileForm,
+  #membershipForm,
+  #membershipAddPersonForm,
+  #bookingNotesDialog form,
+  #bookingEmailTimelineDialog form,
+  .user-reschedule-picker form {
+    padding: 0.75rem !important;
+  }
+
+  #memberChoiceGate.member-choice-gate {
+    padding: 0.55rem !important;
+    border-radius: 16px !important;
+  }
+
+  #memberChoiceGate .container {
+    padding: 0 8px !important;
+  }
+
+  #memberChoiceGate .member-choice-experience-card {
+    padding: 18px 16px 14px !important;
+    border-radius: 20px !important;
+  }
+
+  #membershipPlans.membership-grid {
+    --membership-card-width: 86vw;
+    gap: 0.7rem !important;
+    padding-left: 2vw !important;
+    padding-right: 2vw !important;
+  }
+}

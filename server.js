@@ -3784,7 +3784,7 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
 
   const groupHasPaidBookings = existingBookings.some((entry) => String(entry.paymentStatus || '').toLowerCase() === 'paid');
   const existingAddOnServiceName = existingAddOnBookings[0]?.serviceName || '';
-  if (groupHasPaidBookings && addOnServiceName !== existingAddOnServiceName) {
+  if (groupHasPaidBookings && existingAddOnServiceName && addOnServiceName !== existingAddOnServiceName) {
     return res.status(409).json({ message: 'Paid packages can only reschedule the existing add-on. Add-on pricing changes are blocked.' });
   }
   if (groupHasPaidBookings) {
@@ -3930,8 +3930,14 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
     ) || service;
   const extraSessionPriceInr = getEffectiveServicePriceInr(singleSessionService, req.user);
   const addOnPriceInr = addOnService ? getEffectiveServicePriceInr(addOnService, req.user) : 0;
-  const totalAmountInr =
+  const calculatedTotalAmountInr =
     Number(packagePriceInr || 0) + Number(extraSessionPriceInr || 0) * extraSessions + Number(addOnPriceInr || 0);
+  const payableAmountInr = groupHasPaidBookings
+    ? addOnService && (!existingAddOnBooking || String(existingAddOnBooking.paymentStatus || '').toLowerCase() !== 'paid')
+      ? Number(addOnPriceInr || 0)
+      : 0
+    : calculatedTotalAmountInr;
+  let paymentBookingId = null;
 
   try {
     const txn = db.transaction(() => {
@@ -4013,8 +4019,20 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
             addOnSlotChanged ? 1 : 0,
             existingAddOnBooking.id
           );
+          if (String(existingAddOnBooking.paymentStatus || '').toLowerCase() !== 'paid' && Number(addOnPriceInr || 0) > 0) {
+            paymentBookingId = Number(existingAddOnBooking.id);
+          } else if (String(existingAddOnBooking.paymentStatus || '').toLowerCase() !== 'paid') {
+            db.prepare(
+              `UPDATE bookings
+               SET payment_status = 'paid',
+                   paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+                   paid_amount_paise = 0,
+                   status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
+               WHERE id = ?`
+            ).run(existingAddOnBooking.id);
+          }
         } else {
-          insertAddOnBooking.run(
+          const addOnResult = insertAddOnBooking.run(
             req.user.id,
             null,
             req.user.name,
@@ -4028,6 +4046,18 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
             addOnNote,
             getCurrentSqliteTimestamp()
           );
+          if (Number(addOnPriceInr || 0) > 0) {
+            paymentBookingId = Number(addOnResult.lastInsertRowid);
+          } else {
+            db.prepare(
+              `UPDATE bookings
+               SET payment_status = 'paid',
+                   paid_at = datetime('now'),
+                   paid_amount_paise = 0,
+                   status = 'booked'
+               WHERE id = ?`
+            ).run(Number(addOnResult.lastInsertRowid));
+          }
         }
       } else if (existingAddOnBooking) {
         if (String(existingAddOnBooking.paymentStatus || '').toLowerCase() === 'paid') {
@@ -4063,9 +4093,13 @@ app.put('/api/hydrogen/packages/:groupId', requireAuth, (req, res) => {
         totalSessions,
         packagePriceInr,
         extraSessionPriceInr,
-        totalAmountInr,
+        totalAmountInr: payableAmountInr,
+        calculatedTotalAmountInr,
+        requiresPayment: payableAmountInr > 0,
         addOn: addOnSummary,
       },
+      requiresPayment: payableAmountInr > 0,
+      paymentBookingId,
       bookings,
     });
   } catch (error) {
@@ -6077,14 +6111,22 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
 
   let paymentSummary;
   try {
-    paymentSummary = booking.bookingGroupId
-      ? buildHydrogenGroupPaymentSummary(payableBookings, pricingUser)
-      : {
+    if (booking.bookingGroupId) {
+      const payableHydrogenBookings = payableBookings.filter((entry) => {
+        const entryService = getServiceByName(entry.serviceName);
+        return String(entryService?.category || '').toUpperCase() === 'HYDROGEN SESSION';
+      });
+      paymentSummary = payableHydrogenBookings.length
+        ? buildHydrogenGroupPaymentSummary(payableBookings, pricingUser)
+        : buildAddOnOnlyPaymentSummary(payableBookings, pricingUser);
+    } else {
+      paymentSummary = {
           serviceName: booking.serviceName,
           amountInr: getEffectiveServicePriceInr(service, pricingUser),
           totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
           bookingCount: 1,
         };
+    }
     if (booking.bookingGroupId) {
       const aggregateSummary = buildAggregatePaymentSummary(payableBookings, pricingUser);
       const oneUseSummary = applyOneUseAdminPhoneDiscountToSummary(payableBookings, pricingUser, aggregateSummary);
@@ -6259,9 +6301,29 @@ app.get('/invoice/booking', (req, res) => {
   if (amountInr <= 0) {
     return res.status(409).send('Invoice is available only for paid bookings with amount greater than 0');
   }
+  const invoiceItems =
+    Array.isArray(summary?.invoiceItems) && summary.invoiceItems.length
+      ? summary.invoiceItems
+      : [
+          {
+            serviceName: summary?.serviceName || booking.serviceName || 'Booking',
+            bookingDate: booking.bookingDate,
+            bookingTime: booking.bookingTime,
+            amountInr,
+          },
+        ];
+  const invoiceRowsHtml = invoiceItems
+    .map((item) => {
+      const itemDateTime = formatDateTimeWithComma(item.bookingDate || booking.bookingDate, item.bookingTime || booking.bookingTime);
+      return `<tr>
+          <td>${escapeHtml(item.serviceName || 'Booking')}</td>
+          <td>${escapeHtml(itemDateTime)}</td>
+          <td class="right">Rs. ${Number(item.amountInr || 0).toLocaleString('en-IN')}</td>
+        </tr>`;
+    })
+    .join('');
   const invoiceNo = `BK-${booking.id}`;
   const paidAtLabel = formatInvoiceDateTime(booking.paidAt);
-  const bookingDateTimeLabel = formatDateTimeWithComma(booking.bookingDate, booking.bookingTime);
   const generatedAtLabel = formatInvoiceDateTime(booking.paidAt || booking.createdAt);
   const customerName = bookingOwner?.name || '';
   const customerEmail = bookingOwner?.email || '';
@@ -6286,7 +6348,7 @@ app.get('/invoice/booking', (req, res) => {
       print-color-adjust:exact;
     }
     .page{
-      width:210mm;
+      width:min(210mm, calc(100% - 24px));
       min-height:297mm;
       margin:18px auto;
       box-sizing:border-box;
@@ -6307,9 +6369,31 @@ app.get('/invoice/booking', (req, res) => {
     .right{text-align:right}
     .total{font-weight:700;font-size:16px}
     .footer{margin-top:14px}
+    @media screen and (max-width:700px){
+      html,body{height:auto;min-height:100%}
+      body{background:#fff}
+      .page{
+        width:100%;
+        min-height:100vh;
+        margin:0;
+        padding:132px 16px 24px;
+        box-shadow:none;
+        background-size:100% auto;
+      }
+      .row{display:block}
+      .row > div{max-width:100%;overflow-wrap:anywhere}
+      .row > div + div{margin-top:18px}
+      .title{font-size:17px}
+      .muted{font-size:12px}
+      .gst-space{display:block;min-width:0;width:100%;max-width:260px;margin-top:4px;transform:none}
+      table{table-layout:fixed;margin-top:16px}
+      th,td{padding:9px 5px;font-size:12px;overflow-wrap:anywhere}
+      th{font-size:10px;letter-spacing:.03em}
+      .total{font-size:14px}
+    }
     @media print{
       body{background:#fff}
-      .page{margin:0;box-shadow:none}
+      .page{width:210mm;margin:0;box-shadow:none}
     }
   </style>
 </head>
@@ -6339,11 +6423,7 @@ app.get('/invoice/booking', (req, res) => {
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td>${escapeHtml(summary?.serviceName || booking.serviceName || 'Booking')}</td>
-          <td>${escapeHtml(bookingDateTimeLabel)}</td>
-          <td class="right">Rs. ${Number(amountInr || 0).toLocaleString('en-IN')}</td>
-        </tr>
+        ${invoiceRowsHtml}
       </tbody>
       <tfoot>
         <tr>
@@ -6419,7 +6499,7 @@ app.get('/invoice/membership', (req, res) => {
       print-color-adjust:exact;
     }
     .page{
-      width:210mm;
+      width:min(210mm, calc(100% - 24px));
       min-height:297mm;
       margin:18px auto;
       box-sizing:border-box;
@@ -6439,9 +6519,31 @@ app.get('/invoice/membership', (req, res) => {
     .right{text-align:right}
     .total{font-weight:700;font-size:16px}
     .footer{margin-top:14px}
+    @media screen and (max-width:700px){
+      html,body{height:auto;min-height:100%}
+      body{background:#fff}
+      .page{
+        width:100%;
+        min-height:100vh;
+        margin:0;
+        padding:132px 16px 24px;
+        box-shadow:none;
+        background-size:100% auto;
+      }
+      .row{display:block}
+      .row > div{max-width:100%;overflow-wrap:anywhere}
+      .row > div + div{margin-top:18px}
+      .title{font-size:17px}
+      .muted{font-size:12px}
+      .gst-space{display:block;min-width:0;width:100%;max-width:260px;margin-top:4px;transform:none}
+      table{table-layout:fixed;margin-top:16px}
+      th,td{padding:9px 5px;font-size:12px;overflow-wrap:anywhere}
+      th{font-size:10px;letter-spacing:.03em}
+      .total{font-size:14px}
+    }
     @media print{
       body{background:#fff}
-      .page{margin:0;box-shadow:none}
+      .page{width:210mm;margin:0;box-shadow:none}
     }
   </style>
 </head>
@@ -8433,6 +8535,12 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
     };
   });
   const addOnAmountInr = addOnItems.reduce((sum, item) => sum + Number(item.amountInr || 0), 0);
+  const addOnLineItems = addOnItems.map((item) => ({
+    serviceName: item.serviceName,
+    bookingDate: item.bookingDate,
+    bookingTime: item.bookingTime,
+    amountInr: Number(item.amountInr || 0),
+  }));
   const isForceChargeableGroup = hydrogenBookings.some((entry) => {
     const paymentReference = String(entry?.paymentReference || '').trim().toLowerCase();
     return paymentReference === 'buy_extra' || Number(entry?.isTopUpSession || 0) === 1;
@@ -8457,6 +8565,15 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
       addOnAmountInr,
       bookingCount: bookings.length,
       totalAmountInr: pricing.totalAmountInr,
+      invoiceItems: [
+        {
+          serviceName: `${baseService.name}${hydrogenBookings.length > 1 ? ` (${hydrogenBookings.length} sessions)` : ''}`,
+          bookingDate: hydrogenBookings[0]?.bookingDate || '',
+          bookingTime: hydrogenBookings[0]?.bookingTime || '',
+          amountInr: Number(pricing.totalAmountInr || 0) - addOnAmountInr,
+        },
+        ...addOnLineItems,
+      ].filter((item) => Number(item.amountInr || 0) > 0),
       ...pricing.summary,
     };
   }
@@ -8489,6 +8606,18 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
       memberSessionPriceInr: Number(memberSessionPriceInr || 0),
       totalSessions: hydrogenBookings.length,
       totalAmountInr,
+      invoiceItems: [
+        {
+          serviceName:
+            chargeableHydrogenBookings.length > 1
+              ? `${baseService.name} (${chargeableHydrogenBookings.length} paid sessions)`
+              : baseService.name,
+          bookingDate: chargeableHydrogenBookings[0]?.bookingDate || hydrogenBookings[0]?.bookingDate || '',
+          bookingTime: chargeableHydrogenBookings[0]?.bookingTime || hydrogenBookings[0]?.bookingTime || '',
+          amountInr: hydrogenAmountInr,
+        },
+        ...addOnLineItems,
+      ].filter((item) => Number(item.amountInr || 0) > 0),
     };
   }
 
@@ -8509,7 +8638,53 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
     addOnAmountInr,
     bookingCount: bookings.length,
     totalAmountInr: pricing.totalAmountInr,
+    invoiceItems: [
+      {
+        serviceName: `${baseService.name}${hydrogenBookings.length > 1 ? ` (${hydrogenBookings.length} sessions)` : ''}`,
+        bookingDate: hydrogenBookings[0]?.bookingDate || '',
+        bookingTime: hydrogenBookings[0]?.bookingTime || '',
+        amountInr: Number(pricing.totalAmountInr || 0) - addOnAmountInr,
+      },
+      ...addOnLineItems,
+    ].filter((item) => Number(item.amountInr || 0) > 0),
     ...pricing.summary,
+  };
+}
+
+function buildAddOnOnlyPaymentSummary(bookings, user) {
+  const addOnBookings = (Array.isArray(bookings) ? bookings : []).filter((entry) => {
+    const service = getServiceByName(entry.serviceName);
+    return isAddOnService(service);
+  });
+  if (!addOnBookings.length) {
+    throw new Error('No payable add-ons found.');
+  }
+
+  const addOnItems = addOnBookings.map((entry) => {
+    const service = getServiceByName(entry.serviceName);
+    return {
+      bookingId: entry.id,
+      serviceName: entry.serviceName,
+      amountInr: Number(getEffectiveServicePriceInr(service, user) || 0),
+      bookingDate: entry.bookingDate,
+      bookingTime: entry.bookingTime,
+    };
+  });
+  const addOnAmountInr = addOnItems.reduce((sum, item) => sum + Number(item.amountInr || 0), 0);
+
+  return {
+    serviceName: addOnItems.length === 1 ? addOnItems[0].serviceName : 'IV Add-ons',
+    addOnItems,
+    addOnAmountInr,
+    bookingCount: addOnBookings.length,
+    totalAmountInr: addOnAmountInr,
+    amountInr: addOnAmountInr,
+    invoiceItems: addOnItems.map((item) => ({
+      serviceName: item.serviceName,
+      bookingDate: item.bookingDate,
+      bookingTime: item.bookingTime,
+      amountInr: Number(item.amountInr || 0),
+    })),
   };
 }
 
@@ -8536,19 +8711,6 @@ function buildBookingInvoiceSummary(bookings, user) {
   if (!activeBookings.length) {
     return { serviceName: 'Booking', totalAmountInr: 0, amountInr: 0, bookingCount: 0 };
   }
-  const storedPaidAmountPaise = activeBookings.reduce((sum, entry) => {
-    if (String(entry?.paymentStatus || '').trim().toLowerCase() !== 'paid') return sum;
-    return sum + Math.max(0, Math.round(Number(entry?.paidAmountPaise || 0)));
-  }, 0);
-  if (storedPaidAmountPaise > 0) {
-    return {
-      serviceName: activeBookings[0]?.serviceName || 'Booking',
-      totalAmountInr: storedPaidAmountPaise / 100,
-      amountInr: storedPaidAmountPaise / 100,
-      bookingCount: activeBookings.length,
-    };
-  }
-
   const hydrogenBookings = activeBookings.filter((entry) => {
     const service = getServiceByName(entry.serviceName);
     return String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION';
@@ -8566,10 +8728,13 @@ function buildBookingInvoiceSummary(bookings, user) {
 
     const baseService = getServiceByName(hydrogenBookings[0].serviceName);
     const addOnBookings = activeBookings.filter((entry) => isAddOnService(getServiceByName(entry.serviceName)));
-    const addOnAmountInr = addOnBookings.reduce(
-      (sum, entry) => sum + Number(getEffectiveServicePriceInr(getServiceByName(entry.serviceName), user) || 0),
-      0
-    );
+    const addOnItems = addOnBookings.map((entry) => ({
+      serviceName: entry.serviceName,
+      bookingDate: entry.bookingDate,
+      bookingTime: entry.bookingTime,
+      amountInr: Number(getEffectiveServicePriceInr(getServiceByName(entry.serviceName), user) || 0),
+    }));
+    const addOnAmountInr = addOnItems.reduce((sum, entry) => sum + Number(entry.amountInr || 0), 0);
     const chargeableHydrogenSessions = hydrogenBookings.filter(
       (entry) => String(entry.paymentReference || '').trim().toLowerCase() !== 'membership'
     ).length;
@@ -8586,6 +8751,39 @@ function buildBookingInvoiceSummary(bookings, user) {
       addOnAmountInr,
       totalAmountInr: hydrogenAmountInr + addOnAmountInr,
       amountInr: hydrogenAmountInr + addOnAmountInr,
+      invoiceItems: [
+        {
+          serviceName:
+            chargeableHydrogenSessions > 1
+              ? `${baseService?.name || hydrogenBookings[0].serviceName || 'Hydrogen Session'} (${chargeableHydrogenSessions} paid sessions)`
+              : baseService?.name || hydrogenBookings[0].serviceName || 'Hydrogen Session',
+          bookingDate: hydrogenBookings[0]?.bookingDate || '',
+          bookingTime: hydrogenBookings[0]?.bookingTime || '',
+          amountInr: hydrogenAmountInr,
+        },
+        ...addOnItems,
+      ].filter((item) => Number(item.amountInr || 0) > 0),
+    };
+  }
+
+  const storedPaidAmountPaise = activeBookings.reduce((sum, entry) => {
+    if (String(entry?.paymentStatus || '').trim().toLowerCase() !== 'paid') return sum;
+    return sum + Math.max(0, Math.round(Number(entry?.paidAmountPaise || 0)));
+  }, 0);
+  if (storedPaidAmountPaise > 0) {
+    return {
+      serviceName: activeBookings[0]?.serviceName || 'Booking',
+      totalAmountInr: storedPaidAmountPaise / 100,
+      amountInr: storedPaidAmountPaise / 100,
+      bookingCount: activeBookings.length,
+      invoiceItems: [
+        {
+          serviceName: activeBookings[0]?.serviceName || 'Booking',
+          bookingDate: activeBookings[0]?.bookingDate || '',
+          bookingTime: activeBookings[0]?.bookingTime || '',
+          amountInr: storedPaidAmountPaise / 100,
+        },
+      ],
     };
   }
 
@@ -8598,6 +8796,14 @@ function buildBookingInvoiceSummary(bookings, user) {
     amountInr,
     totalAmountInr: amountInr,
     bookingCount: 1,
+    invoiceItems: [
+      {
+        serviceName: booking.serviceName,
+        bookingDate: booking.bookingDate,
+        bookingTime: booking.bookingTime,
+        amountInr,
+      },
+    ].filter((item) => Number(item.amountInr || 0) > 0),
   };
 }
 
@@ -8650,6 +8856,18 @@ function buildAggregatePaymentSummary(bookings, user) {
     });
 
     if (groupKey.startsWith('hydrogen_') || hydrogenEntries.length) {
+      if (!hydrogenEntries.length && entries.every((entry) => isAddOnService(getServiceByName(entry.serviceName)))) {
+        const summary = buildAddOnOnlyPaymentSummary(entries, user);
+        units.push({
+          type: 'hydrogen_add_on',
+          key: groupKey,
+          label: summary.serviceName,
+          amountInr: Number(summary.totalAmountInr || 0),
+          bookingCount: Number(summary.bookingCount || entries.length),
+        });
+        totalAmountInr += Number(summary.totalAmountInr || 0);
+        continue;
+      }
       const groupEntries =
         groupKey.startsWith('hydrogen_')
           ? db

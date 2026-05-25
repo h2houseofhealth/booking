@@ -4025,7 +4025,7 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
           .get(existing.userId)
       : req.user;
 
-  const payload = validateBookingPayload(req.body, bookingOwner || req.user);
+  const payload = validateBookingPayload(req.body, bookingOwner || req.user, { excludeExperienceBookingIds: [bookingId] });
   if (payload.error) return res.status(400).json({ message: payload.error });
 
   const isUser = req.user.role === 'user';
@@ -6584,20 +6584,33 @@ app.patch('/api/bookings/:id/status', requireAuth, (req, res) => {
 
   const existingStatus = String(existing.status || '').trim().toLowerCase();
   const existingNotesLower = String(existing.notes || '').toLowerCase();
-  if (req.user.role !== 'admin' && status === 'schedule_later') {
+  if (status === 'schedule_later') {
+    if (['completed', 'cancelled', 'schedule_later'].includes(existingStatus)) {
+      return res.status(409).json({ message: 'This session is already completed, cancelled, or waiting to be scheduled.' });
+    }
     if (!['booked', 'confirmed'].includes(existingStatus)) {
       return res.status(409).json({ message: 'Only booked sessions can be moved to Schedule Later.' });
+    }
+    if (String(existing.paymentStatus || '').trim().toLowerCase() !== 'paid') {
+      return res.status(409).json({ message: 'Only paid bookings can be moved to Schedule Later.' });
     }
     const normalizedExistingTime = normalizeSlotStartTime(String(existing.bookingTime || '').trim()) || String(existing.bookingTime || '').trim();
     const slotStart = new Date(`${String(existing.bookingDate || '').trim()}T${normalizedExistingTime}:00`).getTime();
     if (!Number.isFinite(slotStart)) {
       return res.status(409).json({ message: 'Current booking slot is invalid.' });
     }
-    const scheduleLaterCutoffMs = 12 * 60 * 60 * 1000;
-    if (Date.now() > slotStart - scheduleLaterCutoffMs) {
-      return res.status(409).json({ message: 'Schedule Later can be used only up to 12 hours before slot start.' });
+    if (req.user.role === 'admin') {
+      const adminScheduleLaterWindowMs = 15 * 60 * 1000;
+      if (Date.now() > slotStart + adminScheduleLaterWindowMs) {
+        return res.status(409).json({ message: 'Admin can move a session to Schedule Later only until 15 minutes after slot start.' });
+      }
+    } else {
+      const scheduleLaterCutoffMs = 12 * 60 * 60 * 1000;
+      if (Date.now() > slotStart - scheduleLaterCutoffMs) {
+        return res.status(409).json({ message: 'Schedule Later can be used only up to 12 hours before slot start.' });
+      }
     }
-    if (existingNotesLower.includes('moved to schedule later by user')) {
+    if (existingNotesLower.includes('moved to schedule later by user') || existingNotesLower.includes('moved to schedule later by admin')) {
       return res.status(409).json({ message: 'Schedule Later can be used only once for this session.' });
     }
   }
@@ -6609,7 +6622,8 @@ app.patch('/api/bookings/:id/status', requireAuth, (req, res) => {
   if (status === 'cancelled' && existing.bookingGroupId) {
     db.prepare('UPDATE bookings SET status = ? WHERE booking_group_id = ?').run(status, existing.bookingGroupId);
   } else if (status === 'schedule_later') {
-    const scheduleLaterNote = `Moved to Schedule Later by user from ${existing.bookingDate} ${existing.bookingTime}`;
+    const actorLabel = req.user.role === 'admin' ? 'admin' : 'user';
+    const scheduleLaterNote = `Moved to Schedule Later by ${actorLabel} from ${existing.bookingDate} ${existing.bookingTime}`;
     const nextNotes = [String(existing.notes || '').trim(), scheduleLaterNote].filter(Boolean).join('\n');
     db.prepare('UPDATE bookings SET status = ?, notes = ? WHERE id = ?').run(status, nextNotes, bookingId);
   } else {
@@ -6738,7 +6752,16 @@ function getAdminRescheduleEligibility(booking) {
   if (status === 'completed' || status === 'cancelled') {
     return { eligible: false, message: 'completed or cancelled sessions cannot be rescheduled here' };
   }
-  if (String(booking?.notes || '').toLowerCase().includes('rescheduled by admin from')) {
+  if (status === 'schedule_later') {
+    return { eligible: true, mode: 'schedule_later' };
+  }
+  const notes = String(booking?.notes || '').toLowerCase();
+  const wasAlreadyRescheduled =
+    Number(booking?.rescheduleCount || 0) > 0 ||
+    notes.includes('rescheduled by admin from') ||
+    notes.includes('rescheduled by user from') ||
+    notes.includes('scheduled later by user from');
+  if (wasAlreadyRescheduled) {
     return { eligible: false, message: 'this session was already rescheduled once and cannot be rescheduled again' };
   }
   const slotStart = new Date(`${booking.bookingDate}T${normalizeSlotStartTime(booking.bookingTime) || booking.bookingTime}:00`).getTime();
@@ -6766,6 +6789,7 @@ function loadBookingForAdminReschedule(bookingId) {
               b.booking_time AS bookingTime,
               b.status,
               b.payment_status AS paymentStatus,
+              b.reschedule_count AS rescheduleCount,
               b.notes,
               u.name,
               u.email,
@@ -9073,7 +9097,7 @@ function requireAuth(req, res, next) {
   return res.status(401).json({ message: 'unauthorized' });
 }
 
-function validateBookingPayload(body, user) {
+function validateBookingPayload(body, user, options = {}) {
   if (!body || typeof body !== 'object') {
     return { error: 'invalid payload' };
   }
@@ -9093,6 +9117,12 @@ function validateBookingPayload(body, user) {
   }
   if (String(service.category || '').toUpperCase() === 'EXPERIENCE SESSION' && isMembershipActiveForUser(user)) {
     return { error: 'Demo hydrogen session is available only for non-members.' };
+  }
+  if (
+    String(service.category || '').toUpperCase() === 'EXPERIENCE SESSION' &&
+    hasUserUsedExperienceSession(user?.id, options.excludeExperienceBookingIds)
+  ) {
+    return { error: 'Demo hydrogen session can be attended only once.' };
   }
 
   if (service.membershipOnly && !isMembershipActiveForUser(user)) {
@@ -9220,6 +9250,37 @@ function getHydrogenServiceNames() {
     .filter((service) => String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION')
     .map((service) => service.name)
     .filter(Boolean);
+}
+
+function getExperienceSessionNames() {
+  const names = SERVICE_CATALOG
+    .filter((service) => String(service?.category || '').toUpperCase() === 'EXPERIENCE SESSION')
+    .map((service) => service.name)
+    .filter(Boolean);
+  return Array.from(new Set([...names, 'Demo Session', 'Demo Hydrogen Session']));
+}
+
+function hasUserUsedExperienceSession(userId, excludeBookingIds = []) {
+  const normalizedUserId = Number(userId);
+  if (!Number.isInteger(normalizedUserId)) return false;
+  const serviceNames = getExperienceSessionNames();
+  if (!serviceNames.length) return false;
+  const exclusion = buildExcludedBookingIdsClause(excludeBookingIds);
+
+  const placeholders = serviceNames.map(() => '?').join(', ');
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS total
+       FROM bookings
+       WHERE user_id = ?
+         AND service_name IN (${placeholders})
+         AND status <> 'cancelled'
+         AND (status IN ('completed', 'schedule_later') OR ${activeBookingSql()})`
+          + exclusion.clause
+    )
+    .get(normalizedUserId, ...serviceNames, ...exclusion.params);
+
+  return Number(row?.total || 0) > 0;
 }
 
 function countPaidHydrogenSessionsDuringMembership(userId, user) {

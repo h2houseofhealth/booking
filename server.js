@@ -5605,19 +5605,35 @@ app.get('/api/public/payments/booking', (req, res) => {
         .sort()[0] || ''
     : '';
   const activeBookings = groupBookings.filter((entry) => entry.status !== 'cancelled');
+  const payableBookings = activeBookings.filter((entry) => String(entry.paymentStatus || 'unpaid').trim().toLowerCase() !== 'paid');
   const pricingUser = {
     membershipStatus: bookingOwner?.membershipStatus || 'inactive',
     membershipExpiresAt: bookingOwner?.membershipExpiresAt || null,
     membershipStartedAt: bookingOwner?.membershipStartedAt || null,
+    mobile: bookingOwner?.mobile || '',
   };
-  const summary = booking.bookingGroupId
-    ? buildHydrogenGroupPaymentSummary(activeBookings, pricingUser)
-    : {
+  let summary;
+  try {
+    if (booking.bookingGroupId) {
+      const summaryBookings = payableBookings.length ? payableBookings : activeBookings;
+      const payableHydrogenBookings = summaryBookings.filter((entry) => {
+        const entryService = getServiceByName(entry.serviceName);
+        return String(entryService?.category || '').toUpperCase() === 'HYDROGEN SESSION';
+      });
+      summary = payableHydrogenBookings.length
+        ? buildHydrogenGroupPaymentSummary(summaryBookings, pricingUser)
+        : buildAddOnOnlyPaymentSummary(summaryBookings, pricingUser);
+    } else {
+      summary = {
         serviceName: booking.serviceName,
         amountInr: getEffectiveServicePriceInr(service, pricingUser),
         totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
         bookingCount: 1,
       };
+    }
+  } catch (error) {
+    return res.status(409).json({ message: error?.message || 'Unable to calculate payment details.' });
+  }
 
   return res.json({
     bookingId: booking.id,
@@ -5691,6 +5707,7 @@ app.post('/api/public/payments/create-order', async (req, res) => {
     membershipStatus: bookingOwner?.membershipStatus || 'inactive',
     membershipExpiresAt: bookingOwner?.membershipExpiresAt || null,
     membershipStartedAt: bookingOwner?.membershipStartedAt || null,
+    mobile: bookingOwner?.mobile || '',
   };
   const groupBookings = booking.bookingGroupId
     ? db
@@ -5715,14 +5732,27 @@ app.post('/api/public/payments/create-order', async (req, res) => {
     return res.status(409).json({ message: 'This booking hold has expired. Please book another slot.' });
   }
 
-  const paymentSummary = booking.bookingGroupId
-    ? buildHydrogenGroupPaymentSummary(payableBookings, pricingUser)
-    : {
+  let paymentSummary;
+  try {
+    if (booking.bookingGroupId) {
+      const payableHydrogenBookings = payableBookings.filter((entry) => {
+        const entryService = getServiceByName(entry.serviceName);
+        return String(entryService?.category || '').toUpperCase() === 'HYDROGEN SESSION';
+      });
+      paymentSummary = payableHydrogenBookings.length
+        ? buildHydrogenGroupPaymentSummary(payableBookings, pricingUser)
+        : buildAddOnOnlyPaymentSummary(payableBookings, pricingUser);
+    } else {
+      paymentSummary = {
         serviceName: booking.serviceName,
         amountInr: getEffectiveServicePriceInr(service, pricingUser),
         totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
         bookingCount: 1,
       };
+    }
+  } catch (error) {
+    return res.status(409).json({ message: error?.message || 'Unable to calculate payment total for this booking.' });
+  }
 
   const payableTotalInr = Number(paymentSummary.totalAmountInr || 0);
   if (payableTotalInr <= 0) {

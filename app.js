@@ -4496,8 +4496,8 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
   lines.push(addOn ? `IV Add-on: ${addOn.serviceName} - Rs. ${Number(addOn.amountInr || 0).toLocaleString('en-IN')}` : 'IV Add-on: None');
   lines.push(
     totalAmountInr > 0
-      ? `Total Hydrogen Session Payment: Rs. ${totalAmountInr.toLocaleString('en-IN')}`
-      : 'Total Hydrogen Session Payment: Included in Membership'
+      ? `Total Payable: Rs. ${totalAmountInr.toLocaleString('en-IN')}`
+      : 'Total Payable: Included in Membership'
   );
 
   resetHydrogenComposer();
@@ -11050,12 +11050,13 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
     const payableHydrogenEntries = hydrogenEntries.filter(
       (entry) => entry.status !== 'cancelled' && String(entry.paymentStatus || 'unpaid').toLowerCase() !== 'paid'
     );
-    const payableAddOnEntries = addOnEntries.filter(
+    const displayAddOnEntries = pricingAddOnEntries;
+    const payableAddOnEntries = displayAddOnEntries.filter(
       (entry) => entry.status !== 'cancelled' && String(entry.paymentStatus || 'unpaid').toLowerCase() !== 'paid'
     );
     const breakdown = getHydrogenGroupBreakdown(pricingHydrogenEntries, pricingAddOnEntries);
     const payableBreakdown = getHydrogenGroupBreakdown(payableHydrogenEntries, payableAddOnEntries);
-    const addOnDetails = addOnEntries.map((entry) => {
+    const addOnDetails = displayAddOnEntries.map((entry) => {
       const linkedHydrogen = groupHydrogenEntries.find(
         (slot) => slot.bookingDate === entry.bookingDate && slot.bookingTime === entry.bookingTime
       );
@@ -11071,13 +11072,13 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       const label = sequence > 0 ? `S${sequence}` : 'Session';
       return `${label}: ${formatDateTime(entry.bookingDate, entry.bookingTime)}`;
     });
-    if (addOnEntries.length) {
-      addOnEntries.forEach((entry) => {
+    if (displayAddOnEntries.length) {
+      displayAddOnEntries.forEach((entry) => {
         slotLines.push(`Add-on: ${entry.serviceName} with ${formatDateTime(entry.bookingDate, entry.bookingTime)}`);
       });
     }
     const rescheduleLines = [];
-    [...hydrogenEntries, ...addOnEntries].forEach((entry) => {
+    [...hydrogenEntries, ...displayAddOnEntries].forEach((entry) => {
       const history = getBookingRescheduleHistory(entry);
       if (!history) return;
       const sequence = Number(hydrogenSequenceById.get(String(entry?.id || '')) || 0);
@@ -11098,7 +11099,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       baseServiceName,
       extraSessions: Math.max(0, hydrogenEntries.length - getHydrogenSessionCountFromServiceName(baseServiceName)),
       hydrogenEntries,
-      addOnEntries,
+      addOnEntries: displayAddOnEntries,
       isGroupedHydrogen: true,
       status: summarizeGroupStatus(includedEntries),
       paymentStatus: summarizeGroupPaymentStatus(includedEntries),

@@ -2190,6 +2190,12 @@ app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req, res) => {
               per_user_limit AS perUserLimit,
               expires_at AS expiresAt,
               active,
+              coupon_type AS couponType,
+              assigned_user_email AS assignedUserEmail,
+              used_by AS usedBy,
+              is_active AS isActive,
+              valid_from AS validFrom,
+              valid_till AS validTill,
               recipient_email AS recipientEmail,
               recipient_name AS recipientName,
               festival_name AS festivalName,
@@ -2203,29 +2209,145 @@ app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req, res) => {
     .all()
     .map((row) => {
       const stats = getCouponRedemptionStats(row.id, -1);
+      const coupon = mapCouponRow(row);
       return {
-        id: Number(row.id),
-        code: row.code || '',
-        description: row.description || '',
-        discountType: row.discountType || 'flat',
-        discountValue: Number(row.discountValue || 0),
-        appliesTo: row.appliesTo || 'all',
-        maxRedemptions: row.maxRedemptions == null ? null : Number(row.maxRedemptions),
-        perUserLimit: Number(row.perUserLimit || 1),
-        expiresAt: row.expiresAt || null,
-        active: Number(row.active || 0) === 1,
-        recipientEmail: row.recipientEmail || '',
-        recipientName: row.recipientName || '',
-        festivalName: row.festivalName || '',
-        emailedAt: row.emailedAt || null,
-        emailStatus: row.emailStatus || '',
-        emailError: row.emailError || '',
-        createdAt: row.createdAt || null,
+        ...coupon,
         totalRedemptions: Number(stats.total || 0),
       };
     });
 
   res.json({ coupons });
+});
+
+app.patch('/api/admin/coupons/:id/active', requireAuth, requireAdmin, (req, res) => {
+  const couponId = Number(req.params.id);
+  if (!Number.isInteger(couponId)) {
+    return res.status(400).json({ message: 'Invalid coupon id.' });
+  }
+  const active = Number(req.body?.active) === 1 ? 1 : 0;
+  db.prepare('UPDATE coupons SET active = ?, is_active = ? WHERE id = ?').run(active, active, couponId);
+  res.json({ message: active ? 'Coupon activated.' : 'Coupon deactivated.' });
+});
+
+app.get('/api/coupons/general', requireAuth, (req, res) => {
+  const appliesTo = String(req.query?.appliesTo || '').trim().toLowerCase();
+  const allowedAppliesTo = new Set(['services', 'membership']);
+  const filterAppliesTo = allowedAppliesTo.has(appliesTo) ? appliesTo : '';
+  const requesterRole = String(req.user?.role || '').trim().toLowerCase();
+
+  if (requesterRole !== 'user') {
+    console.warn('[coupons/general] non-user access, returning empty payload', {
+      requesterRole,
+      appliesTo: filterAppliesTo || 'all',
+      userId: req.user?.id || null,
+    });
+    return res.status(200).json({ coupons: [] });
+  }
+
+  try {
+    const rows = db
+      .prepare(
+        `SELECT id,
+                code,
+                description,
+                discount_type AS discountType,
+                discount_value AS discountValue,
+                applies_to AS appliesTo,
+                max_redemptions AS maxRedemptions,
+                per_user_limit AS perUserLimit,
+                expires_at AS expiresAt,
+                active,
+                coupon_type AS couponType,
+                assigned_user_email AS assignedUserEmail,
+                used_by AS usedBy,
+                is_active AS isActive,
+                valid_from AS validFrom,
+                valid_till AS validTill,
+                festival_name AS festivalName,
+                created_at AS createdAt
+         FROM coupons
+         WHERE active = 1
+           AND COALESCE(is_active, 1) = 1
+           AND COALESCE(coupon_type, 'public') = 'public'
+           AND (valid_from IS NULL OR datetime(valid_from) <= datetime('now'))
+           AND (
+             (valid_till IS NOT NULL AND datetime(valid_till) > datetime('now'))
+             OR (valid_till IS NULL AND (expires_at IS NULL OR datetime(expires_at) > datetime('now')))
+           )
+         ORDER BY datetime(created_at) DESC, id DESC`
+      )
+      .all();
+
+    console.log('[coupons/general] db rows fetched', {
+      appliesTo: filterAppliesTo || 'all',
+      rowCount: Array.isArray(rows) ? rows.length : 0,
+      userId: req.user?.id || null,
+    });
+
+    const coupons = rows
+      .map((row) => {
+        const coupon = mapCouponRow(row);
+        const couponAppliesTo = String(coupon.appliesTo || 'all').trim().toLowerCase();
+        if (filterAppliesTo && !['all', filterAppliesTo].includes(couponAppliesTo)) {
+          return null;
+        }
+        const stats = getCouponRedemptionStats(coupon.id, req.user.id);
+        const maxRedemptions = coupon.maxRedemptions;
+        const perUserLimit = Number(coupon.perUserLimit || 1);
+        let canRedeem = true;
+        let unavailableReason = '';
+        const userEmail = String(req.user?.email || '').trim().toLowerCase();
+        if (userEmail && Array.isArray(coupon.usedBy) && coupon.usedBy.includes(userEmail)) {
+          canRedeem = false;
+          unavailableReason = 'Already used by you';
+        } else if (
+          coupon.couponType === 'private' &&
+          Number.isFinite(maxRedemptions) &&
+          maxRedemptions > 0 &&
+          Number(stats.total || 0) >= maxRedemptions
+        ) {
+          canRedeem = false;
+          unavailableReason = 'Coupon fully redeemed';
+        } else if (perUserLimit > 0 && Number(stats.userTotal || 0) >= perUserLimit) {
+          canRedeem = false;
+          unavailableReason = 'Already used by you';
+        }
+        return {
+          id: coupon.id,
+          code: coupon.code,
+          description: coupon.description,
+          festivalName: coupon.festivalName,
+          discountType: coupon.discountType,
+          discountValue: coupon.discountValue,
+          appliesTo: couponAppliesTo || 'all',
+          active: coupon.active ? 1 : 0,
+          isActive: coupon.isActive ? 1 : 0,
+          validFrom: coupon.validFrom || null,
+          validTill: coupon.validTill || null,
+          expiresAt: coupon.validTill || coupon.expiresAt || null,
+          couponType: coupon.couponType,
+          canRedeem,
+          unavailableReason,
+        };
+      })
+      .filter(Boolean);
+
+    console.log('[coupons/general] response payload ready', {
+      appliesTo: filterAppliesTo || 'all',
+      couponCount: coupons.length,
+      couponCodes: coupons.map((item) => item.code).slice(0, 25),
+      userId: req.user?.id || null,
+    });
+
+    return res.status(200).json({ coupons: Array.isArray(coupons) ? coupons : [] });
+  } catch (error) {
+    console.error('[coupons/general] failed, returning empty payload', {
+      appliesTo: filterAppliesTo || 'all',
+      userId: req.user?.id || null,
+      message: String(error?.message || error),
+    });
+    return res.status(200).json({ coupons: [] });
+  }
 });
 
 app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
@@ -2237,11 +2359,16 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
   const appliesTo = 'all';
   const recipientEmail = String(req.body?.recipientEmail || '').trim().toLowerCase();
   const sendEmail = req.body?.sendEmail !== false;
-  const singleUse = Boolean(req.body?.singleUse) || Boolean(recipientEmail);
+  let couponType = String(req.body?.couponType || '').trim().toLowerCase();
+  if (!['public', 'private'].includes(couponType)) {
+    couponType = recipientEmail ? 'private' : 'public';
+  }
+  const singleUse = Boolean(req.body?.singleUse) || couponType === 'private';
   const maxRedemptionsRaw = req.body?.maxRedemptions;
   let maxRedemptions =
     maxRedemptionsRaw === '' || maxRedemptionsRaw == null ? null : Number(maxRedemptionsRaw);
-  const expiresAt = String(req.body?.expiresAt || '').trim();
+  const validFrom = String(req.body?.validFrom || '').trim();
+  const validTill = String(req.body?.validTill || req.body?.expiresAt || '').trim();
 
   if (!code) {
     code = generateUniqueCouponCode();
@@ -2255,38 +2382,55 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
   if (recipientEmail && !isValidEmail(recipientEmail)) {
     return res.status(400).json({ message: 'recipientEmail must be a valid email.' });
   }
+  if (couponType === 'private' && !recipientEmail) {
+    return res.status(400).json({ message: 'recipientEmail is required for private coupons.' });
+  }
+  if (sendEmail && couponType !== 'private') {
+    return res.status(400).json({ message: 'Email sending is supported only for private coupons.' });
+  }
   if (sendEmail && !recipientEmail) {
     return res.status(400).json({ message: 'recipientEmail is required to send the coupon.' });
   }
-  if (singleUse) {
+  if (singleUse || couponType === 'private') {
     maxRedemptions = 1;
   }
   if (maxRedemptions != null && (!Number.isInteger(maxRedemptions) || maxRedemptions <= 0)) {
     return res.status(400).json({ message: 'maxRedemptions must be a positive integer.' });
   }
-  if (expiresAt) {
-    const parsedExpiry = new Date(expiresAt);
+  if (validFrom) {
+    const parsedStart = new Date(validFrom);
+    if (Number.isNaN(parsedStart.getTime())) {
+      return res.status(400).json({ message: 'validFrom must be a valid date.' });
+    }
+  }
+  if (validTill) {
+    const parsedExpiry = new Date(validTill);
     if (Number.isNaN(parsedExpiry.getTime())) {
-      return res.status(400).json({ message: 'expiresAt must be a valid date.' });
+      return res.status(400).json({ message: 'validTill must be a valid date.' });
     }
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const expiryDateOnly = new Date(parsedExpiry);
     expiryDateOnly.setHours(0, 0, 0, 0);
     if (expiryDateOnly < today) {
-      return res.status(400).json({ message: 'expiresAt cannot be in the past.' });
+      return res.status(400).json({ message: 'validTill cannot be in the past.' });
     }
   }
+  if (validFrom && validTill && new Date(validFrom).getTime() >= new Date(validTill).getTime()) {
+    return res.status(400).json({ message: 'validTill must be after validFrom.' });
+  }
 
-  const recipient = recipientEmail ? getUserByEmail(recipientEmail) : null;
+  const assignedUserEmail = couponType === 'private' ? recipientEmail : '';
+  const recipient = assignedUserEmail ? getUserByEmail(assignedUserEmail) : null;
   const recipientName = recipient?.name || '';
-  const initialEmailStatus = sendEmail ? 'pending' : 'draft';
+  const initialEmailStatus = sendEmail && couponType === 'private' ? 'pending' : 'draft';
 
   db.prepare(
     `INSERT INTO coupons (
       code, description, discount_type, discount_value, applies_to, max_redemptions, per_user_limit, expires_at, active,
+      coupon_type, assigned_user_email, used_by, is_active, valid_from, valid_till,
       recipient_email, recipient_name, festival_name, emailed_at, email_status, email_error, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1, ?, ?, ?, NULL, ?, ?, datetime('now'))
+    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1, ?, ?, '[]', 1, ?, ?, ?, ?, ?, NULL, ?, ?, datetime('now'))
     ON CONFLICT(code) DO UPDATE SET
       description = excluded.description,
       discount_type = excluded.discount_type,
@@ -2295,6 +2439,11 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
       max_redemptions = excluded.max_redemptions,
       per_user_limit = excluded.per_user_limit,
       expires_at = excluded.expires_at,
+      coupon_type = excluded.coupon_type,
+      assigned_user_email = excluded.assigned_user_email,
+      is_active = excluded.is_active,
+      valid_from = excluded.valid_from,
+      valid_till = excluded.valid_till,
       recipient_email = excluded.recipient_email,
       recipient_name = excluded.recipient_name,
       festival_name = excluded.festival_name,
@@ -2308,8 +2457,12 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
     discountValue,
     appliesTo,
     maxRedemptions,
-    expiresAt || null,
-    recipientEmail || null,
+    validTill || null,
+    couponType,
+    assignedUserEmail || null,
+    validFrom || null,
+    validTill || null,
+    assignedUserEmail || null,
     recipientName || null,
     festivalName || null,
     initialEmailStatus,
@@ -2318,14 +2471,14 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, async (req, res) => {
 
   let emailStatus = initialEmailStatus;
   let emailMessage = '';
-  if (sendEmail && recipientEmail) {
+  if (sendEmail && assignedUserEmail) {
     const emailResult = await sendCouponEmail({
-      toEmail: recipientEmail,
+      toEmail: assignedUserEmail,
       recipientName,
       code,
       discountValue,
       appliesTo,
-      expiresAt,
+      expiresAt: validTill,
     });
     if (!emailResult.ok) {
       emailStatus = 'failed';
@@ -2373,8 +2526,11 @@ app.post('/api/admin/coupons/:id/resend', requireAuth, requireAdmin, async (req,
   if (!coupon) {
     return res.status(404).json({ message: 'Coupon not found.' });
   }
+  if (coupon.couponType !== 'private') {
+    return res.status(400).json({ message: 'Only private coupons can be emailed.' });
+  }
 
-  const recipientEmail = String(req.body?.recipientEmail || coupon.recipientEmail || '').trim().toLowerCase();
+  const recipientEmail = String(req.body?.recipientEmail || coupon.assignedUserEmail || coupon.recipientEmail || '').trim().toLowerCase();
   if (!recipientEmail || !isValidEmail(recipientEmail)) {
     return res.status(400).json({ message: 'Valid recipientEmail is required.' });
   }
@@ -2394,17 +2550,17 @@ app.post('/api/admin/coupons/:id/resend', requireAuth, requireAdmin, async (req,
     const message = emailResult.message || 'Unable to send email.';
     db.prepare(
       `UPDATE coupons
-       SET recipient_email = ?, recipient_name = ?, email_status = ?, email_error = ?, emailed_at = NULL
+       SET recipient_email = ?, assigned_user_email = ?, recipient_name = ?, email_status = ?, email_error = ?, emailed_at = NULL
        WHERE id = ?`
-    ).run(recipientEmail, recipientName || null, 'failed', message, couponId);
+    ).run(recipientEmail, recipientEmail, recipientName || null, 'failed', message, couponId);
     return res.status(500).json({ message });
   }
 
   db.prepare(
     `UPDATE coupons
-     SET recipient_email = ?, recipient_name = ?, email_status = ?, email_error = '', emailed_at = datetime('now')
+     SET recipient_email = ?, assigned_user_email = ?, recipient_name = ?, email_status = ?, email_error = '', emailed_at = datetime('now')
      WHERE id = ?`
-  ).run(recipientEmail, recipientName || null, 'sent', couponId);
+  ).run(recipientEmail, recipientEmail, recipientName || null, 'sent', couponId);
 
   res.json({ message: 'Coupon emailed.', emailStatus: 'sent' });
 });
@@ -7171,6 +7327,52 @@ function generateCouponCode(prefix = 'H2') {
   return prefix ? `${prefix}-${suffix}` : suffix;
 }
 
+function parseCouponUsedBy(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(String(value));
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((entry) => String(entry || '').trim().toLowerCase())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function mapCouponRow(row) {
+  const couponType = String(row?.couponType || '').trim().toLowerCase() === 'private' ? 'private' : 'public';
+  const assignedUserEmail = String(row?.assignedUserEmail || row?.recipientEmail || '').trim().toLowerCase();
+  const validTill = row?.validTill || row?.expiresAt || null;
+  const isActiveFlag = row?.isActive == null ? Number(row?.active || 0) === 1 : Number(row?.isActive || 0) === 1;
+  const usedBy = parseCouponUsedBy(row?.usedBy);
+  return {
+    id: Number(row.id),
+    code: row.code || '',
+    description: row.description || '',
+    discountType: row.discountType || 'flat',
+    discountValue: Number(row.discountValue || 0),
+    appliesTo: row.appliesTo || 'all',
+    maxRedemptions: row.maxRedemptions == null ? null : Number(row.maxRedemptions),
+    perUserLimit: Number(row.perUserLimit || 1),
+    expiresAt: row.expiresAt || null,
+    active: isActiveFlag,
+    recipientEmail: row.recipientEmail || assignedUserEmail || '',
+    recipientName: row.recipientName || '',
+    festivalName: row.festivalName || '',
+    emailedAt: row.emailedAt || null,
+    emailStatus: row.emailStatus || '',
+    emailError: row.emailError || '',
+    createdAt: row.createdAt || null,
+    couponType,
+    assignedUserEmail,
+    usedBy,
+    isActive: isActiveFlag,
+    validFrom: row.validFrom || null,
+    validTill,
+  };
+}
+
 function getCouponByCode(code) {
   const normalizedCode = normalizeCouponCode(code);
   if (!normalizedCode) return null;
@@ -7186,6 +7388,12 @@ function getCouponByCode(code) {
               per_user_limit AS perUserLimit,
               expires_at AS expiresAt,
               active,
+              coupon_type AS couponType,
+              assigned_user_email AS assignedUserEmail,
+              used_by AS usedBy,
+              is_active AS isActive,
+              valid_from AS validFrom,
+              valid_till AS validTill,
               recipient_email AS recipientEmail,
               recipient_name AS recipientName,
               festival_name AS festivalName,
@@ -7198,25 +7406,7 @@ function getCouponByCode(code) {
     )
     .get(normalizedCode);
   if (!row) return null;
-  return {
-    id: Number(row.id),
-    code: row.code || '',
-    description: row.description || '',
-    discountType: row.discountType || 'flat',
-    discountValue: Number(row.discountValue || 0),
-    appliesTo: row.appliesTo || 'all',
-    maxRedemptions: row.maxRedemptions == null ? null : Number(row.maxRedemptions),
-    perUserLimit: Number(row.perUserLimit || 1),
-    expiresAt: row.expiresAt || null,
-    active: Number(row.active || 0) === 1,
-    recipientEmail: row.recipientEmail || '',
-    recipientName: row.recipientName || '',
-    festivalName: row.festivalName || '',
-    emailedAt: row.emailedAt || null,
-    emailStatus: row.emailStatus || '',
-    emailError: row.emailError || '',
-    createdAt: row.createdAt || null,
-  };
+  return mapCouponRow(row);
 }
 
 function getCouponById(couponId) {
@@ -7234,6 +7424,12 @@ function getCouponById(couponId) {
               per_user_limit AS perUserLimit,
               expires_at AS expiresAt,
               active,
+              coupon_type AS couponType,
+              assigned_user_email AS assignedUserEmail,
+              used_by AS usedBy,
+              is_active AS isActive,
+              valid_from AS validFrom,
+              valid_till AS validTill,
               recipient_email AS recipientEmail,
               recipient_name AS recipientName,
               festival_name AS festivalName,
@@ -7246,25 +7442,7 @@ function getCouponById(couponId) {
     )
     .get(id);
   if (!row) return null;
-  return {
-    id: Number(row.id),
-    code: row.code || '',
-    description: row.description || '',
-    discountType: row.discountType || 'flat',
-    discountValue: Number(row.discountValue || 0),
-    appliesTo: row.appliesTo || 'all',
-    maxRedemptions: row.maxRedemptions == null ? null : Number(row.maxRedemptions),
-    perUserLimit: Number(row.perUserLimit || 1),
-    expiresAt: row.expiresAt || null,
-    active: Number(row.active || 0) === 1,
-    recipientEmail: row.recipientEmail || '',
-    recipientName: row.recipientName || '',
-    festivalName: row.festivalName || '',
-    emailedAt: row.emailedAt || null,
-    emailStatus: row.emailStatus || '',
-    emailError: row.emailError || '',
-    createdAt: row.createdAt || null,
-  };
+  return mapCouponRow(row);
 }
 
 function generateUniqueCouponCode() {
@@ -7318,25 +7496,40 @@ function validateCouponForUser({ code, userId, appliesTo, subtotalAmountPaise, s
   }
 
   const coupon = getCouponByCode(normalizedCode);
-  if (!coupon || !coupon.active) {
+  if (!coupon || !coupon.active || !coupon.isActive) {
     return { error: 'Invalid coupon code.' };
   }
-  if (coupon.expiresAt && new Date(coupon.expiresAt).getTime() <= Date.now()) {
+  if (coupon.validFrom && new Date(coupon.validFrom).getTime() > Date.now()) {
+    return { error: 'This coupon is not active yet.' };
+  }
+  if (coupon.validTill && new Date(coupon.validTill).getTime() <= Date.now()) {
     return { error: 'This coupon has expired.' };
   }
   if (!['all', appliesTo].includes(String(coupon.appliesTo || 'all'))) {
     return { error: 'This coupon is not valid for this payment.' };
   }
-  if (coupon.recipientEmail) {
+  const assignedEmail = String(coupon.assignedUserEmail || coupon.recipientEmail || '').trim().toLowerCase();
+  if (coupon.couponType === 'private' || assignedEmail) {
     const user = getUserById(userId);
     const userEmail = String(user?.email || '').trim().toLowerCase();
-    if (!userEmail || userEmail !== String(coupon.recipientEmail || '').trim().toLowerCase()) {
+    if (!userEmail || userEmail !== assignedEmail) {
       return { error: 'This coupon is assigned to another user.' };
     }
   }
 
+  const user = getUserById(userId);
+  const userEmail = String(user?.email || '').trim().toLowerCase();
+  if (userEmail && Array.isArray(coupon.usedBy) && coupon.usedBy.includes(userEmail)) {
+    return { error: 'You have already used this coupon.' };
+  }
+
   const stats = getCouponRedemptionStats(coupon.id, userId);
-  if (Number.isFinite(coupon.maxRedemptions) && coupon.maxRedemptions > 0 && stats.total >= coupon.maxRedemptions) {
+  if (
+    coupon.couponType === 'private' &&
+    Number.isFinite(coupon.maxRedemptions) &&
+    coupon.maxRedemptions > 0 &&
+    stats.total >= coupon.maxRedemptions
+  ) {
     return { error: 'This coupon has reached its maximum usage limit.' };
   }
   if (Number(coupon.perUserLimit || 1) > 0 && stats.userTotal >= Number(coupon.perUserLimit || 1)) {
@@ -7345,7 +7538,7 @@ function validateCouponForUser({ code, userId, appliesTo, subtotalAmountPaise, s
 
   const isAssignedSingleBookingServiceCoupon =
     appliesTo === 'services' &&
-    coupon.recipientEmail &&
+    (coupon.couponType === 'private' || assignedEmail) &&
     Number(coupon.maxRedemptions || 0) === 1 &&
     Number(singleBookingAmountPaise || 0) > 0;
   const subtotalPaise = Math.max(0, Math.round(Number(subtotalAmountPaise || 0)));
@@ -7405,20 +7598,41 @@ function recordCouponRedemption({ couponId, userId, contextType, contextRef, dis
     normalizedContextRef,
     Math.max(0, Math.round(Number(discountAmountPaise || 0)))
   );
+
+  const coupon = getCouponById(couponId);
+  const user = getUserById(userId);
+  const userEmail = String(user?.email || '').trim().toLowerCase();
+  if (coupon && userEmail) {
+    const usedBySet = new Set(Array.isArray(coupon.usedBy) ? coupon.usedBy : []);
+    usedBySet.add(userEmail);
+    const usedBy = JSON.stringify(Array.from(usedBySet));
+    db.prepare('UPDATE coupons SET used_by = ? WHERE id = ?').run(usedBy, Number(couponId));
+  }
 }
 
 function validateCouponRedemptionLimit(couponId, userId) {
   const coupon = getCouponById(couponId);
-  if (!coupon || !coupon.active) return 'Invalid coupon code.';
-  if (coupon.recipientEmail) {
-    const user = getUserById(userId);
-    const userEmail = String(user?.email || '').trim().toLowerCase();
-    if (!userEmail || userEmail !== String(coupon.recipientEmail || '').trim().toLowerCase()) {
+  if (!coupon || !coupon.active || !coupon.isActive) return 'Invalid coupon code.';
+  if (coupon.validFrom && new Date(coupon.validFrom).getTime() > Date.now()) return 'This coupon is not active yet.';
+  if (coupon.validTill && new Date(coupon.validTill).getTime() <= Date.now()) return 'This coupon has expired.';
+  const user = getUserById(userId);
+  const userEmail = String(user?.email || '').trim().toLowerCase();
+  const assignedEmail = String(coupon.assignedUserEmail || coupon.recipientEmail || '').trim().toLowerCase();
+  if (coupon.couponType === 'private' || assignedEmail) {
+    if (!userEmail || userEmail !== assignedEmail) {
       return 'This coupon is assigned to another user.';
     }
   }
+  if (userEmail && Array.isArray(coupon.usedBy) && coupon.usedBy.includes(userEmail)) {
+    return 'You have already used this coupon.';
+  }
   const stats = getCouponRedemptionStats(coupon.id, userId);
-  if (Number.isFinite(coupon.maxRedemptions) && coupon.maxRedemptions > 0 && stats.total >= coupon.maxRedemptions) {
+  if (
+    coupon.couponType === 'private' &&
+    Number.isFinite(coupon.maxRedemptions) &&
+    coupon.maxRedemptions > 0 &&
+    stats.total >= coupon.maxRedemptions
+  ) {
     return 'This coupon has already been used.';
   }
   if (Number(coupon.perUserLimit || 1) > 0 && stats.userTotal >= Number(coupon.perUserLimit || 1)) {
@@ -10476,6 +10690,12 @@ function migrate() {
       per_user_limit INTEGER NOT NULL DEFAULT 1,
       expires_at TEXT,
       active INTEGER NOT NULL DEFAULT 1,
+      coupon_type TEXT NOT NULL DEFAULT 'public',
+      assigned_user_email TEXT,
+      used_by TEXT NOT NULL DEFAULT '[]',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      valid_from TEXT,
+      valid_till TEXT,
       recipient_email TEXT,
       recipient_name TEXT,
       festival_name TEXT,
@@ -10634,6 +10854,24 @@ function migrate() {
   if (hasTable('coupons') && !hasColumn('coupons', 'recipient_email')) {
     db.exec('ALTER TABLE coupons ADD COLUMN recipient_email TEXT');
   }
+  if (hasTable('coupons') && !hasColumn('coupons', 'coupon_type')) {
+    db.exec("ALTER TABLE coupons ADD COLUMN coupon_type TEXT NOT NULL DEFAULT 'public'");
+  }
+  if (hasTable('coupons') && !hasColumn('coupons', 'assigned_user_email')) {
+    db.exec('ALTER TABLE coupons ADD COLUMN assigned_user_email TEXT');
+  }
+  if (hasTable('coupons') && !hasColumn('coupons', 'used_by')) {
+    db.exec("ALTER TABLE coupons ADD COLUMN used_by TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (hasTable('coupons') && !hasColumn('coupons', 'is_active')) {
+    db.exec('ALTER TABLE coupons ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
+  }
+  if (hasTable('coupons') && !hasColumn('coupons', 'valid_from')) {
+    db.exec('ALTER TABLE coupons ADD COLUMN valid_from TEXT');
+  }
+  if (hasTable('coupons') && !hasColumn('coupons', 'valid_till')) {
+    db.exec('ALTER TABLE coupons ADD COLUMN valid_till TEXT');
+  }
   if (hasTable('coupons') && !hasColumn('coupons', 'recipient_name')) {
     db.exec('ALTER TABLE coupons ADD COLUMN recipient_name TEXT');
   }
@@ -10648,6 +10886,26 @@ function migrate() {
   }
   if (hasTable('coupons') && !hasColumn('coupons', 'email_error')) {
     db.exec('ALTER TABLE coupons ADD COLUMN email_error TEXT');
+  }
+  if (hasTable('coupons')) {
+    db.exec(`
+      UPDATE coupons
+      SET coupon_type = CASE
+          WHEN LOWER(TRIM(COALESCE(coupon_type, ''))) IN ('public', 'private') THEN LOWER(TRIM(coupon_type))
+          WHEN TRIM(COALESCE(assigned_user_email, recipient_email, '')) <> '' THEN 'private'
+          ELSE 'public'
+        END,
+        assigned_user_email = COALESCE(NULLIF(TRIM(assigned_user_email), ''), NULLIF(TRIM(recipient_email), '')),
+        used_by = CASE
+          WHEN used_by IS NULL OR TRIM(used_by) = '' THEN '[]'
+          ELSE used_by
+        END,
+        is_active = CASE
+          WHEN is_active IS NULL THEN COALESCE(active, 1)
+          ELSE is_active
+        END,
+        valid_till = COALESCE(valid_till, expires_at);
+    `);
   }
   if (hasTable('admin_discount_phones') && !hasColumn('admin_discount_phones', 'redeemed_at')) {
     db.exec('ALTER TABLE admin_discount_phones ADD COLUMN redeemed_at TEXT');

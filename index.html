@@ -868,6 +868,7 @@
         </div>
         <div class="dialog-actions">
           <div class="coupon-entry user-only">
+            <div id="userGeneralCoupons" class="general-coupons" hidden></div>
             <label>
               Coupon Code
               <div class="coupon-entry-row">
@@ -1093,6 +1094,17 @@
         </div>
         <form id="adminCouponForm" class="admin-discount-form">
           <label>
+            Coupon Type
+            <select id="adminCouponType">
+              <option value="public">Public / Seasonal Coupon</option>
+              <option value="private" selected>Private / User Coupon</option>
+            </select>
+          </label>
+          <label>
+            Seasonal Offer Name
+            <input id="adminCouponFestivalName" type="text" placeholder="Optional seasonal label" />
+          </label>
+          <label id="adminCouponRecipientEmailWrap">
             Recipient Email
             <input id="adminCouponRecipientEmail" type="email" placeholder="user@example.com" />
           </label>
@@ -1120,6 +1132,11 @@
         <p class="membership-copy">Single-use coupon: valid for one redemption only.</p>
         <div id="adminCouponList" class="admin-discount-list"></div>
         <p id="adminCouponEmptyState" class="empty-state">No coupons created yet.</p>
+        <div class="panel-head">
+          <h3>Active Seasonal Offers</h3>
+        </div>
+        <div id="adminSeasonalCouponList" class="admin-discount-list"></div>
+        <p id="adminSeasonalCouponEmptyState" class="empty-state">No seasonal offers available.</p>
       </section>
     </main>
 
@@ -1266,6 +1283,7 @@
         <div class="membership-dialog-content">
           <p id="membershipPlanSummary" class="membership-checkout-summary"></p>
           <div class="coupon-entry">
+            <div id="membershipGeneralCoupons" class="general-coupons" hidden></div>
             <label>
               Coupon Code
               <div class="coupon-entry-row">

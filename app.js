@@ -1702,6 +1702,10 @@ function attachEvents() {
 
   elements.openBookingBtn?.addEventListener('click', () => openDialog());
   elements.experienceBookBtn?.addEventListener('click', () => {
+    if (hasCurrentUserUsedExperienceSession()) {
+      showNotice({ title: 'Demo already booked', body: 'Demo hydrogen session can be attended only once.' });
+      return;
+    }
     state.forceExperienceBooking = true;
     openDialog();
   });
@@ -3336,6 +3340,9 @@ function populateServiceOptions(selectedService = '') {
     }
     const category = String(service.category || '').toUpperCase();
     const isExperience = category === 'EXPERIENCE SESSION' || String(service.name || '').toLowerCase().includes('experience');
+    if (isExperience && hasCurrentUserUsedExperienceSession() && selectedService !== service.name) {
+      continue;
+    }
     if (isExperience && state.user?.role !== 'admin' && !state.forceExperienceBooking && selectedService !== service.name) {
       continue;
     }
@@ -3550,6 +3557,11 @@ function openDialog(booking = null) {
   }
 
   if (!booking && state.forceExperienceBooking) {
+    if (hasCurrentUserUsedExperienceSession()) {
+      state.forceExperienceBooking = false;
+      showNotice({ title: 'Demo already booked', body: 'Demo hydrogen session can be attended only once.' });
+      return;
+    }
     const experienceService =
       state.services.find((service) => String(service.name || '').trim().toLowerCase() === 'demo session') ||
       state.services.find((service) => String(service.name || '').trim().toLowerCase() === 'experience session') ||
@@ -5240,6 +5252,30 @@ async function handleScheduleLaterAction(row) {
   await changeStatus(booking.id, 'schedule_later');
 }
 
+async function handleAdminScheduleLaterAction(booking) {
+  const id = Number(booking?.id || 0);
+  if (!Number.isInteger(id) || id <= 0) return;
+  const eligibility = getAdminScheduleLaterEligibility(booking);
+  if (!eligibility.allowed) {
+    showNotice({ title: 'Schedule later unavailable', body: eligibility.message || 'This session cannot be moved to Schedule Later.' });
+    return;
+  }
+  const confirmed = confirm(
+    `Move ${booking.clientName || 'this customer'}'s session on ${formatDateTime(booking.bookingDate, booking.bookingTime)} to Schedule Later?`
+  );
+  if (!confirmed) return;
+  await changeStatus(id, 'schedule_later');
+  state.adminActiveTab = 'rescheduled';
+  state.adminRescheduleView = 'schedule_later';
+  state.adminRescheduleDateFilter = '';
+  state.adminRescheduleSlotFilter = '';
+  state.adminRescheduleSearch = '';
+  if (elements.adminRescheduleSearch) elements.adminRescheduleSearch.value = state.adminRescheduleSearch;
+  if (elements.adminRescheduleDate) elements.adminRescheduleDate.value = state.adminRescheduleDateFilter;
+  render();
+  showNotice({ title: 'Schedule later', body: 'Added in schedule later visible in user portal schedule later tab' });
+}
+
 function openGroupedReschedulePicker(row) {
   const options = getGroupedHydrogenRescheduleOptions(row);
   if (!options.length) {
@@ -5779,6 +5815,7 @@ function getRescheduleWindowExpiresAt(booking) {
 function isAdminRescheduleEligible(booking) {
   const status = String(booking?.status || '').trim().toLowerCase();
   if (status === 'cancelled' || status === 'completed') return false;
+  if (status === 'schedule_later') return true;
   if (isAdminRescheduledBooking(booking)) return false;
   const startTime = getBookingStartTime(booking);
   if (!Number.isFinite(startTime)) return false;
@@ -5787,13 +5824,42 @@ function isAdminRescheduleEligible(booking) {
   return now <= startTime + ADMIN_RESCHEDULE_MISSED_WINDOW_MS;
 }
 
+function getAdminScheduleLaterEligibility(booking) {
+  const status = String(booking?.status || '').trim().toLowerCase();
+  if (['completed', 'cancelled', 'schedule_later'].includes(status)) {
+    return { allowed: false, message: 'This session is already completed, cancelled, or waiting to be scheduled.' };
+  }
+  if (!['booked', 'confirmed'].includes(status)) {
+    return { allowed: false, message: 'Only booked sessions can be moved to Schedule Later.' };
+  }
+  if (String(booking?.paymentStatus || '').trim().toLowerCase() !== 'paid') {
+    return { allowed: false, message: 'Only paid bookings can be moved to Schedule Later.' };
+  }
+  const notesLower = String(booking?.notes || '').toLowerCase();
+  if (notesLower.includes('moved to schedule later by user') || notesLower.includes('moved to schedule later by admin')) {
+    return { allowed: false, message: 'Schedule Later was already used once for this session.' };
+  }
+  const slotStart = getBookingStartTime(booking);
+  if (!Number.isFinite(slotStart)) {
+    return { allowed: false, message: 'This booking slot is invalid.' };
+  }
+  if (Date.now() > slotStart + ADMIN_RESCHEDULE_MISSED_WINDOW_MS) {
+    return { allowed: false, message: 'Admin can move a session to Schedule Later only until 15 minutes after slot start.' };
+  }
+  return { allowed: true, message: '' };
+}
+
 function isAdminRescheduledBooking(booking) {
-  return String(booking?.notes || '').toLowerCase().includes('rescheduled by admin from');
+  return isBookingRescheduled(booking);
 }
 
 function getAdminRescheduleHistory(booking) {
   const notes = String(booking?.notes || '');
-  const matches = [...notes.matchAll(/Rescheduled by admin from\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/gi)];
+  const matches = [
+    ...notes.matchAll(
+      /(?:Rescheduled by (?:user|admin)|Scheduled later by user) from\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/gi
+    ),
+  ];
   const latest = matches[matches.length - 1];
   if (!latest) {
     return {
@@ -5832,18 +5898,26 @@ function isBookingRescheduled(booking) {
   return Boolean(getBookingRescheduleHistory(booking)) || Number(booking?.rescheduleCount || 0) > 0;
 }
 
+function getAdminRescheduleViewMode() {
+  const view = String(state.adminRescheduleView || 'queue').trim().toLowerCase();
+  return ['rescheduled', 'schedule_later'].includes(view) ? view : 'queue';
+}
+
 function getFilteredAdminRescheduleBookings(bookings = state.bookings) {
   const query = String(state.adminRescheduleSearch || '').trim().toLowerCase();
   const selectedDate = String(state.adminRescheduleDateFilter || '').trim();
   const selectedSlot = String(state.adminRescheduleSlotFilter || '').trim();
-  const view = state.adminRescheduleView === 'rescheduled' ? 'rescheduled' : 'queue';
+  const view = getAdminRescheduleViewMode();
   const queue = (Array.isArray(bookings) ? bookings : [])
     .filter((booking) => String(booking?.paymentStatus || '').trim().toLowerCase() === 'paid')
     .filter((booking) => {
       const status = String(booking?.status || '').trim().toLowerCase();
-      return view === 'rescheduled' || !['completed', 'cancelled'].includes(status);
+      if (view === 'rescheduled') return true;
+      if (view === 'schedule_later') return status === 'schedule_later';
+      return !['completed', 'cancelled', 'schedule_later'].includes(status);
     })
     .filter((booking) => {
+      if (view === 'schedule_later') return true;
       const wasRescheduled = isAdminRescheduledBooking(booking);
       return view === 'rescheduled' ? wasRescheduled : !wasRescheduled && isAdminRescheduleEligible(booking);
     })
@@ -5952,22 +6026,31 @@ function getAvailableAdminRescheduleSlots(booking) {
 
 async function openAdminRescheduleForBooking(booking) {
   if (!booking?.id) return;
+  const alreadyRescheduled = isAdminRescheduledBooking(booking);
+  const isScheduleLater = String(booking?.status || '').trim().toLowerCase() === 'schedule_later';
+  const history = getAdminRescheduleHistory(booking);
   state.adminActiveTab = 'rescheduled';
-  state.adminRescheduleView = 'queue';
-  state.adminRescheduleDateFilter = String(booking.bookingDate || '').trim();
-  state.adminRescheduleSlotFilter = normalizeSlotStartTime(booking.bookingTime || '');
+  state.adminRescheduleView = isScheduleLater ? 'schedule_later' : alreadyRescheduled ? 'rescheduled' : 'queue';
+  state.adminRescheduleDateFilter = String(
+    alreadyRescheduled ? history.originalDate || booking.bookingDate : booking.bookingDate || ''
+  ).trim();
+  state.adminRescheduleSlotFilter = normalizeSlotStartTime(
+    alreadyRescheduled ? history.originalTime || booking.bookingTime : booking.bookingTime || ''
+  );
   state.adminRescheduleSearch = String(booking.clientMobile || booking.clientEmail || booking.clientName || booking.id || '')
     .trim()
     .toLowerCase();
   if (elements.adminRescheduleSearch) elements.adminRescheduleSearch.value = state.adminRescheduleSearch;
   if (elements.adminRescheduleDate) elements.adminRescheduleDate.value = state.adminRescheduleDateFilter;
-  state.adminRescheduleSelections = {
-    ...(state.adminRescheduleSelections || {}),
-    [String(booking.id)]: {
-      bookingDate: getTodayIsoDate(),
-      bookingTime: '',
-    },
-  };
+  if (!alreadyRescheduled) {
+    state.adminRescheduleSelections = {
+      ...(state.adminRescheduleSelections || {}),
+      [String(booking.id)]: {
+        bookingDate: getTodayIsoDate(),
+        bookingTime: '',
+      },
+    };
+  }
   render();
   requestAnimationFrame(() => {
     elements.adminRescheduledSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -5978,12 +6061,13 @@ function renderAdminRescheduleSlotFilters() {
   if (!elements.adminRescheduleSlotFilters) return;
   const selectedDate = String(state.adminRescheduleDateFilter || '').trim();
   const selectedSlot = String(state.adminRescheduleSlotFilter || '').trim();
-  const view = state.adminRescheduleView === 'rescheduled' ? 'rescheduled' : 'queue';
+  const view = getAdminRescheduleViewMode();
   const source = (Array.isArray(state.bookings) ? state.bookings : [])
     .filter((booking) => String(booking?.paymentStatus || '').trim().toLowerCase() === 'paid')
     .filter((booking) => {
       const status = String(booking?.status || '').trim().toLowerCase();
-      if (view !== 'rescheduled' && ['completed', 'cancelled'].includes(status)) return false;
+      if (view === 'schedule_later') return status === 'schedule_later';
+      if (view !== 'rescheduled' && ['completed', 'cancelled', 'schedule_later'].includes(status)) return false;
       const wasRescheduled = isAdminRescheduledBooking(booking);
       return view === 'rescheduled' ? wasRescheduled : !wasRescheduled && isAdminRescheduleEligible(booking);
     })
@@ -6503,7 +6587,13 @@ function renderServices() {
   const experienceCard = document.getElementById('experienceCard');
   if (experienceCard) {
     const isMember = isCurrentUserMembershipActive();
-    experienceCard.hidden = isMember;
+    const demoAlreadyUsed = hasCurrentUserUsedExperienceSession();
+    experienceCard.hidden = isMember || demoAlreadyUsed;
+  }
+  if (elements.experienceBookBtn) {
+    const demoAlreadyUsed = hasCurrentUserUsedExperienceSession();
+    elements.experienceBookBtn.disabled = demoAlreadyUsed;
+    elements.experienceBookBtn.textContent = demoAlreadyUsed ? 'Already Booked' : 'Add to Cart';
   }
   if (elements.experienceCardPrice) {
     const experienceService = getServiceCatalogEntry('Experience Session') || getServiceCatalogEntry('Demo Session');
@@ -8886,7 +8976,10 @@ function getUserScheduleLaterEligibility(booking, options = {}) {
   if (!['booked', 'confirmed'].includes(status)) {
     return { allowed: false, message: 'Only booked sessions can be moved to Schedule Later.' };
   }
-  if (enforcePreviousUse && notesLower.includes('moved to schedule later by user')) {
+  if (
+    enforcePreviousUse &&
+    (notesLower.includes('moved to schedule later by user') || notesLower.includes('moved to schedule later by admin'))
+  ) {
     return { allowed: false, message: 'Schedule Later was already used once for this session.' };
   }
   const slotStart = getBookingSlotStartTimestamp(booking?.bookingDate, booking?.bookingTime);
@@ -10495,7 +10588,7 @@ function renderUserRows(bookings, membershipOrders = [], allBookings = bookings)
     const isPaidBookingRow = String(row.paymentStatus || row.booking?.paymentStatus || '').trim().toLowerCase() === 'paid';
     const scheduleLaterAlreadyUsed = row.isGroupedHydrogen
       ? !getGroupedHydrogenScheduleLaterOptions(row).some((item) => item.allowed)
-      : rowNotesLower.includes('moved to schedule later by user');
+      : rowNotesLower.includes('moved to schedule later by user') || rowNotesLower.includes('moved to schedule later by admin');
     const isScheduleLaterSlotEligible = row.isGroupedHydrogen
       ? getGroupedHydrogenScheduleLaterOptions(row).some((item) => item.allowed)
       : getUserScheduleLaterEligibility(row.booking || row, { enforcePreviousUse: false }).allowed;
@@ -11333,7 +11426,15 @@ function renderAdminRows(bookings) {
       String(booking.paymentStatus || '').trim().toLowerCase() === 'paid' &&
       !['completed', 'cancelled'].includes(String(booking.status || '').trim().toLowerCase())
     ) {
-      actions.append(createActionButton('Reschedule', () => openAdminRescheduleForBooking(booking)));
+      actions.append(
+        createActionButton(isAdminRescheduledBooking(booking) ? 'View Reschedule' : 'Reschedule', () =>
+          openAdminRescheduleForBooking(booking)
+        )
+      );
+    }
+
+    if (getAdminScheduleLaterEligibility(booking).allowed) {
+      actions.append(createActionButton('Schedule Later', () => handleAdminScheduleLaterAction(booking)));
     }
 
     actions.append(
@@ -11385,7 +11486,9 @@ function renderAdminMembershipOrders() {
 function renderAdminRescheduleQueue() {
   if (!elements.adminRescheduleList || !elements.adminRescheduleEmptyState) return;
 
-  const isRescheduledView = state.adminRescheduleView === 'rescheduled';
+  const viewMode = getAdminRescheduleViewMode();
+  const isRescheduledView = viewMode === 'rescheduled';
+  const isScheduleLaterView = viewMode === 'schedule_later';
   if (elements.adminRescheduleDate) {
     elements.adminRescheduleDate.value = String(state.adminRescheduleDateFilter || '').trim();
   }
@@ -11400,6 +11503,8 @@ function renderAdminRescheduleQueue() {
     elements.adminRescheduleEmptyState.hidden = false;
     elements.adminRescheduleEmptyState.textContent = isRescheduledView
       ? 'No rescheduled bookings found for this filter.'
+      : isScheduleLaterView
+        ? 'No Schedule Later sessions found for this filter.'
       : state.adminRescheduleDateFilter
         ? 'No eligible bookings found for this date and slot filter.'
         : 'Choose a date or search to find eligible bookings.';
@@ -11410,6 +11515,7 @@ function renderAdminRescheduleQueue() {
   for (const booking of bookings) {
     const id = String(booking.id || '');
     const canReschedule = isAdminRescheduleEligible(booking);
+    const scheduleLaterEligibility = getAdminScheduleLaterEligibility(booking);
     const wasRescheduled = isAdminRescheduledBooking(booking);
     const history = getAdminRescheduleHistory(booking);
     const selection = getAdminRescheduleSelection(booking);
@@ -11436,7 +11542,9 @@ function renderAdminRescheduleQueue() {
         <p>Payment: ${escapeHtml(formatPaymentStatusLabel(booking.paymentStatus))}</p>
         ${
           canReschedule && !isRescheduledView
-            ? isBookingMissed(booking)
+            ? String(booking?.status || '').trim().toLowerCase() === 'schedule_later'
+              ? '<p>Waiting in Schedule Later. Choose a new slot when ready.</p>'
+              : isBookingMissed(booking)
               ? `<p>Reschedule by: ${Number.isFinite(expiresAt) ? escapeHtml(new Date(expiresAt).toLocaleString()) : '-'}</p>`
               : '<p>Reschedule allowed until 15 minutes after the slot starts.</p>'
             : `<p>Status: ${wasRescheduled ? 'Already rescheduled' : escapeHtml(getDerivedBookingStatus(booking))}</p>`
@@ -11464,6 +11572,11 @@ function renderAdminRescheduleQueue() {
                 otpRequested ? 'Resend OTP' : 'Request OTP'
               }</button>
               <button class="btn btn-primary admin-reschedule-confirm" type="button">Confirm Reschedule</button>
+              ${
+                scheduleLaterEligibility.allowed
+                  ? '<button class="btn btn-secondary admin-reschedule-schedule-later" type="button">Schedule Later</button>'
+                  : ''
+              }
             </div>`
           : ''
       }
@@ -11475,6 +11588,7 @@ function renderAdminRescheduleQueue() {
     const otpInput = card.querySelector('.admin-reschedule-otp');
     const requestOtpBtn = card.querySelector('.admin-reschedule-request-otp');
     const confirmBtn = card.querySelector('.admin-reschedule-confirm');
+    const scheduleLaterBtn = card.querySelector('.admin-reschedule-schedule-later');
 
     if (canReschedule && !isRescheduledView && timeSelect) {
       timeSelect.innerHTML = '';
@@ -11543,6 +11657,10 @@ function renderAdminRescheduleQueue() {
 
     confirmBtn?.addEventListener('click', async () => {
       await confirmAdminRescheduleBooking(booking, String(otpInput?.value || '').trim());
+    });
+
+    scheduleLaterBtn?.addEventListener('click', async () => {
+      await handleAdminScheduleLaterAction(booking);
     });
 
     elements.adminRescheduleList.appendChild(card);
@@ -12444,6 +12562,10 @@ function getBookingCategory(serviceName) {
   const normalized = String(serviceName || '').trim().toLowerCase();
   const matched = state.services.find((service) => String(service.name || '').trim().toLowerCase() === normalized);
   const category = String(matched?.category || '').toUpperCase();
+  if (normalized === 'experience session' || normalized === 'demo session' || normalized === 'demo hydrogen session') {
+    return 'EXPERIENCE SESSION';
+  }
+  if (category === 'EXPERIENCE SESSION') return 'EXPERIENCE SESSION';
   if (category === 'HYDROGEN SESSION') return 'HYDROGEN SESSION';
   if (category === 'MEMBERSHIP SERVICES') return 'MEMBERSHIP SERVICES';
   if (category === 'IV THERAPIES' || category === 'IV SHOTS') return 'IV ADD-ON';
@@ -12451,8 +12573,29 @@ function getBookingCategory(serviceName) {
   return '';
 }
 
+function isExperienceSessionServiceName(serviceName) {
+  const normalized = String(serviceName || '').trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized === 'experience session' || normalized === 'demo session' || normalized === 'demo hydrogen session') return true;
+  const service = getServiceCatalogEntry(serviceName);
+  return String(service?.category || '').trim().toUpperCase() === 'EXPERIENCE SESSION';
+}
+
+function hasCurrentUserUsedExperienceSession() {
+  if (state.user?.role !== 'user') return false;
+  if (isCurrentUserMembershipActive()) return true;
+  return (Array.isArray(state.bookings) ? state.bookings : []).some((booking) => {
+    if (!isExperienceSessionServiceName(booking?.serviceName)) return false;
+    const status = String(booking?.status || '').trim().toLowerCase();
+    if (status === 'cancelled') return false;
+    if (booking?.holdExpired) return false;
+    return status === 'completed' || status === 'schedule_later' || status === 'booked' || status === 'confirmed' || status === 'pending';
+  });
+}
+
 function getBookingCategoryLabel(serviceName) {
   const category = getBookingCategory(serviceName);
+  if (category === 'EXPERIENCE SESSION') return 'Demo Hydrogen Session';
   if (category === 'HYDROGEN SESSION') return 'Hydrogen Session';
   if (category === 'IV ADD-ON') {
     const service = getServiceCatalogEntry(serviceName);
@@ -13029,6 +13172,10 @@ function renderAdminHistoryRows(bookings) {
       actions.append(createActionButton('Resend Payment Link', () => resendPaymentLinkForBooking(booking)));
     }
 
+    if (getAdminScheduleLaterEligibility(booking).allowed) {
+      actions.append(createActionButton('Schedule Later', () => handleAdminScheduleLaterAction(booking)));
+    }
+
     actions.append(createActionButton('Notes', () => openBookingNotesDialog(booking.id)));
 
     actionCell.appendChild(actions);
@@ -13115,6 +13262,10 @@ function renderAdminAllBookingRows(bookings) {
 
     if (canResendBookingPaymentLink(booking)) {
       actions.append(createActionButton('Resend Payment Link', () => resendPaymentLinkForBooking(booking)));
+    }
+
+    if (getAdminScheduleLaterEligibility(booking).allowed) {
+      actions.append(createActionButton('Schedule Later', () => handleAdminScheduleLaterAction(booking)));
     }
 
     actions.append(createActionButton('Notes', () => openBookingNotesDialog(booking.id)));

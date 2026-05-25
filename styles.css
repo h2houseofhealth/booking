@@ -5142,6 +5142,23 @@ h1, h2, h3 {
   padding: 0 0 0.2rem;
 }
 
+#userCartSection .general-coupons {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 12px;
+  align-items: stretch;
+  overflow: visible;
+  width: 100%;
+}
+
+#userCartSection .general-coupon-card {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
+  width: auto;
+}
+
 .general-coupons-title {
   margin: 0 0.2rem 0 0;
   font-size: 0.74rem;
@@ -5231,6 +5248,60 @@ h1, h2, h3 {
   white-space: nowrap;
   align-self: center;
   margin: 0;
+}
+
+#userCartSection .coupon-entry {
+  width: 100%;
+}
+
+#userCartSection .action-row .action-btn,
+.cart-mobile-actions .action-btn {
+  white-space: nowrap;
+  min-width: fit-content;
+}
+
+.cart-mobile-list {
+  display: none;
+}
+
+.cart-mobile-card {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(201, 106, 45, 0.18);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.cart-mobile-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.cart-mobile-card-head strong {
+  font-size: 0.9rem;
+  color: #2e211a;
+}
+
+.cart-mobile-card-head span {
+  white-space: nowrap;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #8f4f2b;
+}
+
+.cart-mobile-card p {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #7d6658;
+}
+
+.cart-mobile-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
 }
 
 .admin-discount-list {
@@ -12415,6 +12486,16 @@ img {
   .general-coupons {
     width: 100%;
     gap: 0.35rem;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  #userCartSection .general-coupons {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 0.35rem;
   }
 
   .general-coupon-card {
@@ -12448,6 +12529,19 @@ img {
     height: 1.75rem !important;
     font-size: 0.68rem;
     padding: 0.12rem 0.5rem;
+  }
+
+  #userCartSection table {
+    display: none;
+  }
+
+  #userCartSection .table-wrap {
+    overflow: visible;
+  }
+
+  #cartMobileList {
+    display: grid;
+    gap: 0.55rem;
   }
 
   .admin-section-toolbar,

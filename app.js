@@ -555,6 +555,7 @@ const elements = {
   bookingTableBody: document.getElementById('bookingTableBody'),
   emptyState: document.getElementById('emptyState'),
   cartTableBody: document.getElementById('cartTableBody'),
+  cartMobileList: document.getElementById('cartMobileList'),
   cartEmptyState: document.getElementById('cartEmptyState'),
   adminBookingTableBody: document.getElementById('adminBookingTableBody'),
   adminEmptyState: document.getElementById('adminEmptyState'),
@@ -10787,17 +10788,48 @@ function cartAmountCell(row) {
   return td;
 }
 
+function getCartRowAmountLabel(row) {
+  let amountInr = 0;
+  if (row.isGroupedHydrogen) {
+    const payableHydrogenEntries = (row.hydrogenEntries || []).filter(
+      (entry) => entry.status !== 'cancelled' && String(entry.paymentStatus || 'unpaid').toLowerCase() !== 'paid'
+    );
+    const payableAddOnEntries = (row.addOnEntries || []).filter(
+      (entry) => entry.status !== 'cancelled' && String(entry.paymentStatus || 'unpaid').toLowerCase() !== 'paid'
+    );
+    amountInr = Number(getHydrogenGroupBreakdown(payableHydrogenEntries, payableAddOnEntries).totalAmountInr || 0);
+  } else {
+    amountInr = getBookingDisplayAmountInr(row.booking || { serviceName: row.serviceTitle });
+  }
+  return amountInr > 0 ? `Rs. ${amountInr.toLocaleString('en-IN')}` : 'Included';
+}
+
+function showCartRowDetails(row) {
+  const serviceTitle = String(row?.serviceTitle || row?.serviceText || 'Service').trim();
+  const scheduleText = Array.isArray(row?.scheduleLines) && row.scheduleLines.length
+    ? row.scheduleLines.join('\n')
+    : String(row?.dateTimeText || '-');
+  const amountText = getCartRowAmountLabel(row);
+  showNotice({
+    title: 'Booking Details',
+    body: `${serviceTitle}\n\n${scheduleText}\n\nAmount: ${amountText}`,
+  });
+}
+
 function renderCartRows(cartBookings) {
-  if (!elements.cartTableBody || !elements.cartEmptyState) return;
+  if (!elements.cartTableBody || !elements.cartEmptyState || !elements.cartMobileList) return;
   elements.cartTableBody.innerHTML = '';
+  elements.cartMobileList.innerHTML = '';
 
   const displayRows = buildUserBookingRows(cartBookings, cartBookings);
   if (!displayRows.length) {
     elements.cartEmptyState.hidden = false;
+    elements.cartMobileList.hidden = true;
     return;
   }
 
   elements.cartEmptyState.hidden = true;
+  elements.cartMobileList.hidden = false;
   for (const row of displayRows) {
     const tr = document.createElement('tr');
     tr.appendChild(userBookingServiceCell(row));
@@ -10813,6 +10845,26 @@ function renderCartRows(cartBookings) {
     tr.appendChild(actionCell);
 
     elements.cartTableBody.appendChild(tr);
+
+    const card = document.createElement('article');
+    card.className = 'cart-mobile-card';
+    const scheduleText = Array.isArray(row.scheduleLines) && row.scheduleLines.length
+      ? row.scheduleLines.join(' • ')
+      : (row.dateTimeText || '-');
+    const amountText = getCartRowAmountLabel(row);
+    card.innerHTML = `
+      <div class="cart-mobile-card-head">
+        <strong>${escapeHtml(row.serviceTitle || row.serviceText || 'Service')}</strong>
+        <span>${escapeHtml(amountText)}</span>
+      </div>
+      <p>${escapeHtml(scheduleText)}</p>
+    `;
+    const mobileActions = document.createElement('div');
+    mobileActions.className = 'cart-mobile-actions';
+    mobileActions.appendChild(createActionButton('View Details', () => showCartRowDetails(row)));
+    mobileActions.appendChild(createDangerButton('Remove', () => deleteBooking(row.booking)));
+    card.appendChild(mobileActions);
+    elements.cartMobileList.appendChild(card);
   }
 }
 

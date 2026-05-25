@@ -13418,27 +13418,28 @@ img {
 }
 
 @media (max-width: 768px) {
+  .membership-calendar-card,
+  .my-bookings-calendar {
+    padding-bottom: 4.6rem;
+  }
+
   .my-bookings-calendar-footer,
   .membership-calendar-footer-link {
-    position: fixed;
+    position: absolute;
     left: 50%;
     right: auto;
-    bottom: max(14px, env(safe-area-inset-bottom));
+    bottom: 16px;
     transform: translateX(-50%);
     width: min(88vw, 320px);
-    min-height: 44px;
-    padding: 0 1rem;
+    max-width: calc(100% - 2rem);
+    min-height: 40px;
+    padding: 0 0.95rem;
     box-shadow: 0 16px 30px rgba(126, 63, 37, 0.32);
   }
 
   .my-bookings-calendar-footer:hover,
   .membership-calendar-footer-link:hover {
     transform: translateX(-50%) translateY(-1px);
-  }
-
-  #membershipSection:not([hidden]),
-  #userBookingsSection:not([hidden]) {
-    padding-bottom: 5.4rem;
   }
 }
 

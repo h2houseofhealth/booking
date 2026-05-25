@@ -72,6 +72,10 @@ const state = {
   adminDiscountPhones: [],
   adminUsers: [],
   adminCoupons: [],
+  generalCoupons: {
+    services: [],
+    membership: [],
+  },
   adminSelectedUserId: null,
   adminUserSessionFilter: 'all',
   adminResolvedCustomer: null,
@@ -578,6 +582,7 @@ const elements = {
   adminDiscountSelectedWindowCount: document.getElementById('adminDiscountSelectedWindowCount'),
   adminDiscountSelectedList: document.getElementById('adminDiscountSelectedList'),
   adminCouponForm: document.getElementById('adminCouponForm'),
+  adminCouponRecipientEmailWrap: document.getElementById('adminCouponRecipientEmailWrap'),
   adminCouponRecipientEmail: document.getElementById('adminCouponRecipientEmail'),
   adminCouponFestivalName: document.getElementById('adminCouponFestivalName'),
   adminCouponCode: document.getElementById('adminCouponCode'),
@@ -590,6 +595,8 @@ const elements = {
   adminCouponSaveOnlyBtn: document.getElementById('adminCouponSaveOnlyBtn'),
   adminCouponList: document.getElementById('adminCouponList'),
   adminCouponEmptyState: document.getElementById('adminCouponEmptyState'),
+  adminSeasonalCouponList: document.getElementById('adminSeasonalCouponList'),
+  adminSeasonalCouponEmptyState: document.getElementById('adminSeasonalCouponEmptyState'),
   adminUserCards: document.getElementById('adminUserCards'),
   adminUserCardsEmpty: document.getElementById('adminUserCardsEmpty'),
   adminUserSessionDialog: document.getElementById('adminUserSessionDialog'),
@@ -602,9 +609,11 @@ const elements = {
   membershipCouponCode: document.getElementById('membershipCouponCode'),
   membershipApplyCouponBtn: document.getElementById('membershipApplyCouponBtn'),
   membershipCouponPreview: document.getElementById('membershipCouponPreview'),
+  membershipGeneralCoupons: document.getElementById('membershipGeneralCoupons'),
   userCouponCode: document.getElementById('userCouponCode'),
   userApplyCouponBtn: document.getElementById('userApplyCouponBtn'),
   userCouponPreview: document.getElementById('userCouponPreview'),
+  userGeneralCoupons: document.getElementById('userGeneralCoupons'),
 
   adminHistoryToggleBtn: document.getElementById('adminHistoryToggleBtn'),
   adminHistoryToggleBtnWrap: document.getElementById('adminHistoryToggleBtnWrap'),
@@ -1243,21 +1252,23 @@ function attachEvents() {
       elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
-  elements.userTabCart?.addEventListener('click', () => {
+  elements.userTabCart?.addEventListener('click', async () => {
     resetServiceBrowserState();
     state.servicesBackTargetTab = '';
     state.activeUserTab = 'cart';
     window.location.hash = '#cart';
+    await loadPublicCoupons();
     render();
     requestAnimationFrame(() => {
       elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
-  elements.cartBtn?.addEventListener('click', () => {
+  elements.cartBtn?.addEventListener('click', async () => {
     if (state.user?.role !== 'user' || !state.postLoginChoice) return;
     resetServiceBrowserState();
     state.activeUserTab = 'cart';
     window.location.hash = '#cart';
+    await loadPublicCoupons();
     render();
     requestAnimationFrame(() => {
       elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1691,6 +1702,7 @@ function attachEvents() {
   elements.adminCouponSaveOnlyBtn?.addEventListener('click', async () => {
     await saveAdminCoupon({ sendEmail: false });
   });
+  elements.adminCouponType?.addEventListener('change', renderAdminCouponFormByType);
   elements.userApplyCouponBtn?.addEventListener('click', async () => {
     await previewCartCoupon();
   });
@@ -2501,6 +2513,34 @@ async function refreshAdminCustomerContext() {
   render();
 }
 
+async function fetchGeneralCouponsSafe(appliesTo) {
+  const normalizedAppliesTo = String(appliesTo || '').trim().toLowerCase();
+  try {
+    const response = await api(`/api/coupons/general?appliesTo=${encodeURIComponent(normalizedAppliesTo)}`);
+    const coupons = response?.coupons || [];
+    const normalizedCoupons = Array.isArray(coupons)
+      ? coupons.map((coupon) => normalizeGeneralCouponClient(coupon)).filter(Boolean)
+      : [];
+    return { coupons: normalizedCoupons, raw: response };
+  } catch (error) {
+    console.warn('Unable to load general coupons:', normalizedAppliesTo, error?.message || error);
+    return { coupons: [], raw: null };
+  }
+}
+
+async function loadPublicCoupons() {
+  const [servicesCouponsResult, membershipCouponsResult] = await Promise.all([
+    fetchGeneralCouponsSafe('services'),
+    fetchGeneralCouponsSafe('membership'),
+  ]);
+  state.generalCoupons = {
+    services: servicesCouponsResult?.coupons || [],
+    membership: membershipCouponsResult?.coupons || [],
+  };
+  console.info('Public coupons payload (services):', servicesCouponsResult?.raw || null);
+  console.info('Public coupons payload (membership):', membershipCouponsResult?.raw || null);
+}
+
 async function loadDashboardData() {
   if (state.user?.role === 'admin') {
     const analyticsParams = new URLSearchParams();
@@ -2529,6 +2569,7 @@ async function loadDashboardData() {
     state.adminDiscountPhones = discountPhonesResult.discountPhones || [];
     state.adminCoupons = couponsResult.coupons || [];
     state.adminUsers = adminUsersResult.users || [];
+    state.generalCoupons = { services: [], membership: [] };
     state.adminPaymentLinkAnalytics = paymentLinkAnalyticsResult?.analytics || null;
     state.adminPaymentLinkAnalyticsRows = Array.isArray(paymentLinkAnalyticsResult?.rows) ? paymentLinkAnalyticsResult.rows : [];
     state.userMembershipOrders = [];
@@ -2571,6 +2612,7 @@ async function loadDashboardData() {
       current: membershipResult.current || null,
     };
     state.userMembershipOrders = membershipOrdersResult.orders || [];
+    await loadPublicCoupons();
     state.membershipBrowseVisible = Boolean(state.membership.active);
     state.membershipRoster = null;
     if (state.membership.active && Number(state.membership.current?.peopleCount || 0) >= 2) {
@@ -6193,6 +6235,7 @@ function render() {
   renderMembershipCouponPreview();
   renderMembershipCheckoutSummary();
   renderCartCouponPreview();
+  renderGeneralCoupons();
 
   if (isAdmin) {
     let activeAdminTab = state.adminActiveTab || 'bookings';
@@ -9959,6 +10002,73 @@ function renderCartCouponPreview() {
   renderCouponPreview(state.cartCouponPreview, elements.userCouponPreview);
 }
 
+function renderGeneralCouponsForTarget({ coupons = [], container, onApply }) {
+  if (!container) return;
+  container.innerHTML = '';
+  container.hidden = false;
+  const heading = document.createElement('p');
+  heading.className = 'general-coupons-title';
+  heading.textContent = 'Available Offers';
+  container.appendChild(heading);
+
+  const visibleCoupons = (Array.isArray(coupons) ? coupons : []).filter(
+    (coupon) =>
+      getCouponTypeClient(coupon) === 'public' &&
+      isCouponActiveClient(coupon) &&
+      isCouponWithinDateRangeClient(coupon)
+  );
+  if (!visibleCoupons.length) {
+    const empty = document.createElement('p');
+    empty.className = 'membership-copy';
+    empty.textContent = 'No active offers right now.';
+    container.appendChild(empty);
+    return;
+  }
+
+  visibleCoupons.forEach((coupon) => {
+    const card = document.createElement('article');
+    card.className = 'general-coupon-card';
+    const description = String(coupon.description || '').trim();
+    const festivalName = String(coupon.festivalName || '').trim();
+    const expiryText = coupon.expiresAt ? `Valid till ${formatDateOnly(coupon.expiresAt)}` : 'Limited period';
+    const metaText = [festivalName, description || expiryText].filter(Boolean).join(' • ');
+    card.innerHTML = `
+      <div class="general-coupon-top">
+        <div class="general-coupon-head">
+          <strong>🎉 ${escapeHtml(coupon.code || '')}</strong>
+          <span>Rs. ${Number(coupon.discountValue || 0).toLocaleString('en-IN')} OFF</span>
+        </div>
+        <button type="button" class="btn btn-secondary general-coupon-apply" ${coupon.canRedeem ? '' : 'disabled'}>
+          ${escapeHtml(coupon.canRedeem ? 'Apply' : (coupon.unavailableReason || 'Unavailable'))}
+        </button>
+      </div>
+      ${metaText ? `<small>${escapeHtml(metaText)}</small>` : ''}
+    `;
+    const applyBtn = card.querySelector('.general-coupon-apply');
+    applyBtn?.addEventListener('click', () => onApply(coupon.code || ''));
+    container.appendChild(card);
+  });
+}
+
+function renderGeneralCoupons() {
+  renderGeneralCouponsForTarget({
+    coupons: state.generalCoupons?.services || [],
+    container: elements.userGeneralCoupons,
+    onApply: async (code) => {
+      if (elements.userCouponCode) elements.userCouponCode.value = code;
+      await previewCartCoupon();
+    },
+  });
+  renderGeneralCouponsForTarget({
+    coupons: state.generalCoupons?.membership || [],
+    container: elements.membershipGeneralCoupons,
+    onApply: async (code) => {
+      if (elements.membershipCouponCode) elements.membershipCouponCode.value = code;
+      await previewMembershipCoupon();
+    },
+  });
+}
+
 async function previewMembershipCoupon() {
   if (!state.membershipCheckout) {
     showNotice({ title: 'Notice', body: 'Select a membership plan first.' });
@@ -12230,18 +12340,75 @@ function isLikelyEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 }
 
+function normalizeGeneralCouponClient(coupon) {
+  if (!coupon || typeof coupon !== 'object') return null;
+  const normalized = { ...coupon };
+  normalized.code = String(coupon.code || coupon.coupon_code || '').trim();
+  normalized.couponType = String(coupon.couponType || coupon.coupon_type || '').trim().toLowerCase();
+  normalized.active = coupon.active ?? coupon.is_active ?? coupon.isActive ?? 1;
+  normalized.isActive = coupon.isActive ?? coupon.is_active ?? coupon.active ?? 1;
+  normalized.validFrom = coupon.validFrom ?? coupon.valid_from ?? null;
+  normalized.validTill = coupon.validTill ?? coupon.valid_till ?? null;
+  normalized.expiresAt = coupon.expiresAt ?? coupon.expires_at ?? normalized.validTill ?? null;
+  normalized.festivalName = coupon.festivalName ?? coupon.festival_name ?? '';
+  normalized.discountValue = coupon.discountValue ?? coupon.discount_value ?? 0;
+  normalized.canRedeem = coupon.canRedeem ?? coupon.can_redeem ?? true;
+  normalized.unavailableReason = coupon.unavailableReason ?? coupon.unavailable_reason ?? '';
+  return normalized;
+}
+
+function getCouponTypeClient(coupon) {
+  const explicitType = String(coupon?.couponType || '').trim().toLowerCase();
+  if (explicitType === 'private' || explicitType === 'public') return explicitType;
+  const snakeType = String(coupon?.coupon_type || '').trim().toLowerCase();
+  if (snakeType === 'private' || snakeType === 'public') return snakeType;
+  const assignedEmail = String(coupon?.assignedUserEmail || coupon?.recipientEmail || '').trim().toLowerCase();
+  return assignedEmail ? 'private' : 'public';
+}
+
+function isCouponWithinDateRangeClient(coupon) {
+  const now = Date.now();
+  const validFromRaw = String(coupon?.validFrom || '').trim();
+  const validTillRaw = String(coupon?.validTill || coupon?.expiresAt || '').trim();
+  if (validFromRaw) {
+    const startTs = new Date(validFromRaw).getTime();
+    if (Number.isFinite(startTs) && startTs > now) return false;
+  }
+  if (validTillRaw) {
+    const endTs = new Date(validTillRaw).getTime();
+    if (Number.isFinite(endTs) && endTs <= now) return false;
+  }
+  return true;
+}
+
+function isCouponActiveClient(coupon) {
+  const activeValue = coupon?.isActive ?? coupon?.is_active ?? coupon?.active;
+  if (activeValue == null || activeValue === '') return true;
+  return Number(activeValue) === 1 || activeValue === true;
+}
+
 function renderAdminCoupons() {
+  renderAdminCouponFormByType();
   if (!elements.adminCouponList || !elements.adminCouponEmptyState) return;
 
   elements.adminCouponList.innerHTML = '';
+  if (elements.adminSeasonalCouponList) elements.adminSeasonalCouponList.innerHTML = '';
   const items = Array.isArray(state.adminCoupons) ? state.adminCoupons : [];
   if (!items.length) {
     elements.adminCouponEmptyState.hidden = false;
+    if (elements.adminSeasonalCouponEmptyState) elements.adminSeasonalCouponEmptyState.hidden = false;
     return;
   }
 
   elements.adminCouponEmptyState.hidden = true;
-  items.forEach((item) => {
+  const privateCoupons = items.filter((item) => getCouponTypeClient(item) === 'private');
+  const publicCoupons = items.filter((item) => getCouponTypeClient(item) === 'public');
+
+  if (!privateCoupons.length) {
+    elements.adminCouponEmptyState.hidden = false;
+  }
+
+  privateCoupons.forEach((item) => {
     const row = document.createElement('article');
     row.className = 'admin-discount-card';
     const discountLabel = `Rs. ${Number(item.discountValue || 0).toLocaleString('en-IN')} off`;
@@ -12293,14 +12460,106 @@ function renderAdminCoupons() {
       await resendAdminCoupon(item.id);
     });
 
+    const toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.className = 'btn btn-secondary';
+    toggleBtn.textContent = item.active ? 'Deactivate' : 'Activate';
+    toggleBtn.addEventListener('click', async () => {
+      await setAdminCouponActive(item.id, !item.active);
+    });
+
     row.appendChild(copyBtn);
+    row.appendChild(toggleBtn);
     row.appendChild(resendBtn);
     row.appendChild(removeBtn);
     elements.adminCouponList.appendChild(row);
   });
+
+  if (!elements.adminSeasonalCouponList || !elements.adminSeasonalCouponEmptyState) return;
+  if (!publicCoupons.length) {
+    elements.adminSeasonalCouponEmptyState.hidden = false;
+    return;
+  }
+  elements.adminSeasonalCouponEmptyState.hidden = true;
+
+  publicCoupons.forEach((item) => {
+    const row = document.createElement('article');
+    row.className = 'admin-discount-card admin-seasonal-card';
+    const discountLabel = `Rs. ${Number(item.discountValue || 0).toLocaleString('en-IN')} off`;
+    const expiryText = item.validTill || item.expiresAt ? formatDateOnly(item.validTill || item.expiresAt) : 'No expiry';
+    const activeStatus = isCouponActiveClient(item) && isCouponWithinDateRangeClient(item) ? 'Active' : 'Inactive';
+    row.innerHTML = `
+      <div>
+        <h3>${escapeHtml(item.code || '-')}</h3>
+        <p>${escapeHtml(discountLabel)}</p>
+        ${item.festivalName ? `<p>Offer: ${escapeHtml(item.festivalName)}</p>` : ''}
+        ${item.description ? `<p>${escapeHtml(item.description)}</p>` : ''}
+        <p>Expiry: ${escapeHtml(expiryText)}</p>
+        <p>Status: ${escapeHtml(activeStatus)}</p>
+        <p>Redeemed: ${escapeHtml(String(item.totalRedemptions || 0))}</p>
+      </div>
+    `;
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'btn btn-secondary';
+    copyBtn.textContent = 'Copy';
+    copyBtn.addEventListener('click', () => {
+      copyTextToClipboard(item.code || '');
+      showNotice({ title: 'Copied', body: 'Coupon code copied.' });
+    });
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.className = 'btn btn-secondary';
+    toggleBtn.textContent = item.active ? 'Deactivate' : 'Activate';
+    toggleBtn.addEventListener('click', async () => {
+      await setAdminCouponActive(item.id, !item.active);
+    });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'btn btn-secondary';
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', async () => {
+      await deleteAdminCoupon(item.id);
+    });
+
+    row.appendChild(copyBtn);
+    row.appendChild(toggleBtn);
+    row.appendChild(removeBtn);
+    elements.adminSeasonalCouponList.appendChild(row);
+  });
+}
+
+function renderAdminCouponFormByType() {
+  const selectedType = String(elements.adminCouponType?.value || 'public').trim().toLowerCase();
+  const isPrivate = selectedType === 'private';
+  if (elements.adminCouponRecipientEmailWrap) {
+    elements.adminCouponRecipientEmailWrap.hidden = !isPrivate;
+  }
+  if (elements.adminCouponSubmitBtn) {
+    elements.adminCouponSubmitBtn.hidden = !isPrivate;
+    elements.adminCouponSubmitBtn.textContent = 'Generate & Send';
+  }
+  if (elements.adminCouponSaveOnlyBtn) {
+    elements.adminCouponSaveOnlyBtn.textContent = isPrivate ? 'Save Only' : 'Save Seasonal Coupon';
+  }
+}
+
+async function setAdminCouponActive(couponId, active) {
+  await api(`/api/admin/coupons/${encodeURIComponent(couponId)}/active`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ active: active ? 1 : 0 }),
+  });
+  await loadDashboardData();
+  render();
 }
 
 async function saveAdminCoupon({ sendEmail = true } = {}) {
+  const selectedType = String(elements.adminCouponType?.value || 'public').trim().toLowerCase();
+  const couponType = selectedType === 'private' ? 'private' : 'public';
   const recipientEmail = String(elements.adminCouponRecipientEmail?.value || '').trim();
   const festivalName = String(elements.adminCouponFestivalName?.value || '').trim();
   let code = String(elements.adminCouponCode?.value || '').trim().toUpperCase();
@@ -12308,13 +12567,18 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
   const discountValue = Number(elements.adminCouponValue?.value || 0);
   const appliesTo = 'all';
   const expiresAt = String(elements.adminCouponExpiresAt?.value || '').trim();
+  const shouldSendEmail = couponType === 'private' ? Boolean(sendEmail) : false;
 
-  if (recipientEmail && !isLikelyEmail(recipientEmail)) {
+  if (couponType === 'private' && recipientEmail && !isLikelyEmail(recipientEmail)) {
     showNotice({ title: 'Notice', body: 'Enter a valid recipient email.' });
     return;
   }
-  if (sendEmail && !recipientEmail) {
+  if (couponType === 'private' && shouldSendEmail && !recipientEmail) {
     showNotice({ title: 'Notice', body: 'Recipient email is required to send a coupon.' });
+    return;
+  }
+  if (couponType === 'private' && !recipientEmail) {
+    showNotice({ title: 'Notice', body: 'Recipient email is required for private coupons.' });
     return;
   }
   if (!Number.isFinite(discountValue) || discountValue <= 0) {
@@ -12349,11 +12613,11 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
   const saveOnlyLabel = elements.adminCouponSaveOnlyBtn?.textContent || 'Save Only';
   if (elements.adminCouponSubmitBtn) {
     elements.adminCouponSubmitBtn.disabled = true;
-    elements.adminCouponSubmitBtn.textContent = sendEmail ? 'Sending...' : originalLabel;
+    elements.adminCouponSubmitBtn.textContent = shouldSendEmail ? 'Sending...' : originalLabel;
   }
   if (elements.adminCouponSaveOnlyBtn) {
     elements.adminCouponSaveOnlyBtn.disabled = true;
-    elements.adminCouponSaveOnlyBtn.textContent = sendEmail ? saveOnlyLabel : 'Saving...';
+    elements.adminCouponSaveOnlyBtn.textContent = shouldSendEmail ? saveOnlyLabel : 'Saving...';
   }
 
   try {
@@ -12367,11 +12631,12 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
         discountValue,
         appliesTo,
         festivalName,
+        couponType,
         maxRedemptions: 1,
-        expiresAt,
-        recipientEmail,
+        validTill: expiresAt,
+        recipientEmail: couponType === 'private' ? recipientEmail : '',
         singleUse: true,
-        sendEmail,
+        sendEmail: shouldSendEmail,
       }),
     });
 
@@ -12386,7 +12651,7 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
     render();
 
     const sentCode = result.code || code;
-    if (!sendEmail) {
+    if (!shouldSendEmail) {
       showNotice({ title: 'Saved', body: `Coupon ${sentCode} saved.` });
     } else if (result.emailStatus === 'failed') {
       showNotice({

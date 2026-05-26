@@ -14515,3 +14515,40 @@ img {
     padding-right: 2vw !important;
   }
 }
+
+/* Final guardrail: keep membership hero name readable on mobile */
+@media (max-width: 768px) {
+  #membershipSection .membership-dashboard-head {
+    overflow: visible;
+  }
+
+  #membershipSection .membership-dashboard-head .dashboard-left {
+    max-width: 100% !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding-right: 0.9rem;
+  }
+
+  #membershipSection .membership-dashboard-head .dashboard-left h3,
+  #membershipSection .membership-dashboard-head .dashboard-left .membership-copy {
+    max-width: 100% !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+  }
+
+  #membershipSection .membership-dashboard-head .dashboard-left h3 {
+    line-height: 1.08;
+  }
+
+  #membershipSection .membership-dashboard-head .dashboard-hero-img {
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: clamp(140px, 42vw, 210px) !important;
+    object-fit: cover !important;
+    object-position: center !important;
+  }
+}

@@ -3504,9 +3504,12 @@ function updateBookingAddOnOptions() {
 function updateBookingSummary() {
   const selectedServiceName = elements.serviceName.value;
   const selectedService = state.services.find((s) => s.name === selectedServiceName);
+  const submitBtn = elements.bookingForm?.querySelector('button[type="submit"]');
+  const isEditingExistingBooking = Boolean(String(elements.bookingId?.value || '').trim());
   
   if (!selectedService) {
     elements.bookingSummary.hidden = true;
+    if (submitBtn) submitBtn.textContent = isEditingExistingBooking ? 'Save Changes' : 'Confirm Book';
     return;
   }
   
@@ -3526,7 +3529,9 @@ function updateBookingSummary() {
   const selectedAddOnName = isAdmin || elements.addOnServiceLabel.hidden ? '' : elements.addOnService.value;
   const selectedAddOn = selectedAddOnName ? state.services.find((s) => s.name === selectedAddOnName) : null;
   const addOnPrice = selectedAddOn ? Number(selectedAddOn.effectivePriceInr || selectedAddOn.priceInr || 0) : 0;
-  const isEditingExistingBooking = Boolean(String(elements.bookingId?.value || '').trim());
+  if (submitBtn) {
+    submitBtn.textContent = isEditingExistingBooking && selectedAddOn ? 'Proceed to Payment' : isEditingExistingBooking ? 'Save Changes' : 'Confirm Book';
+  }
   if (isEditingExistingBooking && !selectedAddOn) {
     elements.bookingSummary.hidden = true;
     elements.summaryContent.innerHTML = '';
@@ -3794,6 +3799,12 @@ async function upsertBooking() {
   if (selectedAddOnName) {
     payload.addOnServiceName = selectedAddOnName;
   }
+  const selectedAddOnService = selectedAddOnName
+    ? state.services.find((service) => service.name === selectedAddOnName)
+    : null;
+  const selectedAddOnAmountInr = selectedAddOnService
+    ? Number(selectedAddOnService.effectivePriceInr || selectedAddOnService.priceInr || 0)
+    : 0;
   
   const isAdmin = state.user?.role === 'admin';
   if (isAdmin) {
@@ -3853,7 +3864,25 @@ async function upsertBooking() {
     } else {
       // Editing existing booking
       closeDialog();
+      const addOn = result?.summary?.addOn || null;
+      const payableAddOnSelected = !isAdmin && Boolean(selectedAddOnName) && selectedAddOnAmountInr > 0;
+      const requiresPayment = Boolean(result?.requiresPayment) || payableAddOnSelected;
+      const paymentBookingId = Number(result?.paymentBookingId || result?.booking?.id || id || 0);
+      const addOnAmountInr = Number(addOn?.amountInr || selectedAddOnAmountInr || 0);
       render();
+      if (!isAdmin && requiresPayment && Number.isInteger(paymentBookingId) && paymentBookingId > 0) {
+        showNotice({
+          title: 'Booking updated',
+          body: [
+            addOn
+              ? `Add-on: ${addOn.serviceName} - Rs. ${addOnAmountInr.toLocaleString('en-IN')}`
+              : `Add-on: ${selectedAddOnName} - Rs. ${addOnAmountInr.toLocaleString('en-IN')}`,
+            'Opening payment for the selected add-on.',
+          ],
+        });
+        await openPaymentWithBookingId(paymentBookingId);
+        return;
+      }
       showNotice({ title: 'Booking updated', body: 'Changes saved.' });
     }
   } catch (error) {

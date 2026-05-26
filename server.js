@@ -4181,7 +4181,8 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
               booking_date AS bookingDate,
               booking_time AS bookingTime,
               reschedule_count AS rescheduleCount,
-              notes
+              notes,
+              created_at AS createdAt
        FROM bookings
        WHERE id = ?`
     )
@@ -4248,6 +4249,46 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
   }
 
   const selectedService = getServiceByName(payload.data.serviceName);
+  const selectedCategory = String(selectedService?.category || '').toUpperCase();
+  const selectedAddOnServiceName = String(req.body?.addOnServiceName || '').trim();
+  let addOnService = null;
+  let existingAddOnBooking = null;
+  let nextBookingGroupId = String(existing.bookingGroupId || '').trim();
+  let addOnPaymentBookingId = null;
+  let addOnAmountInr = 0;
+
+  if (selectedAddOnServiceName) {
+    if (req.user.role !== 'user') {
+      return res.status(403).json({ message: 'only users can add an IV add-on while rescheduling' });
+    }
+    if (selectedCategory !== 'HYDROGEN SESSION') {
+      return res.status(400).json({ message: 'IV add-ons can be scheduled only with a hydrogen session.' });
+    }
+    addOnService = getServiceByName(selectedAddOnServiceName);
+    if (!addOnService || !isAddOnService(addOnService)) {
+      return res.status(400).json({ message: 'Invalid add-on selected. Choose one IV Therapy or IV Shot.' });
+    }
+    addOnAmountInr = Number(getEffectiveServicePriceInr(addOnService, bookingOwner || req.user) || 0);
+    if (nextBookingGroupId) {
+      existingAddOnBooking = db
+        .prepare(
+          `SELECT id,
+                  service_name AS serviceName,
+                  booking_date AS bookingDate,
+                  booking_time AS bookingTime,
+                  status,
+                  payment_status AS paymentStatus,
+                  notes
+           FROM bookings
+           WHERE booking_group_id = ?
+             AND status <> 'cancelled'
+             AND service_name IN (${getAddOnServiceNames().map(() => '?').join(', ')})
+           ORDER BY id
+           LIMIT 1`
+        )
+        .get(nextBookingGroupId, ...getAddOnServiceNames());
+    }
+  }
   if (
     req.user.role !== 'admin' &&
     selectedService &&
@@ -4289,6 +4330,40 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
       });
     }
   }
+  if (addOnService) {
+    const excludeAddOnBookingId = existingAddOnBooking?.id ? Number(existingAddOnBooking.id) : null;
+    const excludeIds = [bookingId, excludeAddOnBookingId].filter((id) => Number.isInteger(Number(id)));
+    if (hasStandaloneIvBookingOnDate(existing.userId, payload.data.bookingDate, excludeIds)) {
+      return res.status(409).json({
+        message:
+          'A separate IV Therapy/IV Shot is already booked on this date. Hydrogen packages with an IV add-on cannot be combined with separate IV bookings on the same day.',
+      });
+    }
+    if (hasConflictingAddOnBooking(existing.userId, payload.data.bookingDate, payload.data.bookingTime, excludeAddOnBookingId)) {
+      return res.status(409).json({
+        message:
+          'Only 1 IV add-on (IV Therapy or IV Shot) can be booked in the same time slot. Additional add-ons are handled by admin after consultation.',
+      });
+    }
+    const cooldownConflict = findIvCooldownConflict(existing.userId, addOnService.name, payload.data.bookingDate, excludeIds);
+    if (cooldownConflict) {
+      return res.status(409).json({
+        message: getIvCooldownResponseMessage(cooldownConflict),
+      });
+    }
+    const addOnSlotStatus = getSlotCapacityStatus(
+      addOnService.name,
+      payload.data.bookingDate,
+      payload.data.bookingTime,
+      excludeAddOnBookingId
+    );
+    if (addOnSlotStatus.reached) {
+      const message = addOnSlotStatus.holdTotal > 0
+        ? buildHoldSlotMessage()
+        : `This add-on slot is full. Maximum ${addOnSlotStatus.maxPerSlot} bookings are allowed.`;
+      return res.status(409).json({ message });
+    }
+  }
 
   const slotStatus = getSlotCapacityStatus(
     payload.data.serviceName,
@@ -4325,28 +4400,122 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
   }
   const shouldIncrementRescheduleCount = isRescheduleAttempt && !isScheduleLaterBooking;
 
-  db.prepare(
-    `UPDATE bookings SET
-      doctor_id = NULL,
-      service_name = ?,
-      booking_date = ?,
-      booking_time = ?,
-      assigned_staff = 'H2 House Of Health',
-      notes = ?,
-      reschedule_count = CASE WHEN ? = 1 THEN COALESCE(reschedule_count, 0) + 1 ELSE COALESCE(reschedule_count, 0) END,
-      payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
-      status = ?
-    WHERE id = ?`
-  ).run(
-    payload.data.serviceName,
-    payload.data.bookingDate,
-    payload.data.bookingTime,
-    nextNotes,
-    shouldIncrementRescheduleCount ? 1 : 0,
-    selectedService?.membershipOnly ? 1 : 0,
-    nextStatus,
-    bookingId
-  );
+  const txn = db.transaction(() => {
+    if (addOnService && !nextBookingGroupId) {
+      nextBookingGroupId = createBookingGroupId('hydrogen');
+    }
+
+    db.prepare(
+      `UPDATE bookings SET
+        doctor_id = NULL,
+        booking_group_id = CASE WHEN ? <> '' THEN ? ELSE booking_group_id END,
+        service_name = ?,
+        booking_date = ?,
+        booking_time = ?,
+        assigned_staff = 'H2 House Of Health',
+        notes = ?,
+        reschedule_count = CASE WHEN ? = 1 THEN COALESCE(reschedule_count, 0) + 1 ELSE COALESCE(reschedule_count, 0) END,
+        payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
+        status = ?
+      WHERE id = ?`
+    ).run(
+      nextBookingGroupId,
+      nextBookingGroupId,
+      payload.data.serviceName,
+      payload.data.bookingDate,
+      payload.data.bookingTime,
+      nextNotes,
+      shouldIncrementRescheduleCount ? 1 : 0,
+      selectedService?.membershipOnly ? 1 : 0,
+      nextStatus,
+      bookingId
+    );
+
+    if (addOnService) {
+      const addOnNote = `IV add-on for ${payload.data.serviceName} (rescheduled session)`;
+      if (existingAddOnBooking) {
+        if (
+          String(existingAddOnBooking.paymentStatus || '').trim().toLowerCase() === 'paid' &&
+          String(existingAddOnBooking.serviceName || '') !== addOnService.name
+        ) {
+          throw new Error('Paid add-on cannot be changed while rescheduling.');
+        }
+        db.prepare(
+          `UPDATE bookings SET
+             service_name = ?,
+             booking_date = ?,
+             booking_time = ?,
+             assigned_staff = 'H2 House Of Health',
+             notes = ?,
+             payment_status = CASE WHEN payment_status = 'paid' THEN 'paid' ELSE 'unpaid' END,
+             payment_order_id = CASE WHEN payment_status = 'paid' THEN payment_order_id ELSE NULL END,
+             payment_reference = CASE WHEN payment_status = 'paid' THEN payment_reference ELSE NULL END,
+             paid_at = CASE WHEN payment_status = 'paid' THEN paid_at ELSE NULL END,
+             paid_amount_paise = CASE WHEN payment_status = 'paid' THEN paid_amount_paise ELSE NULL END,
+             status = CASE WHEN status = 'booked' THEN 'booked' ELSE 'pending' END
+           WHERE id = ?`
+        ).run(
+          addOnService.name,
+          payload.data.bookingDate,
+          payload.data.bookingTime,
+          [addOnNote, String(existingAddOnBooking.notes || '').trim()].filter(Boolean).join('\n'),
+          existingAddOnBooking.id
+        );
+        if (String(existingAddOnBooking.paymentStatus || '').trim().toLowerCase() !== 'paid') {
+          if (addOnAmountInr > 0) {
+            addOnPaymentBookingId = Number(existingAddOnBooking.id);
+          } else {
+            db.prepare(
+              `UPDATE bookings
+               SET payment_status = 'paid',
+                   paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+                   paid_amount_paise = 0,
+                   status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
+               WHERE id = ?`
+            ).run(existingAddOnBooking.id);
+          }
+        }
+      } else {
+        const result = db.prepare(
+          `INSERT INTO bookings (
+            user_id, doctor_id, client_name, client_email, client_phone,
+            service_name, booking_date, booking_time, assigned_staff, status, payment_status, booking_group_id, notes, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
+        ).run(
+          existing.userId,
+          null,
+          req.user.name,
+          req.user.email,
+          req.user.mobile || '-',
+          addOnService.name,
+          payload.data.bookingDate,
+          payload.data.bookingTime,
+          'H2 House Of Health',
+          addOnAmountInr > 0 ? 'unpaid' : 'paid',
+          nextBookingGroupId,
+          addOnNote,
+          getCurrentSqliteTimestamp()
+        );
+        if (addOnAmountInr > 0) {
+          addOnPaymentBookingId = Number(result.lastInsertRowid);
+        } else {
+          db.prepare(
+            `UPDATE bookings
+             SET paid_at = datetime('now'),
+                 paid_amount_paise = 0,
+                 status = 'booked'
+             WHERE id = ?`
+          ).run(Number(result.lastInsertRowid));
+        }
+      }
+    }
+  });
+
+  try {
+    txn();
+  } catch (error) {
+    return res.status(409).json({ message: error?.message || 'Unable to update booking.' });
+  }
 
   const booking = db
     .prepare(
@@ -4371,7 +4540,22 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
     )
     .get(bookingId);
 
-  res.json({ booking });
+  res.json({
+    booking,
+    requiresPayment: Boolean(addOnPaymentBookingId && addOnAmountInr > 0),
+    paymentBookingId: addOnPaymentBookingId,
+    summary: addOnService
+      ? {
+          addOn: {
+            serviceName: addOnService.name,
+            bookingDate: payload.data.bookingDate,
+            bookingTime: payload.data.bookingTime,
+            amountInr: addOnAmountInr,
+          },
+          totalAmountInr: addOnPaymentBookingId ? addOnAmountInr : 0,
+        }
+      : null,
+  });
 });
 
 app.get('/api/payments/config', requireAuth, (_req, res) => {
@@ -5690,7 +5874,7 @@ app.post('/api/public/payments/create-order', async (req, res) => {
     return res.status(400).json({ message: 'cannot pay for a cancelled booking' });
   }
 
-  if (booking.paymentStatus === 'paid') {
+  if (booking.paymentStatus === 'paid' && !booking.bookingGroupId) {
     return res.status(409).json({ message: 'booking is already paid' });
   }
 
@@ -6075,7 +6259,7 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
     return res.status(400).json({ message: 'cannot pay for a cancelled booking' });
   }
 
-  if (booking.paymentStatus === 'paid') {
+  if (booking.paymentStatus === 'paid' && !booking.bookingGroupId) {
     return res.status(409).json({ message: 'booking is already paid' });
   }
 

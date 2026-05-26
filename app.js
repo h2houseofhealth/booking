@@ -5789,7 +5789,17 @@ function getFilteredUserHistoryBookings(sourceBookings = state.bookings) {
     }
     return true;
   });
-  const latestFirst = [...statusFiltered].sort(compareBookingsByScheduleDesc);
+  const latestFirst = [...statusFiltered].sort((a, b) => {
+    if (activeFilter === 'upcoming') {
+      const aTs = getBookingStartTime(a);
+      const bTs = getBookingStartTime(b);
+      const safeA = Number.isFinite(aTs) ? aTs : Number.MAX_SAFE_INTEGER;
+      const safeB = Number.isFinite(bTs) ? bTs : Number.MAX_SAFE_INTEGER;
+      if (safeA !== safeB) return safeA - safeB;
+      return Number(a?.id || 0) - Number(b?.id || 0);
+    }
+    return compareBookingsByScheduleDesc(a, b);
+  });
 
   const requestedCount = Number(state.memberSessionDisplayCount || 0);
   if (requestedCount <= 0) return latestFirst;
@@ -11202,6 +11212,7 @@ function buildRescheduleDetailSection({ heading = '', history = null } = {}) {
 }
 
 function buildUserBookingRows(bookings, allBookings = bookings) {
+  const activeBookingFilter = String(state.userBookingsFilter || 'all').trim().toLowerCase();
   const includedEntryIds = new Set((Array.isArray(bookings) ? bookings : []).map((booking) => String(booking?.id || '')));
   const byGroup = new Map();
   for (const booking of allBookings) {
@@ -11318,6 +11329,8 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
     const holdNotice = buildHoldNotice(includedEntries);
     const rescheduleMissNotice = buildUserRescheduleMissNotice(booking);
     const latestIncludedEntry = [...includedEntries].sort(compareBookingsByScheduleDesc)[0] || booking;
+    const earliestIncludedEntry = includedEntries[0] || booking;
+    const rowSortEntry = activeBookingFilter === 'upcoming' ? earliestIncludedEntry : latestIncludedEntry;
 
     const slotLines = hydrogenEntries.map((entry) => {
       const sequence = Number(hydrogenSequenceById.get(String(entry?.id || '')) || 0);
@@ -11349,7 +11362,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
     rows.push({
       id: booking.id,
       booking,
-      sortTime: getBookingStartTime(latestIncludedEntry),
+      sortTime: getBookingStartTime(rowSortEntry),
       bookingGroupId: booking.bookingGroupId || '',
       baseServiceName,
       extraSessions: Math.max(0, hydrogenEntries.length - getHydrogenSessionCountFromServiceName(baseServiceName)),
@@ -11394,6 +11407,10 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
   return rows.sort((a, b) => {
     const aTs = Number.isFinite(a?.sortTime) ? a.sortTime : 0;
     const bTs = Number.isFinite(b?.sortTime) ? b.sortTime : 0;
+    if (activeBookingFilter === 'upcoming') {
+      if (aTs !== bTs) return aTs - bTs;
+      return Number(a?.id || 0) - Number(b?.id || 0);
+    }
     if (bTs !== aTs) return bTs - aTs;
     return Number(b?.id || 0) - Number(a?.id || 0);
   });

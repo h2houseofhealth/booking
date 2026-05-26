@@ -8933,6 +8933,44 @@ function getMemberHydrogenSingleSessionPriceInr(user) {
   return applyPhoneDiscount(amountInr, user?.mobile || '');
 }
 
+function buildPaidBookingInvoiceSummaryFromStoredAmounts(activeBookings) {
+  const paidBookings = (Array.isArray(activeBookings) ? activeBookings : []).filter(
+    (entry) => String(entry?.paymentStatus || '').trim().toLowerCase() === 'paid'
+  );
+  if (!paidBookings.length || paidBookings.length !== activeBookings.length) return null;
+
+  const storedPaidAmountPaise = paidBookings.reduce(
+    (sum, entry) => sum + Math.max(0, Math.round(Number(entry?.paidAmountPaise || 0))),
+    0
+  );
+  if (storedPaidAmountPaise <= 0) return null;
+
+  const totalAmountInr = storedPaidAmountPaise / 100;
+  const invoiceItems = paidBookings.map((entry) => ({
+    serviceName: entry.serviceName || 'Booking',
+    bookingDate: entry.bookingDate || '',
+    bookingTime: entry.bookingTime || '',
+    amountInr: Math.max(0, Number(getHistoricalBookingAmountPaise(entry) || 0) / 100),
+  }));
+
+  let lineTotalPaise = invoiceItems.reduce((sum, item) => sum + Math.round(Number(item.amountInr || 0) * 100), 0);
+  if (lineTotalPaise !== storedPaidAmountPaise && invoiceItems.length) {
+    const adjustmentInr = (storedPaidAmountPaise - lineTotalPaise) / 100;
+    const adjustmentIndex = invoiceItems.findIndex((item) => Number(item.amountInr || 0) > 0);
+    const targetIndex = adjustmentIndex >= 0 ? adjustmentIndex : 0;
+    invoiceItems[targetIndex].amountInr = Math.max(0, Number(invoiceItems[targetIndex].amountInr || 0) + adjustmentInr);
+  }
+
+  return {
+    serviceName: paidBookings.length === 1 ? paidBookings[0].serviceName || 'Booking' : 'Booking',
+    totalAmountInr,
+    amountInr: totalAmountInr,
+    bookingCount: paidBookings.length,
+    invoiceItems: invoiceItems.filter((item) => Number(item.amountInr || 0) > 0),
+    paidAmountSource: 'stored',
+  };
+}
+
 function buildBookingInvoiceSummary(bookings, user) {
   const activeBookings = (Array.isArray(bookings) ? bookings : []).filter(
     (entry) => String(entry?.status || '').toLowerCase() !== 'cancelled'
@@ -8940,6 +8978,9 @@ function buildBookingInvoiceSummary(bookings, user) {
   if (!activeBookings.length) {
     return { serviceName: 'Booking', totalAmountInr: 0, amountInr: 0, bookingCount: 0 };
   }
+  const storedPaidSummary = buildPaidBookingInvoiceSummaryFromStoredAmounts(activeBookings);
+  if (storedPaidSummary) return storedPaidSummary;
+
   const hydrogenBookings = activeBookings.filter((entry) => {
     const service = getServiceByName(entry.serviceName);
     return String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION';

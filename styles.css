@@ -3052,11 +3052,6 @@ h1, h2, h3 {
   outline-offset: 2px;
 }
 
-.password-toggle-icon {
-  width: 19px;
-  height: 19px;
-}
-
 .password-toggle-text {
   font-size: 0.6rem;
   font-weight: 600;

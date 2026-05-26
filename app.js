@@ -9229,7 +9229,7 @@ function renderMembership() {
   }
 
   if (elements.membershipTakeMembershipBtn) {
-    elements.membershipTakeMembershipBtn.hidden = active || state.membershipBrowseVisible;
+    elements.membershipTakeMembershipBtn.hidden = active;
   }
 
   const firstName = String(state.user?.name || 'Member').trim().split(/\s+/)[0] || 'Member';
@@ -10048,7 +10048,8 @@ function renderGeneralCouponsForTarget({ coupons = [], container, onApply }) {
 
   visibleCoupons.forEach((coupon) => {
     const card = document.createElement('article');
-    card.className = 'general-coupon-card';
+    const isRedeemable = Boolean(coupon.canRedeem);
+    card.className = `general-coupon-card${isRedeemable ? '' : ' is-redeemed'}`;
     const description = String(coupon.description || '').trim();
     const festivalName = String(coupon.festivalName || '').trim();
     const expiryText = coupon.expiresAt ? `Valid till ${formatDateOnly(coupon.expiresAt)}` : 'Limited period';
@@ -10059,14 +10060,18 @@ function renderGeneralCouponsForTarget({ coupons = [], container, onApply }) {
           <strong>🎉 ${escapeHtml(coupon.code || '')}</strong>
           <span>Rs. ${Number(coupon.discountValue || 0).toLocaleString('en-IN')} OFF</span>
         </div>
-        <button type="button" class="btn btn-secondary general-coupon-apply" ${coupon.canRedeem ? '' : 'disabled'}>
-          ${escapeHtml(coupon.canRedeem ? 'Apply' : (coupon.unavailableReason || 'Unavailable'))}
-        </button>
+        ${
+          isRedeemable
+            ? '<button type="button" class="btn btn-secondary general-coupon-apply">Apply</button>'
+            : '<span class="general-coupon-status" aria-label="Coupon already redeemed">Redeemed</span>'
+        }
       </div>
       ${metaText ? `<small>${escapeHtml(metaText)}</small>` : ''}
     `;
-    const applyBtn = card.querySelector('.general-coupon-apply');
-    applyBtn?.addEventListener('click', () => onApply(coupon.code || ''));
+    if (isRedeemable) {
+      const applyBtn = card.querySelector('.general-coupon-apply');
+      applyBtn?.addEventListener('click', () => onApply(coupon.code || ''));
+    }
     container.appendChild(card);
   });
 }

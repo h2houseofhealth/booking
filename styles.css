@@ -5243,6 +5243,40 @@ h1, h2, h3 {
   align-self: center;
 }
 
+.general-coupon-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  height: 1.85rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--ink-rgb), 0.18);
+  background: rgba(var(--ink-rgb), 0.05);
+  color: rgba(var(--ink-rgb), 0.62);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.general-coupon-card.is-redeemed {
+  border-color: rgba(var(--ink-rgb), 0.14);
+  background: rgba(255, 255, 255, 0.62);
+  opacity: 0.72;
+}
+
+.general-coupon-card.is-redeemed .general-coupon-head span {
+  color: rgba(var(--ink-rgb), 0.56);
+}
+
+.general-coupon-card.is-redeemed small {
+  color: rgba(var(--ink-rgb), 0.52);
+}
+
 .general-coupons .membership-copy {
   flex: 0 0 auto;
   white-space: nowrap;

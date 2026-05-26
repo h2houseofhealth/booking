@@ -5971,6 +5971,37 @@ th {
   color: rgba(var(--ink-rgb), 0.84);
 }
 
+.booking-details-line.is-reschedule-current-label {
+  margin-top: 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(var(--brand-primary-rgb), 0.9);
+}
+
+.booking-details-line.is-reschedule-current-value {
+  font-size: 0.94rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: rgba(var(--ink-rgb), 0.96);
+}
+
+.booking-details-line.is-reschedule-previous-label {
+  margin-top: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: rgba(var(--ink-rgb), 0.56);
+}
+
+.booking-details-line.is-reschedule-previous-value {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(var(--ink-rgb), 0.6);
+}
+
 .user-checkout-summary {
   margin-right: auto;
   display: grid;
@@ -7861,6 +7892,18 @@ table tbody td {
 
 #bookingDialog #serviceName {
   text-overflow: ellipsis;
+}
+
+#bookingDialog #addOnDateLabel,
+#bookingDialog #addOnTimeLabel {
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  #bookingDialog #addOnDateLabel,
+  #bookingDialog #addOnTimeLabel {
+    grid-column: 1 / -1;
+  }
 }
 
 .weekday-grid {

@@ -4251,6 +4251,10 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
   const selectedService = getServiceByName(payload.data.serviceName);
   const selectedCategory = String(selectedService?.category || '').toUpperCase();
   const selectedAddOnServiceName = String(req.body?.addOnServiceName || '').trim();
+  const requestedAddOnBookingDate = String(req.body?.addOnBookingDate || '').trim();
+  const requestedAddOnBookingTime = normalizeSlotStartTime(String(req.body?.addOnBookingTime || '').trim());
+  const effectiveAddOnBookingDate = requestedAddOnBookingDate || String(payload.data.bookingDate || '').trim();
+  const effectiveAddOnBookingTime = requestedAddOnBookingTime || String(payload.data.bookingTime || '').trim();
   let addOnService = null;
   let existingAddOnBooking = null;
   let nextBookingGroupId = String(existing.bookingGroupId || '').trim();
@@ -4267,6 +4271,17 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
     addOnService = getServiceByName(selectedAddOnServiceName);
     if (!addOnService || !isAddOnService(addOnService)) {
       return res.status(400).json({ message: 'Invalid add-on selected. Choose one IV Therapy or IV Shot.' });
+    }
+    const addOnSlotPayloadValidation = validateBookingPayload(
+      {
+        serviceName: addOnService.name,
+        bookingDate: effectiveAddOnBookingDate,
+        bookingTime: effectiveAddOnBookingTime,
+      },
+      bookingOwner || req.user
+    );
+    if (addOnSlotPayloadValidation.error) {
+      return res.status(400).json({ message: `Invalid add-on schedule: ${addOnSlotPayloadValidation.error}` });
     }
     addOnAmountInr = Number(getEffectiveServicePriceInr(addOnService, bookingOwner || req.user) || 0);
     if (nextBookingGroupId) {
@@ -4333,19 +4348,19 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
   if (addOnService) {
     const excludeAddOnBookingId = existingAddOnBooking?.id ? Number(existingAddOnBooking.id) : null;
     const excludeIds = [bookingId, excludeAddOnBookingId].filter((id) => Number.isInteger(Number(id)));
-    if (hasStandaloneIvBookingOnDate(existing.userId, payload.data.bookingDate, excludeIds)) {
+    if (hasStandaloneIvBookingOnDate(existing.userId, effectiveAddOnBookingDate, excludeIds)) {
       return res.status(409).json({
         message:
           'A separate IV Therapy/IV Shot is already booked on this date. Hydrogen packages with an IV add-on cannot be combined with separate IV bookings on the same day.',
       });
     }
-    if (hasConflictingAddOnBooking(existing.userId, payload.data.bookingDate, payload.data.bookingTime, excludeAddOnBookingId)) {
+    if (hasConflictingAddOnBooking(existing.userId, effectiveAddOnBookingDate, effectiveAddOnBookingTime, excludeAddOnBookingId)) {
       return res.status(409).json({
         message:
           'Only 1 IV add-on (IV Therapy or IV Shot) can be booked in the same time slot. Additional add-ons are handled by admin after consultation.',
       });
     }
-    const cooldownConflict = findIvCooldownConflict(existing.userId, addOnService.name, payload.data.bookingDate, excludeIds);
+    const cooldownConflict = findIvCooldownConflict(existing.userId, addOnService.name, effectiveAddOnBookingDate, excludeIds);
     if (cooldownConflict) {
       return res.status(409).json({
         message: getIvCooldownResponseMessage(cooldownConflict),
@@ -4353,8 +4368,8 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
     }
     const addOnSlotStatus = getSlotCapacityStatus(
       addOnService.name,
-      payload.data.bookingDate,
-      payload.data.bookingTime,
+      effectiveAddOnBookingDate,
+      effectiveAddOnBookingTime,
       excludeAddOnBookingId
     );
     if (addOnSlotStatus.reached) {
@@ -4456,8 +4471,8 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
            WHERE id = ?`
         ).run(
           addOnService.name,
-          payload.data.bookingDate,
-          payload.data.bookingTime,
+          effectiveAddOnBookingDate,
+          effectiveAddOnBookingTime,
           [addOnNote, String(existingAddOnBooking.notes || '').trim()].filter(Boolean).join('\n'),
           existingAddOnBooking.id
         );
@@ -4488,8 +4503,8 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
           req.user.email,
           req.user.mobile || '-',
           addOnService.name,
-          payload.data.bookingDate,
-          payload.data.bookingTime,
+          effectiveAddOnBookingDate,
+          effectiveAddOnBookingTime,
           'H2 House Of Health',
           addOnAmountInr > 0 ? 'unpaid' : 'paid',
           nextBookingGroupId,
@@ -4548,8 +4563,8 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
       ? {
           addOn: {
             serviceName: addOnService.name,
-            bookingDate: payload.data.bookingDate,
-            bookingTime: payload.data.bookingTime,
+            bookingDate: effectiveAddOnBookingDate,
+            bookingTime: effectiveAddOnBookingTime,
             amountInr: addOnAmountInr,
           },
           totalAmountInr: addOnPaymentBookingId ? addOnAmountInr : 0,

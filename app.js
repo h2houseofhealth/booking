@@ -152,6 +152,10 @@ const state = {
   bookingDialogContext: {
     membershipEdit: false,
     lockedServiceName: '',
+    existingAddOnBooking: null,
+    addOnScheduleManuallyEdited: false,
+    defaultAddOnBookingDate: '',
+    defaultAddOnBookingTime: '',
   },
   slotAvailability: {},
   slotCapacityByService: {},
@@ -676,6 +680,10 @@ const elements = {
   dialog: document.getElementById('bookingDialog'),
   addOnService: document.getElementById('addOnService'),
   addOnServiceLabel: document.getElementById('addOnServiceLabel'),
+  addOnDate: document.getElementById('addOnDate'),
+  addOnDateLabel: document.getElementById('addOnDateLabel'),
+  addOnTime: document.getElementById('addOnTime'),
+  addOnTimeLabel: document.getElementById('addOnTimeLabel'),
   bookingCustomerStep: document.getElementById('bookingCustomerStep'),
   bookingCustomerName: document.getElementById('bookingCustomerName'),
   bookingCustomerEmail: document.getElementById('bookingCustomerEmail'),
@@ -1732,10 +1740,32 @@ function attachEvents() {
   });
   elements.addOnService?.addEventListener('change', () => {
     state.selectedBookingAddOnServiceName = elements.addOnService.value;
+    if (state.bookingDialogContext) state.bookingDialogContext.addOnScheduleManuallyEdited = false;
+    updateBookingAddOnOptions();
     updateBookingSummary();
+  });
+  elements.addOnDate?.addEventListener('change', () => {
+    if (state.bookingDialogContext) {
+      state.bookingDialogContext.addOnScheduleManuallyEdited = true;
+      state.bookingDialogContext.defaultAddOnBookingDate = String(elements.addOnDate?.value || '').trim();
+    }
+    updateBookingAddOnOptions();
+  });
+  elements.addOnTime?.addEventListener('change', () => {
+    if (state.bookingDialogContext) {
+      state.bookingDialogContext.addOnScheduleManuallyEdited = true;
+      state.bookingDialogContext.defaultAddOnBookingTime = normalizeSlotStartTime(String(elements.addOnTime?.value || '').trim());
+    }
   });
   elements.bookingDate?.addEventListener('change', () => {
     updateTimeSlotsByDate();
+    updateBookingAddOnOptions();
+    updateBookingSummary();
+  });
+  elements.bookingTime?.addEventListener('change', () => {
+    if (state.bookingDialogContext && !state.bookingDialogContext.addOnScheduleManuallyEdited) {
+      state.bookingDialogContext.defaultAddOnBookingTime = normalizeSlotStartTime(String(elements.bookingTime?.value || '').trim());
+    }
     updateBookingAddOnOptions();
     updateBookingSummary();
   });
@@ -3375,10 +3405,29 @@ function updateTimeSlotsByDate() {
 function populateServiceOptions(selectedService = '') {
   const dialogContext = state.bookingDialogContext || {};
   const lockMembershipService = Boolean(dialogContext.membershipEdit);
-  const lockedServiceName = String(dialogContext.lockedServiceName || selectedService || '').trim();
+  const findMatchingServiceName = (rawName) => {
+    const target = String(rawName || '').trim();
+    if (!target) return '';
+    const direct = state.services.find((service) => String(service.name || '').trim() === target);
+    if (direct) return String(direct.name || '').trim();
+    const normalizedTarget = target.toLowerCase();
+    const byCaseInsensitive = state.services.find(
+      (service) => String(service.name || '').trim().toLowerCase() === normalizedTarget
+    );
+    if (byCaseInsensitive) return String(byCaseInsensitive.name || '').trim();
+    const byDisplayName = state.services.find(
+      (service) => String(getServiceDisplayName(service) || '').trim().toLowerCase() === normalizedTarget
+    );
+    return byDisplayName ? String(byDisplayName.name || '').trim() : '';
+  };
+  const requestedServiceName = String(selectedService || '').trim();
+  const resolvedRequestedServiceName = findMatchingServiceName(requestedServiceName) || requestedServiceName;
+  const lockedServiceName = String(dialogContext.lockedServiceName || resolvedRequestedServiceName || '').trim();
+  const resolvedLockedServiceName = findMatchingServiceName(lockedServiceName) || lockedServiceName;
   elements.serviceName.innerHTML = '';
+  let addedOptions = 0;
   for (const service of state.services) {
-    if (lockMembershipService && lockedServiceName && String(service.name || '').trim() !== lockedServiceName) {
+    if (lockMembershipService && resolvedLockedServiceName && String(service.name || '').trim() !== resolvedLockedServiceName) {
       continue;
     }
     const category = String(service.category || '').toUpperCase();
@@ -3401,11 +3450,30 @@ function populateServiceOptions(selectedService = '') {
           : `${getServiceDisplayName(service)} - Rs. ${Number(service.effectivePriceInr ?? service.priceInr ?? 0).toLocaleString('en-IN')}`;
     option.dataset.category = service.category;
     elements.serviceName.appendChild(option);
+    addedOptions += 1;
   }
 
-  if (selectedService) {
-    const hasMatch = state.services.some((service) => service.name === selectedService);
-    if (hasMatch) elements.serviceName.value = selectedService;
+  if (lockMembershipService && addedOptions === 0 && resolvedLockedServiceName) {
+    const option = document.createElement('option');
+    option.value = resolvedLockedServiceName;
+    option.textContent = `${resolvedLockedServiceName} - Included in Membership`;
+    option.dataset.category = 'HYDROGEN SESSION';
+    elements.serviceName.appendChild(option);
+    addedOptions += 1;
+  }
+
+  if (resolvedRequestedServiceName) {
+    const hasMatch = [...elements.serviceName.options].some(
+      (option) => String(option.value || '').trim() === resolvedRequestedServiceName
+    );
+    if (!hasMatch) {
+      const option = document.createElement('option');
+      option.value = resolvedRequestedServiceName;
+      option.textContent = resolvedRequestedServiceName;
+      option.dataset.category = '';
+      elements.serviceName.appendChild(option);
+    }
+    elements.serviceName.value = resolvedRequestedServiceName;
   }
 }
 
@@ -3472,10 +3540,72 @@ function populateBookingDateOptions(selectedDate = '') {
 
 function updateBookingAddOnOptions() {
   const isAdmin = state.user?.role === 'admin';
+  const setAddOnScheduleVisibility = ({ showDateTime = false } = {}) => {
+    if (elements.addOnDateLabel) elements.addOnDateLabel.hidden = !showDateTime;
+    if (elements.addOnTimeLabel) elements.addOnTimeLabel.hidden = !showDateTime;
+  };
+  const populateAddOnDateOptions = (selectedDate = '') => {
+    if (!elements.addOnDate) return;
+    const options = [];
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    for (let i = 0; i <= BOOKING_WINDOW_DAYS; i += 1) {
+      const day = new Date(start);
+      day.setDate(start.getDate() + i);
+      const year = day.getFullYear();
+      const month = String(day.getMonth() + 1).padStart(2, '0');
+      const date = String(day.getDate()).padStart(2, '0');
+      const iso = `${year}-${month}-${date}`;
+      const label = new Intl.DateTimeFormat(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      }).format(day);
+      options.push({ value: iso, label });
+    }
+    elements.addOnDate.innerHTML = '';
+    for (const optionData of options) {
+      const option = document.createElement('option');
+      option.value = optionData.value;
+      option.textContent = optionData.label;
+      elements.addOnDate.appendChild(option);
+    }
+    if (options.length) {
+      const hasSelected = options.some((option) => option.value === selectedDate);
+      elements.addOnDate.value = hasSelected ? selectedDate : options[0].value;
+    }
+  };
+  const populateAddOnTimeOptions = () => {
+    if (!elements.addOnTime) return;
+    const addOnServiceName = String(elements.addOnService?.value || '').trim();
+    const addOnDate = String(elements.addOnDate?.value || '').trim();
+    if (!addOnServiceName || !addOnDate) {
+      elements.addOnTime.innerHTML = '<option value="">Select add-on date first</option>';
+      return;
+    }
+    const existingAddOnBookingTime = normalizeSlotStartTime(
+      String(state.bookingDialogContext?.existingAddOnBooking?.bookingTime || '').trim()
+    );
+    const existingAddOnBookingDate = String(state.bookingDialogContext?.existingAddOnBooking?.bookingDate || '').trim();
+    const preferredTime = normalizeSlotStartTime(
+      String(elements.addOnTime?.value || '').trim() ||
+      String(state.bookingDialogContext?.defaultAddOnBookingTime || '').trim() ||
+      String(elements.bookingTime?.value || '').trim()
+    );
+    const reservedSlot =
+      existingAddOnBookingDate === addOnDate && existingAddOnBookingTime
+        ? { bookingDate: existingAddOnBookingDate, bookingTime: existingAddOnBookingTime }
+        : null;
+    populateAvailableTimeOptions(elements.addOnTime, addOnServiceName, addOnDate, reservedSlot, preferredTime);
+  };
   if (isAdmin) {
     elements.addOnServiceLabel.hidden = true;
     elements.addOnService.innerHTML = '<option value="">No add-on</option>';
     elements.addOnService.value = '';
+    if (elements.addOnDate) elements.addOnDate.innerHTML = '';
+    if (elements.addOnTime) elements.addOnTime.innerHTML = '';
+    setAddOnScheduleVisibility({ showDateTime: false });
     return;
   }
 
@@ -3485,6 +3615,11 @@ function updateBookingAddOnOptions() {
   
   elements.addOnServiceLabel.hidden = !isHydrogenService;
   elements.addOnService.innerHTML = '<option value="">No add-on</option>';
+  if (!isHydrogenService) {
+    if (elements.addOnDate) elements.addOnDate.innerHTML = '';
+    if (elements.addOnTime) elements.addOnTime.innerHTML = '';
+    setAddOnScheduleVisibility({ showDateTime: false });
+  }
   
   if (isHydrogenService) {
     const addOnServices = state.services.filter((service) => {
@@ -3497,6 +3632,41 @@ function updateBookingAddOnOptions() {
       option.value = addOn.name;
       option.textContent = `${addOn.name} - Rs. ${Number(addOn.effectivePriceInr || addOn.priceInr || 0).toLocaleString('en-IN')}`;
       elements.addOnService.appendChild(option);
+    }
+    const context = state.bookingDialogContext || {};
+    const existingAddOnBooking = context.existingAddOnBooking || null;
+    const existingAddOnServiceName = String(existingAddOnBooking?.serviceName || '').trim();
+    const existingValueStillValid = [...elements.addOnService.options].some(
+      (option) => String(option.value || '').trim() === String(elements.addOnService.value || '').trim()
+    );
+    const preferredAddOnService = existingAddOnServiceName || String(state.selectedBookingAddOnServiceName || '').trim();
+    if (preferredAddOnService && [...elements.addOnService.options].some((option) => option.value === preferredAddOnService)) {
+      elements.addOnService.value = preferredAddOnService;
+    } else if (!existingValueStillValid) {
+      elements.addOnService.value = '';
+    }
+    const hasAddOnSelected = Boolean(String(elements.addOnService.value || '').trim());
+    setAddOnScheduleVisibility({ showDateTime: hasAddOnSelected });
+    if (hasAddOnSelected) {
+      const baseDate = String(elements.bookingDate?.value || getTodayIsoDate()).trim();
+      const baseTime = normalizeSlotStartTime(String(elements.bookingTime?.value || '').trim()) || SLOT_OPTIONS[0].value;
+      const defaultDate = String(context.defaultAddOnBookingDate || existingAddOnBooking?.bookingDate || baseDate).trim() || baseDate;
+      const defaultTime = normalizeSlotStartTime(
+        String(context.defaultAddOnBookingTime || existingAddOnBooking?.bookingTime || baseTime).trim()
+      ) || baseTime;
+      const shouldSyncFromMain = !Boolean(context.addOnScheduleManuallyEdited);
+      const selectedAddOnDate = shouldSyncFromMain ? baseDate : defaultDate;
+      populateAddOnDateOptions(selectedAddOnDate);
+      context.defaultAddOnBookingDate = String(elements.addOnDate?.value || selectedAddOnDate || baseDate).trim() || baseDate;
+      context.defaultAddOnBookingTime = shouldSyncFromMain ? baseTime : defaultTime;
+      state.bookingDialogContext = context;
+      populateAddOnTimeOptions();
+      const preferredTime = normalizeSlotStartTime(
+        String(context.defaultAddOnBookingTime || defaultTime || baseTime).trim()
+      ) || baseTime;
+      if ([...(elements.addOnTime?.options || [])].some((option) => option.value === preferredTime && !option.disabled)) {
+        elements.addOnTime.value = preferredTime;
+      }
     }
   }
 }
@@ -3561,16 +3731,41 @@ function updateBookingSummary() {
 }
 
 function openDialog(booking = null) {
+  const bookingRecord = booking?.id
+    ? (state.bookings || []).find((entry) => String(entry?.id || '') === String(booking.id || '')) || null
+    : null;
+  const resolvedBookedServiceName = booking
+    ? String(bookingRecord?.serviceName || booking?.serviceName || booking?.serviceTitle || '').trim()
+    : '';
   state.bookingDialogContext = {
     membershipEdit: false,
     lockedServiceName: '',
+    existingAddOnBooking: null,
+    addOnScheduleManuallyEdited: false,
+    defaultAddOnBookingDate: '',
+    defaultAddOnBookingTime: '',
   };
   if (booking) {
-    const isHydrogenCategory = getBookingCategory(booking?.serviceName || '') === 'HYDROGEN SESSION';
+    const isHydrogenCategory = getBookingCategory(resolvedBookedServiceName || booking?.serviceName || '') === 'HYDROGEN SESSION';
     const isMembershipSession = isHydrogenCategory && !isChargeableHydrogenMembershipBooking(booking);
+    const bookingGroupId = String(booking?.bookingGroupId || '').trim();
+    const existingAddOnBooking = bookingGroupId
+      ? (state.bookings || []).find(
+          (entry) =>
+            String(entry?.bookingGroupId || '').trim() === bookingGroupId &&
+            getBookingCategory(entry?.serviceName || '') === 'IV ADD-ON' &&
+            String(entry?.status || '').trim().toLowerCase() !== 'cancelled'
+        ) || null
+      : null;
     state.bookingDialogContext = {
       membershipEdit: isMembershipSession,
-      lockedServiceName: String(booking?.serviceName || '').trim(),
+      lockedServiceName: resolvedBookedServiceName,
+      existingAddOnBooking,
+      addOnScheduleManuallyEdited: false,
+      defaultAddOnBookingDate: String(existingAddOnBooking?.bookingDate || booking?.bookingDate || '').trim(),
+      defaultAddOnBookingTime: normalizeSlotStartTime(
+        String(existingAddOnBooking?.bookingTime || booking?.bookingTime || '').trim()
+      ),
     };
   }
   populateServiceOptions();
@@ -3581,7 +3776,7 @@ function openDialog(booking = null) {
   if (booking) {
     elements.dialogTitle.textContent = 'Edit Booking';
     elements.bookingId.value = String(booking.id);
-    populateServiceOptions(booking.serviceName);
+    populateServiceOptions(resolvedBookedServiceName);
     const bookingStatus = String(booking?.status || '').trim().toLowerCase();
     const requestedDate = String(booking?.bookingDate || '').trim();
     const editableDate = bookingStatus === 'schedule_later' && requestedDate < getTodayIsoDate()
@@ -3596,6 +3791,8 @@ function openDialog(booking = null) {
     }
     elements.bookingNotes.value = booking.notes || '';
     elements.serviceName.disabled = Boolean(booking.bookingGroupId) || Boolean(state.bookingDialogContext.membershipEdit);
+    state.selectedBookingAddOnServiceName = String(state.bookingDialogContext?.existingAddOnBooking?.serviceName || '').trim();
+    updateBookingAddOnOptions();
   } else {
     elements.dialogTitle.textContent = 'Book Slot';
     elements.bookingForm.reset();
@@ -3603,6 +3800,8 @@ function openDialog(booking = null) {
     populateServiceOptions();
     populateBookingDateOptions();
     populateTimeSlots();
+    if (elements.addOnDate) elements.addOnDate.innerHTML = '';
+    if (elements.addOnTime) elements.addOnTime.innerHTML = '';
   }
   if (state.user?.role === 'admin') {
     if (elements.bookingCustomerName) elements.bookingCustomerName.value = String(state.adminCustomerForm.name || '');
@@ -3657,6 +3856,10 @@ function closeDialog() {
   state.bookingDialogContext = {
     membershipEdit: false,
     lockedServiceName: '',
+    existingAddOnBooking: null,
+    addOnScheduleManuallyEdited: false,
+    defaultAddOnBookingDate: '',
+    defaultAddOnBookingTime: '',
   };
   state.selectedBookingAddOnServiceName = '';
   const experienceLabel = document.getElementById('experienceServiceLabel');
@@ -3798,6 +4001,10 @@ async function upsertBooking() {
   const selectedAddOnName = elements.addOnService?.value;
   if (selectedAddOnName) {
     payload.addOnServiceName = selectedAddOnName;
+    payload.addOnBookingDate = String(elements.addOnDate?.value || elements.bookingDate?.value || '').trim();
+    payload.addOnBookingTime = normalizeSlotStartTime(
+      String(elements.addOnTime?.value || elements.bookingTime?.value || '').trim()
+    );
   }
   const selectedAddOnService = selectedAddOnName
     ? state.services.find((service) => service.name === selectedAddOnName)
@@ -3865,8 +4072,7 @@ async function upsertBooking() {
       // Editing existing booking
       closeDialog();
       const addOn = result?.summary?.addOn || null;
-      const payableAddOnSelected = !isAdmin && Boolean(selectedAddOnName) && selectedAddOnAmountInr > 0;
-      const requiresPayment = Boolean(result?.requiresPayment) || payableAddOnSelected;
+      const requiresPayment = Boolean(result?.requiresPayment);
       const paymentBookingId = Number(result?.paymentBookingId || result?.booking?.id || id || 0);
       const addOnAmountInr = Number(addOn?.amountInr || selectedAddOnAmountInr || 0);
       render();
@@ -10977,6 +11183,24 @@ function buildUserRescheduleMissNotice(booking) {
   };
 }
 
+function buildRescheduleDetailSection({ heading = '', history = null } = {}) {
+  if (!history) return null;
+  const currentSlot = formatDateTime(history.rescheduledDate, history.rescheduledTime);
+  const previousSlot = formatDateTime(history.previousDate, history.previousTime);
+  const lines = [
+    { text: 'Current Slot', tone: 'reschedule-current-label' },
+    { text: currentSlot, tone: 'reschedule-current-value' },
+  ];
+  if (previousSlot && previousSlot !== '-') {
+    lines.push({ text: 'Previously', tone: 'reschedule-previous-label' });
+    lines.push({ text: previousSlot, tone: 'reschedule-previous-value' });
+  }
+  return {
+    title: heading || 'Session ↺ Rescheduled',
+    lines,
+  };
+}
+
 function buildUserBookingRows(bookings, allBookings = bookings) {
   const includedEntryIds = new Set((Array.isArray(bookings) ? bookings : []).map((booking) => String(booking?.id || '')));
   const byGroup = new Map();
@@ -11030,6 +11254,10 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       const holdNotice = buildHoldNotice([booking]);
       const rescheduleMissNotice = buildUserRescheduleMissNotice(booking);
       const rescheduleHistory = getBookingRescheduleHistory(booking);
+      const singleRescheduleSection = buildRescheduleDetailSection({
+        heading: 'Session ↺ Rescheduled',
+        history: rescheduleHistory,
+      });
       rows.push({
         id: booking.id,
         booking,
@@ -11045,17 +11273,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
           ...(rescheduleMissNotice ? [rescheduleMissNotice] : []),
         ],
         scheduleLines: [formatDateTime(booking.bookingDate, booking.bookingTime)],
-        detailSections: rescheduleHistory
-          ? [
-              {
-                title: 'Reschedule',
-                lines: [
-                  `Previous booked slot: ${formatDateTime(rescheduleHistory.previousDate, rescheduleHistory.previousTime)}`,
-                  `Rescheduled slot: ${formatDateTime(rescheduleHistory.rescheduledDate, rescheduleHistory.rescheduledTime)}`,
-                ],
-              },
-            ]
-          : [],
+        detailSections: singleRescheduleSection ? [singleRescheduleSection] : [],
         serviceText: getServiceDisplayName(booking.serviceName),
         dateTimeText: formatDateTime(booking.bookingDate, booking.bookingTime),
       });
@@ -11111,18 +11329,21 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
         slotLines.push(`Add-on: ${entry.serviceName} with ${formatDateTime(entry.bookingDate, entry.bookingTime)}`);
       });
     }
-    const rescheduleLines = [];
-    [...hydrogenEntries, ...displayAddOnEntries].forEach((entry) => {
+    const rescheduleSections = [];
+    [...groupHydrogenEntries, ...displayAddOnEntries].forEach((entry) => {
       const history = getBookingRescheduleHistory(entry);
       if (!history) return;
       const sequence = Number(hydrogenSequenceById.get(String(entry?.id || '')) || 0);
-      const label = getBookingCategory(entry.serviceName) === 'IV ADD-ON'
-        ? `Add-on: ${entry.serviceName}`
+      const sectionHeading = getBookingCategory(entry.serviceName) === 'IV ADD-ON'
+        ? `${entry.serviceName} ↺ Rescheduled`
         : sequence > 0
-          ? `S${sequence}`
-          : 'Session';
-      rescheduleLines.push(`${label} previous booked slot: ${formatDateTime(history.previousDate, history.previousTime)}`);
-      rescheduleLines.push(`${label} rescheduled slot: ${formatDateTime(history.rescheduledDate, history.rescheduledTime)}`);
+          ? `Session ${sequence} ↺ Rescheduled`
+          : 'Session ↺ Rescheduled';
+      const section = buildRescheduleDetailSection({
+        heading: sectionHeading,
+        history,
+      });
+      if (section) rescheduleSections.push(section);
     });
 
     rows.push({
@@ -11148,7 +11369,7 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
       scheduleLines: [hydrogenEntries[0] ? formatDateTime(hydrogenEntries[0].bookingDate, hydrogenEntries[0].bookingTime) : '-'],
       detailSections: [
         { title: 'Hydrogen Sessions', lines: slotLines },
-        ...(rescheduleLines.length ? [{ title: 'Reschedule', lines: rescheduleLines }] : []),
+        ...rescheduleSections,
         ...(addOnDetails.length ? [{ title: 'Add-on', lines: addOnDetails }] : []),
         ...(breakdown.totalAmountInr > 0
           ? [
@@ -12891,7 +13112,14 @@ function userBookingServiceCell(row, label = 'Service') {
       for (const line of lines) {
         const item = document.createElement('div');
         item.className = 'booking-details-line';
-        item.textContent = String(line || '').trim();
+        const text = typeof line === 'object' && line !== null
+          ? String(line.text || '').trim()
+          : String(line || '').trim();
+        if (!text) continue;
+        if (typeof line === 'object' && line !== null && line.tone) {
+          item.classList.add(`is-${String(line.tone).trim()}`);
+        }
+        item.textContent = text;
         block.appendChild(item);
       }
 

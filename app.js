@@ -311,6 +311,8 @@ const ADMIN_USER_CARD_DEFAULT_LIMIT = 10;
 const ADMIN_USER_CARD_LARGE_DATASET_THRESHOLD = 300;
 const AUTH_OTP_RESEND_COOLDOWN_MS = 30_000;
 const ADMIN_RESCHEDULE_MISSED_WINDOW_MS = 15 * 60 * 1000;
+const BOOKING_SLOT_DURATION_MS = 60 * 60 * 1000;
+const ADMIN_COMPLETE_GRACE_MS = 5 * 60 * 1000;
 
 function isHydrogenCategory(category) {
   return String(category || '').trim().toUpperCase() === 'HYDROGEN SESSION';
@@ -10635,6 +10637,12 @@ function getBookingStartTime(booking) {
   return Number.isFinite(timestamp) ? timestamp : Number.NaN;
 }
 
+function getBookingMissedTime(booking) {
+  const bookingStart = getBookingStartTime(booking);
+  if (!Number.isFinite(bookingStart)) return Number.NaN;
+  return bookingStart + BOOKING_SLOT_DURATION_MS + ADMIN_COMPLETE_GRACE_MS;
+}
+
 function compareBookingsByScheduleDesc(a, b) {
   const aTs = getBookingStartTime(a);
   const bTs = getBookingStartTime(b);
@@ -10681,8 +10689,8 @@ function isBookingMissed(booking) {
   const status = String(booking?.status || '').trim().toLowerCase();
   if (status === 'missed') return true;
   if (status === 'completed' || status === 'cancelled' || status === 'schedule_later') return false;
-  const bookingStart = getBookingStartTime(booking);
-  return Number.isFinite(bookingStart) && bookingStart < Date.now();
+  const missedAt = getBookingMissedTime(booking);
+  return Number.isFinite(missedAt) && missedAt < Date.now();
 }
 
 function getDerivedBookingStatus(booking) {

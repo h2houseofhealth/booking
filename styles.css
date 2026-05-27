@@ -14590,3 +14590,118 @@ img {
     object-position: center !important;
   }
 }
+
+/* Final mobile polish: account controls and user navigation */
+@media (max-width: 640px) {
+  .portal {
+    padding: 12px 10px 22px !important;
+  }
+
+  .portal-header {
+    margin: 0 0 16px !important;
+    padding: 0 !important;
+  }
+
+  .top-actions {
+    display: grid !important;
+    grid-template-columns: 52px minmax(0, 1fr) !important;
+    gap: 10px !important;
+    width: 100%;
+    align-items: center;
+  }
+
+  .top-actions .profile-btn {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 48px;
+    height: auto;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 5px 14px 5px 6px;
+    border-radius: 999px;
+  }
+
+  .top-actions .profile-avatar {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+  }
+
+  .top-actions .profile-meta {
+    min-width: 0;
+    gap: 2px;
+    line-height: 1.1;
+  }
+
+  .top-actions .profile-meta strong {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .top-actions .profile-badges {
+    min-width: 0;
+    gap: 5px;
+  }
+
+  .top-actions .role-chip,
+  .top-actions .membership-badge {
+    max-width: 100%;
+    line-height: 1;
+  }
+
+  .top-actions .cart-btn {
+    grid-column: 1;
+    width: 46px !important;
+    height: 46px;
+    min-height: 46px;
+    align-self: stretch;
+  }
+
+  .top-actions #logoutBtn {
+    grid-column: 2;
+    width: 100%;
+    min-height: 46px;
+    justify-content: flex-start;
+    padding: 0 18px;
+    border-radius: 999px;
+  }
+
+  #userTabNav.user-tab-nav {
+    margin-top: 0;
+    padding: 12px 14px 0;
+    border-radius: 18px;
+  }
+
+  #userTabNav .user-tab-grid {
+    grid-template-columns: 1fr !important;
+    gap: 0;
+    min-height: 0;
+    padding: 0;
+    border-bottom-width: 3px;
+  }
+
+  #userTabNav .user-tab-btn {
+    min-height: 64px;
+    padding: 14px 8px 16px;
+    font-size: 0.9rem;
+    letter-spacing: 0.04em;
+  }
+}
+
+@media (max-width: 380px) {
+  .top-actions {
+    grid-template-columns: 48px minmax(0, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .top-actions .profile-btn {
+    padding-right: 12px;
+  }
+
+  #userTabNav.user-tab-nav {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}

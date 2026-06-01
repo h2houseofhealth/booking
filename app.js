@@ -598,6 +598,8 @@ const elements = {
   adminCouponValue: document.getElementById('adminCouponValue'),
   adminCouponMaxRedemptions: document.getElementById('adminCouponMaxRedemptions'),
   adminCouponExpiresAt: document.getElementById('adminCouponExpiresAt'),
+  adminCouponExpiryDate: document.getElementById('adminCouponExpiryDate'),
+  adminCouponExpiryTime: document.getElementById('adminCouponExpiryTime'),
   adminCouponSubmitBtn: document.getElementById('adminCouponSubmitBtn'),
   adminCouponSaveOnlyBtn: document.getElementById('adminCouponSaveOnlyBtn'),
   adminCouponList: document.getElementById('adminCouponList'),
@@ -940,6 +942,10 @@ function attachEvents() {
   });
 
   function closeNoticeDialog() {
+    const signature = String(elements.noticeDialog?.dataset?.signature || '').trim();
+    if (signature) {
+      acknowledgeNoticeSignature(signature);
+    }
     try {
       elements.noticeDialog?.close?.();
     } catch {
@@ -1067,7 +1073,7 @@ function attachEvents() {
       field === 'phone'
         ? normalizeTenDigitMobile(rawValue)
         : field === 'name'
-          ? rawValue.slice(0, 20)
+          ? rawValue.slice(0, 80)
           : rawValue;
     if (field === 'name' && target.value !== value) target.value = value;
     if (field === 'phone' && target.value !== value) target.value = value;
@@ -1114,7 +1120,7 @@ function attachEvents() {
   enforceTenDigitMobileInput(elements.membershipAddPersonContact);
   enforceTenDigitMobileInput(elements.adminCalendarModalCustomerPhone);
   const syncAdminCustomerFromModal = () => {
-    const nextName = String(elements.adminCalendarModalCustomerName?.value || '').trim().slice(0, 20);
+    const nextName = String(elements.adminCalendarModalCustomerName?.value || '').trim().slice(0, 80);
     const nextEmail = String(elements.adminCalendarModalCustomerEmail?.value || '').trim();
     const nextPhone = normalizeTenDigitMobile(elements.adminCalendarModalCustomerPhone?.value || '');
     state.adminCustomerForm = {
@@ -1534,6 +1540,9 @@ function attachEvents() {
   elements.closeProfileDialogBtn?.addEventListener('click', closeProfileDialog);
   elements.cancelProfileBtn?.addEventListener('click', closeProfileDialog);
   elements.adminUserSessionCloseBtn?.addEventListener('click', closeAdminUserSessionDialog);
+  elements.profileAge?.addEventListener('input', () => {
+    elements.profileAge.value = normalizeProfileAgeInput(elements.profileAge.value);
+  });
   elements.profileForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const submitBtn = elements.profileForm.querySelector('button[type="submit"]');
@@ -1714,6 +1723,8 @@ function attachEvents() {
     await saveAdminCoupon({ sendEmail: false });
   });
   elements.adminCouponType?.addEventListener('change', renderAdminCouponFormByType);
+  elements.adminCouponExpiryDate?.addEventListener('change', syncAdminCouponExpiryValue);
+  elements.adminCouponExpiryTime?.addEventListener('change', syncAdminCouponExpiryValue);
   elements.userApplyCouponBtn?.addEventListener('click', async () => {
     await previewCartCoupon();
   });
@@ -1911,6 +1922,9 @@ function attachEvents() {
   });
   if (elements.adminCouponExpiresAt) {
     elements.adminCouponExpiresAt.min = `${getTodayIsoDate()}T00:00`;
+  }
+  if (elements.adminCouponExpiryDate) {
+    elements.adminCouponExpiryDate.min = getTodayIsoDate();
   }
   elements.adminRescheduleViewToggleBtn?.addEventListener('click', () => {
     state.adminRescheduleView = state.adminRescheduleView === 'rescheduled' ? 'queue' : 'rescheduled';
@@ -2450,7 +2464,7 @@ function syncAdminCustomerFromBookingModal() {
   const prevName = String(state.adminCustomerForm?.name || '').trim();
   const prevEmail = String(state.adminCustomerForm?.email || '').trim();
   const prevPhone = normalizeTenDigitMobile(state.adminCustomerForm?.phone || '');
-  const nextName = String(elements.bookingCustomerName?.value || '').trim().slice(0, 20);
+  const nextName = String(elements.bookingCustomerName?.value || '').trim().slice(0, 80);
   const nextEmail = String(elements.bookingCustomerEmail?.value || '').trim();
   const nextPhone = normalizeTenDigitMobile(elements.bookingCustomerPhone?.value || '');
   state.adminCustomerForm = {
@@ -3450,6 +3464,7 @@ function populateServiceOptions(selectedService = '') {
         : service.membershipOnly
           ? `${getServiceDisplayName(service)} - Free for Members Only`
           : `${getServiceDisplayName(service)} - Rs. ${Number(service.effectivePriceInr ?? service.priceInr ?? 0).toLocaleString('en-IN')}`;
+    option.title = option.textContent;
     option.dataset.category = service.category;
     elements.serviceName.appendChild(option);
     addedOptions += 1;
@@ -3459,6 +3474,7 @@ function populateServiceOptions(selectedService = '') {
     const option = document.createElement('option');
     option.value = resolvedLockedServiceName;
     option.textContent = `${resolvedLockedServiceName} - Included in Membership`;
+    option.title = option.textContent;
     option.dataset.category = 'HYDROGEN SESSION';
     elements.serviceName.appendChild(option);
     addedOptions += 1;
@@ -3472,6 +3488,7 @@ function populateServiceOptions(selectedService = '') {
       const option = document.createElement('option');
       option.value = resolvedRequestedServiceName;
       option.textContent = resolvedRequestedServiceName;
+      option.title = option.textContent;
       option.dataset.category = '';
       elements.serviceName.appendChild(option);
     }
@@ -3895,6 +3912,14 @@ function closeProfileDialog() {
   renderProfileAvatar();
 }
 
+function normalizeProfileAgeInput(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 3);
+  if (!digits) return '';
+  const age = Number(digits);
+  if (!Number.isFinite(age)) return '';
+  return String(Math.min(age, 120));
+}
+
 function openAdminUserSessionDialog(userId) {
   if (!elements.adminUserSessionDialog) return;
   state.adminSelectedUserId = userId == null ? null : String(userId);
@@ -3934,9 +3959,17 @@ async function saveProfile() {
     throw new Error('Mobile number must be 10 digits.');
   }
 
+  const normalizedAge = normalizeProfileAgeInput(elements.profileAge.value);
+  if (elements.profileAge && elements.profileAge.value !== normalizedAge) {
+    elements.profileAge.value = normalizedAge;
+  }
+  if (normalizedAge && (Number(normalizedAge) < 1 || Number(normalizedAge) > 120)) {
+    throw new Error('Age must be between 1 and 120.');
+  }
+
   const payload = {
     name: elements.profileName.value.trim(),
-    age: elements.profileAge.value.trim(),
+    age: normalizedAge,
     gender: elements.profileGender.value,
     mobile: normalizedMobile,
   };
@@ -4106,6 +4139,22 @@ async function openPaymentWithBookingId(bookingId) {
   }
 }
 
+function getCheckoutPaymentErrorMessage(error, fallback = 'Payment verification failed.') {
+  const rawMessage = String(error?.message || '').trim();
+  if (String(error?.status || '') === '403' || rawMessage.toLowerCase() === 'forbidden') {
+    return 'We could not validate this checkout. Please refresh your cart and try again.';
+  }
+  return rawMessage || fallback;
+}
+
+function buildAppliedCouponSuccessLines(coupon) {
+  const code = String(coupon?.code || '').trim();
+  const discountAmountInr = Number(coupon?.discountAmountInr || 0);
+  if (!code && discountAmountInr <= 0) return [];
+  const label = code ? `Coupon applied: ${code}` : 'Coupon applied';
+  return discountAmountInr > 0 ? [label, `Coupon savings: Rs. ${discountAmountInr.toLocaleString('en-IN')}`] : [label];
+}
+
 function showAdminBookingPaymentChoiceDialog(bookingId, customerEmail = '', customerPhone = '') {
   const id = Number(bookingId);
   if (!Number.isInteger(id)) return Promise.resolve();
@@ -4114,10 +4163,11 @@ function showAdminBookingPaymentChoiceDialog(bookingId, customerEmail = '', cust
   const phoneNumber = String(customerPhone || state.adminCustomerForm?.phone || '').trim();
 
   if (!elements.adminPaymentChoiceDialog || typeof elements.adminPaymentChoiceDialog.showModal !== 'function') {
-    const paidInCash = confirm('Payment?\n\nOK = Paid in cash\nCancel = Send payment link to mobile / mail');
-    return paidInCash
-      ? markBookingPaidInCash(id, { skipConfirm: true })
-      : showAdminPaymentLinkDialog(id, emailAddress, phoneNumber);
+    showNotice({
+      title: 'Payment method unavailable',
+      body: 'The payment method dialog could not open. Use the booking actions to mark cash payment or send a payment link.',
+    });
+    return Promise.resolve();
   }
 
   return new Promise((resolve) => {
@@ -4471,16 +4521,22 @@ async function payAllUserBookings() {
           if (elements.userCouponCode) elements.userCouponCode.value = '';
           renderCartCouponPreview();
           render();
-          showNotice({
-            title: 'Payment successful',
-            body: `You’re all set! Your booking is confirmed.\nTotal paid: Rs. ${Number(
+          const appliedCoupon = verifyResult.coupon || result.coupon || null;
+          const successLines = [
+            'You are all set! Your booking is confirmed.',
+            ...buildAppliedCouponSuccessLines(appliedCoupon),
+            `Total paid: Rs. ${Number(
               verifyResult.totalAmountInr || result.summary?.totalAmountInr || 0
             ).toLocaleString('en-IN')}.`,
+          ];
+          showNotice({
+            title: 'Payment successful',
+            body: successLines,
           });
         } catch (error) {
           await loadDashboardData();
           render();
-          showNotice({ title: 'Payment failed', body: error.message || 'Payment verification failed.' });
+          showNotice({ title: 'Payment failed', body: getCheckoutPaymentErrorMessage(error) });
         } finally {
           if (payButton) {
             payButton.disabled = false;
@@ -4512,7 +4568,7 @@ async function payAllUserBookings() {
       payButton.disabled = false;
       payButton.textContent = originalLabel;
     }
-    throw error;
+    throw new Error(getCheckoutPaymentErrorMessage(error, 'Unable to open Razorpay checkout.'));
   }
 }
 
@@ -10476,9 +10532,12 @@ async function activateMembershipWithPayment(plan, additionalPeople = 0, memberD
         requestAnimationFrame(() => {
           elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
-        showNotice({ title: 'Success', body: result.message || 'Membership activated. Redirecting to Services.' });
+        showNotice({
+          title: 'Success',
+          body: [result.message || 'Membership activated. Redirecting to Services.', ...buildAppliedCouponSuccessLines(result.coupon || order.coupon)],
+        });
       } catch (error) {
-        showNotice({ title: 'Error', body: error.message || 'Membership payment verification failed.' });
+        showNotice({ title: 'Error', body: getCheckoutPaymentErrorMessage(error, 'Membership payment verification failed.') });
       }
     },
     modal: {
@@ -12907,6 +12966,19 @@ function renderAdminCouponFormByType() {
   }
 }
 
+function syncAdminCouponExpiryValue() {
+  if (!elements.adminCouponExpiresAt) return;
+  const dateValue = String(elements.adminCouponExpiryDate?.value || '').trim();
+  const timeValue = String(elements.adminCouponExpiryTime?.value || '').trim();
+  elements.adminCouponExpiresAt.value = dateValue && timeValue ? `${dateValue}T${timeValue}` : '';
+}
+
+function clearAdminCouponExpiryFields() {
+  if (elements.adminCouponExpiresAt) elements.adminCouponExpiresAt.value = '';
+  if (elements.adminCouponExpiryDate) elements.adminCouponExpiryDate.value = '';
+  if (elements.adminCouponExpiryTime) elements.adminCouponExpiryTime.value = '';
+}
+
 async function setAdminCouponActive(couponId, active) {
   await api(`/api/admin/coupons/${encodeURIComponent(couponId)}/active`, {
     method: 'PATCH',
@@ -12926,7 +12998,10 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
   const description = String(elements.adminCouponDescription?.value || '').trim();
   const discountValue = Number(elements.adminCouponValue?.value || 0);
   const appliesTo = 'all';
+  syncAdminCouponExpiryValue();
   const expiresAt = String(elements.adminCouponExpiresAt?.value || '').trim();
+  const expiryDateValue = String(elements.adminCouponExpiryDate?.value || '').trim();
+  const expiryTimeValue = String(elements.adminCouponExpiryTime?.value || '').trim();
   const shouldSendEmail = couponType === 'private' ? Boolean(sendEmail) : false;
 
   if (couponType === 'private' && recipientEmail && !isLikelyEmail(recipientEmail)) {
@@ -12943,6 +13018,10 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
   }
   if (!Number.isFinite(discountValue) || discountValue <= 0) {
     showNotice({ title: 'Notice', body: 'Enter a valid fixed discount amount greater than 0.' });
+    return;
+  }
+  if ((expiryDateValue && !expiryTimeValue) || (!expiryDateValue && expiryTimeValue)) {
+    showNotice({ title: 'Notice', body: 'Choose both expiry date and expiry time, or leave both blank.' });
     return;
   }
   if (expiresAt) {
@@ -13003,7 +13082,7 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
     if (elements.adminCouponCode) elements.adminCouponCode.value = '';
     if (elements.adminCouponDescription) elements.adminCouponDescription.value = '';
     if (elements.adminCouponValue) elements.adminCouponValue.value = '';
-    if (elements.adminCouponExpiresAt) elements.adminCouponExpiresAt.value = '';
+    clearAdminCouponExpiryFields();
     if (elements.adminCouponRecipientEmail) elements.adminCouponRecipientEmail.value = '';
     if (elements.adminCouponFestivalName) elements.adminCouponFestivalName.value = '';
 
@@ -13666,11 +13745,39 @@ function normalizeNoticeType(typeValue, titleValue) {
   return 'info';
 }
 
+function getNoticeAcknowledgementKey(signature) {
+  const normalized = String(signature || '').trim();
+  return normalized ? `h2h_notice_ack_${normalized}` : '';
+}
+
+function isNoticeAcknowledged(signature) {
+  const key = getNoticeAcknowledgementKey(signature);
+  if (!key) return false;
+  try {
+    return window.sessionStorage?.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function acknowledgeNoticeSignature(signature) {
+  const key = getNoticeAcknowledgementKey(signature);
+  if (!key) return;
+  try {
+    window.sessionStorage?.setItem(key, '1');
+  } catch {}
+}
+
 function showNotice({ title = 'Notice', body = '', type = '' } = {}) {
   const normalizedTitle = String(title || 'Notice').trim() || 'Notice';
   const normalizedBody = normalizeNoticeBody(body);
   const normalizedType = normalizeNoticeType(type, normalizedTitle);
   const noticeSignature = `${normalizedType}::${normalizedTitle}::${normalizedBody}`;
+  const shouldSuppressAfterAcknowledgement =
+    normalizedType === 'error' && normalizedTitle.toLowerCase().includes('email failed');
+  if (shouldSuppressAfterAcknowledgement && isNoticeAcknowledged(noticeSignature)) {
+    return;
+  }
   const now = Date.now();
   const lastSignature = String(state._lastNoticeSignature || '');
   const lastAt = Number(state._lastNoticeAt || 0);
@@ -13689,6 +13796,7 @@ function showNotice({ title = 'Notice', body = '', type = '' } = {}) {
   elements.noticeDialogBody.textContent = normalizedBody;
   try {
     elements.noticeDialog.dataset.type = normalizedType;
+    elements.noticeDialog.dataset.signature = shouldSuppressAfterAcknowledgement ? noticeSignature : '';
   } catch {}
 
   try {

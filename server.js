@@ -1244,6 +1244,9 @@ app.put('/api/profile', requireAuth, (req, res) => {
 
   let age = null;
   if (ageRaw) {
+    if (!/^\d{1,3}$/.test(ageRaw)) {
+      return res.status(400).json({ message: 'age must be a valid number between 1 and 120' });
+    }
     const parsed = Number(ageRaw);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > 120) {
       return res.status(400).json({ message: 'age must be a valid number between 1 and 120' });
@@ -1673,7 +1676,7 @@ app.post('/api/membership/verify', requireAuth, (req, res) => {
     .prepare(
       `SELECT order_id AS orderId, user_id AS userId, plan_id AS planId, people_count AS peopleCount, status,
               member_details_json AS memberDetailsJson,
-              coupon_id AS couponId, discount_amount_paise AS discountAmountPaise
+              coupon_id AS couponId, coupon_code AS couponCode, discount_amount_paise AS discountAmountPaise
        FROM membership_payment_orders
        WHERE order_id = ?`
     )
@@ -1809,6 +1812,7 @@ app.post('/api/membership/verify', requireAuth, (req, res) => {
         : `${plan.name} activated successfully for ${peopleCount} member(s).`,
     profile,
     paid: true,
+    coupon: serializeAppliedCouponFromOrder(pendingOrder),
   });
 });
 
@@ -6928,7 +6932,12 @@ app.post('/api/payments/verify-cart', requireAuth, async (req, res) => {
 
   const cartOrder = db
     .prepare(
-      `SELECT order_id AS orderId, user_id AS userId, coupon_id AS couponId, discount_amount_paise AS discountAmountPaise
+      `SELECT order_id AS orderId,
+              user_id AS userId,
+              coupon_id AS couponId,
+              coupon_code AS couponCode,
+              discount_amount_paise AS discountAmountPaise,
+              amount_paise AS amountPaise
        FROM cart_payment_orders
        WHERE order_id = ?`
     )
@@ -7020,11 +7029,18 @@ app.post('/api/payments/verify-cart', requireAuth, async (req, res) => {
     consumeAdminDiscountForBooking(req.user.id, matchedBookings[0].id);
   }
 
+  const paidAmountPaise = Number.isFinite(Number(cartOrder.amountPaise))
+    ? Number(cartOrder.amountPaise)
+    : Math.max(0, Math.round(Number(summary.totalAmountInr || 0) * 100) - Number(cartOrder.discountAmountPaise || 0));
+
   return res.json({
     paid: true,
     bookingCount: matchedBookings.length,
     unitCount: Number(summary.unitCount || 0),
-    totalAmountInr: Number(summary.totalAmountInr || 0),
+    totalAmountInr: Math.round(paidAmountPaise / 100),
+    discountAmountInr: Math.round(Number(cartOrder.discountAmountPaise || 0) / 100),
+    originalAmountInr: Number(summary.totalAmountInr || 0),
+    coupon: serializeAppliedCouponFromOrder(cartOrder),
   });
 });
 
@@ -7827,8 +7843,11 @@ function validateCouponForUser({ code, userId, appliesTo, subtotalAmountPaise, s
   }
 
   const coupon = getCouponByCode(normalizedCode);
-  if (!coupon || !coupon.active || !coupon.isActive) {
+  if (!coupon) {
     return { error: 'Invalid coupon code.' };
+  }
+  if (!coupon.active || !coupon.isActive) {
+    return { error: 'This coupon is no longer active. Please remove it and try checkout again.' };
   }
   if (coupon.validFrom && new Date(coupon.validFrom).getTime() > Date.now()) {
     return { error: 'This coupon is not active yet.' };
@@ -7903,6 +7922,16 @@ function serializeCouponPreview(result) {
   };
 }
 
+function serializeAppliedCouponFromOrder(order) {
+  const code = String(order?.couponCode || '').trim();
+  const discountAmountInr = Math.round(Number(order?.discountAmountPaise || 0) / 100);
+  if (!code && discountAmountInr <= 0) return null;
+  return {
+    code,
+    discountAmountInr,
+  };
+}
+
 function recordCouponRedemption({ couponId, userId, contextType, contextRef, discountAmountPaise }) {
   if (!Number.isInteger(Number(couponId)) || !Number.isInteger(Number(userId))) return;
   const normalizedContextRef = String(contextRef || '').trim();
@@ -7943,7 +7972,8 @@ function recordCouponRedemption({ couponId, userId, contextType, contextRef, dis
 
 function validateCouponRedemptionLimit(couponId, userId) {
   const coupon = getCouponById(couponId);
-  if (!coupon || !coupon.active || !coupon.isActive) return 'Invalid coupon code.';
+  if (!coupon) return 'Invalid coupon code.';
+  if (!coupon.active || !coupon.isActive) return 'This coupon is no longer active. Please contact the front desk for help with this payment.';
   if (coupon.validFrom && new Date(coupon.validFrom).getTime() > Date.now()) return 'This coupon is not active yet.';
   if (coupon.validTill && new Date(coupon.validTill).getTime() <= Date.now()) return 'This coupon has expired.';
   const user = getUserById(userId);

@@ -539,7 +539,7 @@
             </div>
             <div class="membership-calendar-card" aria-label="Monthly calendar">
               <div class="membership-calendar-head">
-                <h4>Calendar</h4>
+                <h4>Session Calendar</h4>
                 <span id="membershipCalendarMonth" class="membership-calendar-month"></span>
               </div>
               <div class="membership-calendar-weekdays">
@@ -659,8 +659,10 @@
         <p id="serviceEmpty" class="empty-state" hidden>No services configured.</p>
         <p id="servicePageNote" class="service-page-note user-only">
           <span class="note-icon" aria-hidden="true">&#9888;&#65039;</span>
-          <strong>Note:</strong> Therapy/Shots require a 2-week gap between hydrogen sessions. (Whether taken separately or as an add-on
-          with Hydrogen Therapy) Hydrogen Therapy sessions can be taken up to 3 times per day.
+          <span class="note-copy">
+            <strong>Note:</strong> Therapy/Shots require a 2-week gap between hydrogen sessions. (Whether taken separately or as an add-on
+            with Hydrogen Therapy) Hydrogen Therapy sessions can be taken up to 3 times per day.
+          </span>
         </p>
         <div class="dialog-actions user-only">
           <button id="servicesBackBtn" class="btn btn-secondary" type="button">Back</button>
@@ -798,7 +800,7 @@
         
         <div id="myBookingsUpcoming" class="my-bookings-upcoming">
           <div class="panel-head">
-            <h3>Upcoming Hydrogen Sessions</h3>
+            <h3>Upcoming Sessions</h3>
           </div>
           <div id="myBookingsUpcomingList" class="my-bookings-upcoming-list"></div>
           <p id="myBookingsUpcomingEmpty" class="empty-state" hidden>No upcoming sessions.</p>
@@ -806,7 +808,7 @@
         
         <div id="myBookingsRemaining" class="my-bookings-calendar">
           <div class="panel-head">
-            <h3>Hydrogen Session Calendar</h3>
+            <h3>Session Calendar</h3>
             <span id="myBookingsCalendarMonth" class="my-bookings-calendar-month"></span>
           </div>
           <div class="my-bookings-calendar-weekdays">
@@ -865,7 +867,10 @@
             <tbody id="cartTableBody"></tbody>
           </table>
           <div id="cartMobileList" class="cart-mobile-list" hidden></div>
-          <p id="cartEmptyState" class="empty-state" hidden>Your cart is empty.</p>
+          <div id="cartEmptyState" class="empty-state cart-empty-state" hidden>
+            <strong>Your cart is empty.</strong>
+            <span>Add a hydrogen session or therapy to review it here.</span>
+          </div>
         </div>
         <div class="dialog-actions">
           <div class="coupon-entry user-only">

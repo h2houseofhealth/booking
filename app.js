@@ -9770,7 +9770,7 @@ function renderMembership() {
   }
   if (elements.membershipScheduleLaterFooter) {
     elements.membershipScheduleLaterFooter.hidden = scheduleLaterCount <= 0;
-    elements.membershipScheduleLaterFooter.textContent = `Schedule ${scheduleLaterCount} Session${scheduleLaterCount === 1 ? '' : 's'} in Schedule Later`;
+    elements.membershipScheduleLaterFooter.textContent = getScheduleLaterFooterText(scheduleLaterCount);
   }
   renderMembershipCalendar(allBookings);
 
@@ -13406,7 +13406,13 @@ function getCurrentContextBookings() {
 }
 
 function getIvCooldownAlertMessage(conflict) {
-  return `A Therapy/Shot can be booked again only after 2 weeks. Existing booking found on ${conflict?.bookingDate}. Reach out to us to book if you still want this.`;
+  const existingDate = formatBookingDateLabel(conflict?.bookingDate);
+  return `A Therapy or Shot needs a 2-week gap before another booking.\n\nExisting booking: ${existingDate}\n\nPlease contact us if you still want help scheduling this.`;
+}
+
+function getScheduleLaterFooterText(count) {
+  const safeCount = Math.max(0, Number(count || 0));
+  return `Schedule ${safeCount} Held Session${safeCount === 1 ? '' : 's'}`;
 }
 
 function findIvCooldownConflictClient(serviceName, bookingDate, excludeBookingId = '', excludeGroupId = '') {
@@ -14303,7 +14309,7 @@ function renderMyBookingsSessionTracking() {
   }
   if (elements.myBookingsScheduleLaterFooter) {
     elements.myBookingsScheduleLaterFooter.hidden = scheduleLaterCount <= 0;
-    elements.myBookingsScheduleLaterFooter.textContent = `Schedule ${scheduleLaterCount} Session${scheduleLaterCount === 1 ? '' : 's'} in Schedule Later`;
+    elements.myBookingsScheduleLaterFooter.textContent = getScheduleLaterFooterText(scheduleLaterCount);
   }
 
   // Upcoming sessions list
@@ -14320,10 +14326,10 @@ function renderMyBookingsSessionTracking() {
 
   sortedUpcoming.forEach((booking) => {
     const item = document.createElement('div');
-    item.className = 'mybookings-upcoming-item';
+    item.className = 'my-bookings-upcoming-item';
     const derivedStatus = getDerivedBookingStatus(booking);
     item.innerHTML = `
-      <div class="mybookings-upcoming-info">
+      <div class="my-bookings-upcoming-info">
         <strong>${escapeHtml(booking.serviceName)}</strong>
         <span>${formatDateTime(booking.bookingDate, booking.bookingTime)}</span>
       </div>

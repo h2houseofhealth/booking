@@ -14773,3 +14773,349 @@ img {
     padding-right: 12px;
   }
 }
+
+.my-bookings-upcoming-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.my-bookings-upcoming-info {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.my-bookings-upcoming-info strong {
+  overflow-wrap: anywhere;
+}
+
+.my-bookings-upcoming-info span {
+  color: rgba(var(--ink-rgb), 0.72);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.usage-v2-attendance {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 700px) {
+  .notice-dialog {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    margin: auto;
+  }
+
+  .notice-dialog::backdrop {
+    background: rgba(20, 14, 10, 0.62);
+  }
+
+  .notice-shell {
+    max-height: calc(100dvh - 20px);
+    padding: 16px;
+    border-radius: 14px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable both-edges;
+  }
+
+  .notice-shell h2 {
+    margin: 0;
+    font-size: 1.18rem;
+    line-height: 1.25;
+  }
+
+  .notice-body {
+    max-height: calc(100dvh - 190px);
+    overflow-y: auto;
+    padding: 12px;
+    font-size: 0.98rem;
+    line-height: 1.48;
+    word-break: normal;
+    overflow-wrap: anywhere;
+    scrollbar-gutter: stable;
+  }
+
+  .membership-copy,
+  #userBookingsSection .membership-copy,
+  .service-page-note,
+  .usage-v2-note {
+    font-size: 0.95rem !important;
+    line-height: 1.55 !important;
+  }
+
+  .service-page-note {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.45rem;
+    align-items: start;
+    padding: 0.85rem 0.9rem;
+  }
+
+  .usage-v2-attendance {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+
+  .usage-v2-attendance > div {
+    display: grid;
+    align-content: center;
+    min-height: 54px;
+    padding: 0.58rem 0.62rem;
+    border: 1px solid rgba(217, 119, 54, 0.18);
+    border-radius: 10px;
+    background: rgba(255, 251, 247, 0.9);
+    line-height: 1.25;
+  }
+
+  .membership-calendar-card,
+  .my-bookings-calendar {
+    padding: 1rem !important;
+    padding-bottom: 4.75rem !important;
+  }
+
+  .membership-calendar-weekdays,
+  .membership-calendar-grid,
+  .my-bookings-calendar-weekdays,
+  .my-bookings-calendar-grid {
+    gap: 0.28rem !important;
+  }
+
+  .membership-calendar-day,
+  .my-bookings-calendar-day {
+    min-height: 38px !important;
+    padding: 0.35rem !important;
+  }
+
+  .membership-calendar-details,
+  .my-bookings-calendar-details {
+    height: auto !important;
+    min-height: 104px !important;
+    padding: 0.8rem !important;
+    font-size: 0.9rem !important;
+    line-height: 1.45 !important;
+  }
+
+  .membership-calendar-detail-item,
+  .my-bookings-calendar-detail-item {
+    display: grid !important;
+    grid-template-columns: 1fr;
+    gap: 0.2rem !important;
+    padding: 0.55rem 0 !important;
+  }
+
+  .my-bookings-calendar-detail-item {
+    padding: 0.55rem 0.65rem !important;
+  }
+
+  .membership-calendar-detail-item span,
+  .my-bookings-calendar-detail-item span {
+    font-size: 0.82rem !important;
+    line-height: 1.35 !important;
+  }
+
+  .my-bookings-upcoming {
+    padding: 1rem !important;
+  }
+
+  .my-bookings-upcoming .panel-head {
+    margin-bottom: 0.75rem;
+  }
+
+  .my-bookings-upcoming-item {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 0.5rem;
+    padding: 0.8rem !important;
+  }
+
+  .my-bookings-upcoming-item .status-chip {
+    justify-self: start;
+  }
+
+  .my-bookings-calendar-footer,
+  .membership-calendar-footer-link {
+    width: min(78vw, 260px) !important;
+    min-height: 40px !important;
+    padding: 0.3rem 0.8rem !important;
+    white-space: normal !important;
+    text-align: center;
+    line-height: 1.15;
+  }
+}
+
+/* Mobile booking flow spacing fixes */
+@media (max-width: 768px) {
+  #servicesSection,
+  #userBookingsSection,
+  #userCartSection {
+    padding-top: 1rem;
+    padding-bottom: 1.1rem;
+  }
+
+  #servicesSection .panel-head,
+  #userCartSection .panel-head {
+    margin-bottom: 0.85rem;
+  }
+
+  #serviceGrid,
+  .service-catalog-grid {
+    gap: 0.85rem !important;
+  }
+
+  .service-category-card.service-showcase-card {
+    border-radius: 14px;
+  }
+
+  .service-showcase-media {
+    aspect-ratio: 16 / 9;
+    max-height: 168px;
+  }
+
+  .service-showcase-content {
+    gap: 0.42rem;
+    padding: 0.68rem 0.72rem 0.76rem;
+  }
+
+  .service-showcase-footer {
+    gap: 0.75rem;
+  }
+
+  .service-page-note {
+    margin-top: 0.75rem;
+    padding: 0.78rem 0.82rem;
+    font-size: 0.94rem !important;
+    line-height: 1.58 !important;
+    text-wrap: pretty;
+  }
+
+  .service-page-note .note-copy {
+    min-width: 0;
+  }
+
+  #servicesSection > .dialog-actions {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 0.85rem !important;
+    margin-top: 0.95rem;
+    align-items: stretch;
+  }
+
+  #servicesBackBtn,
+  #servicesNextBtn {
+    width: 100%;
+    min-height: 46px;
+  }
+
+  .booking-details-toggle {
+    margin-top: 0.6rem;
+    padding: 0.55rem 0.62rem;
+  }
+
+  .booking-details-toggle summary {
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+  }
+
+  .booking-details-section {
+    display: grid;
+    gap: 0.34rem;
+    padding: 0.42rem 0 0.1rem;
+  }
+
+  .booking-details-section + .booking-details-section {
+    margin-top: 0.72rem;
+    padding-top: 0.72rem;
+  }
+
+  .booking-details-heading {
+    margin: 0;
+    font-size: 0.72rem;
+    line-height: 1.25;
+  }
+
+  .booking-details-line {
+    font-size: 0.86rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  #userCartSection .table-wrap {
+    min-height: 0;
+    border-radius: 18px;
+  }
+
+  .cart-empty-state {
+    margin: 0;
+    min-height: clamp(150px, 34vh, 230px);
+    padding: 1.4rem 1rem;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 0.38rem;
+    text-align: center;
+    border-radius: 18px;
+    background:
+      radial-gradient(circle at top, rgba(201, 106, 45, 0.09), transparent 42%),
+      rgba(255, 252, 248, 0.78);
+  }
+
+  .cart-empty-state strong {
+    font-size: 1.08rem;
+    line-height: 1.25;
+    color: #7e3f25;
+  }
+
+  .cart-empty-state span {
+    max-width: 24ch;
+    font-size: 0.94rem;
+    line-height: 1.45;
+    color: #7f6655;
+  }
+
+  .cart-empty-state[hidden] {
+    display: none !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .service-showcase-media {
+    max-height: 138px;
+  }
+
+  .service-showcase-title {
+    font-size: 0.98rem;
+  }
+
+  .service-showcase-subtitle {
+    font-size: 0.82rem;
+    line-height: 1.35;
+  }
+
+  .service-showcase-footer {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .service-showcase-cta {
+    min-height: 42px;
+  }
+
+  #servicesSection > .dialog-actions {
+    gap: 0.75rem !important;
+  }
+
+  .service-page-note {
+    font-size: 0.92rem !important;
+  }
+
+  .cart-empty-state {
+    min-height: 136px;
+    padding: 1.15rem 0.9rem;
+  }
+}

@@ -6463,10 +6463,13 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/invoice/booking', (req, res) => {
+app.get('/invoice/booking', requireAuth, (req, res) => {
   const access = verifyInvoiceAccessToken(req.query?.token);
   if (!access || access.scope !== 'booking_invoice' || !Number.isInteger(access.bookingId) || !Number.isInteger(access.userId)) {
     return res.status(400).send('Invalid or expired invoice link');
+  }
+  if (req.user.role !== 'admin' && Number(req.user.id) !== Number(access.userId)) {
+    return res.status(403).send('You are not allowed to view this invoice');
   }
 
   const booking = db
@@ -6489,6 +6492,9 @@ app.get('/invoice/booking', (req, res) => {
     .get(access.bookingId);
   if (!booking || Number(booking.userId) !== access.userId) {
     return res.status(404).send('Invoice not found');
+  }
+  if (req.user.role !== 'admin' && Number(booking.userId) !== Number(req.user.id)) {
+    return res.status(403).send('You are not allowed to view this invoice');
   }
   if (String(booking.paymentStatus || '').trim().toLowerCase() !== 'paid') {
     return res.status(409).send('Invoice is available only for paid bookings');
@@ -6557,7 +6563,7 @@ app.get('/invoice/booking', (req, res) => {
     .join('');
   const invoiceNo = `BK-${booking.id}`;
   const paidAtLabel = formatInvoiceDateTime(booking.paidAt);
-  const generatedAtLabel = formatInvoiceDateTime(booking.paidAt || booking.createdAt);
+  const generatedAtLabel = formatInvoiceDateTime(new Date());
   const customerName = bookingOwner?.name || '';
   const customerEmail = bookingOwner?.email || '';
   const customerMobile = bookingOwner?.mobile || '';
@@ -6675,10 +6681,13 @@ app.get('/invoice/booking', (req, res) => {
 </html>`);
 });
 
-app.get('/invoice/membership', (req, res) => {
+app.get('/invoice/membership', requireAuth, (req, res) => {
   const access = verifyInvoiceAccessToken(req.query?.token);
   if (!access || access.scope !== 'membership_invoice' || !access.orderId || !Number.isInteger(access.userId)) {
     return res.status(400).send('Invalid or expired invoice link');
+  }
+  if (req.user.role !== 'admin' && Number(req.user.id) !== Number(access.userId)) {
+    return res.status(403).send('You are not allowed to view this invoice');
   }
 
   const order = db
@@ -6702,6 +6711,9 @@ app.get('/invoice/membership', (req, res) => {
   if (!order || Number(order.userId) !== Number(access.userId)) {
     return res.status(404).send('Invoice not found');
   }
+  if (req.user.role !== 'admin' && Number(order.userId) !== Number(req.user.id)) {
+    return res.status(403).send('You are not allowed to view this invoice');
+  }
   if (String(order.status || '').trim().toLowerCase() !== 'paid') {
     return res.status(409).send('Invoice is available only for paid membership orders');
   }
@@ -6709,7 +6721,7 @@ app.get('/invoice/membership', (req, res) => {
   const user = getUserById(order.userId);
   const invoiceNo = `MB-${escapeHtml(order.orderId)}`;
   const paidAtLabel = formatInvoiceDateTime(order.paidAt);
-  const generatedAtLabel = formatInvoiceDateTime(order.paidAt || order.createdAt);
+  const generatedAtLabel = formatInvoiceDateTime(new Date());
   const amountInr = Math.round(Number(order.amountPaise || 0) / 100);
   const discountInr = Math.round(Number(order.discountAmountPaise || 0) / 100);
 
@@ -10707,9 +10719,13 @@ function formatDateTimeWithComma(bookingDate, bookingTime) {
 
 function formatInvoiceDateTime(value) {
   if (!value) return '';
-  const parsed = new Date(value);
+  const raw = String(value || '').trim();
+  const normalized = raw.replace(' ', 'T');
+  const hasExplicitTimezone = /(?:Z|[+\-]\d{2}:\d{2})$/i.test(normalized);
+  const parsed = value instanceof Date ? value : new Date(hasExplicitTimezone ? normalized : `${normalized}Z`);
   if (Number.isNaN(parsed.getTime())) return '';
   return parsed.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',

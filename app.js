@@ -12837,7 +12837,13 @@ function renderAdminCoupons() {
       ? `${item.recipientName ? `${item.recipientName} • ` : ''}${item.recipientEmail}`
       : 'No recipient';
     const festivalLabel = item.festivalName ? `Festival: ${item.festivalName}` : '';
-    const emailStatus = item.emailStatus ? item.emailStatus.toUpperCase() : 'N/A';
+    const emailStatusValue = String(item.emailStatus || '').trim().toLowerCase();
+    const emailStatus =
+      emailStatusValue === 'failed'
+        ? 'Needs resend'
+        : emailStatusValue
+          ? emailStatusValue.toUpperCase()
+          : 'Not sent';
     const emailedAtText = item.emailedAt ? formatDateOnly(item.emailedAt) : '-';
     row.innerHTML = `
       <div>
@@ -12847,7 +12853,7 @@ function renderAdminCoupons() {
         ${item.description ? `<p>${escapeHtml(item.description)}</p>` : ''}
         <p>Recipient: ${escapeHtml(recipientLabel)}</p>
         <p>Email: ${escapeHtml(emailStatus)} • Last sent: ${escapeHtml(emailedAtText)}</p>
-        ${item.emailStatus === 'failed' && item.emailError ? `<p>${escapeHtml(item.emailError)}</p>` : ''}
+        ${emailStatusValue === 'failed' && item.emailError ? `<p>${escapeHtml(item.emailError)}</p>` : ''}
         <p>Uses: ${escapeHtml(String(item.totalRedemptions || 0))}/${escapeHtml(maxRedemptions)}</p>
         <p>Expires: ${escapeHtml(expiresText)}</p>
       </div>
@@ -12873,7 +12879,7 @@ function renderAdminCoupons() {
     const resendBtn = document.createElement('button');
     resendBtn.type = 'button';
     resendBtn.className = 'btn btn-secondary';
-    resendBtn.textContent = item.emailStatus === 'sent' ? 'Resend' : 'Send';
+    resendBtn.textContent = emailStatusValue === 'sent' ? 'Resend' : 'Send';
     resendBtn.disabled = !item.recipientEmail;
     resendBtn.addEventListener('click', async () => {
       await resendAdminCoupon(item.id);
@@ -12887,10 +12893,13 @@ function renderAdminCoupons() {
       await setAdminCouponActive(item.id, !item.active);
     });
 
-    row.appendChild(copyBtn);
-    row.appendChild(toggleBtn);
-    row.appendChild(resendBtn);
-    row.appendChild(removeBtn);
+    const actions = document.createElement('div');
+    actions.className = 'admin-coupon-card-actions';
+    actions.appendChild(copyBtn);
+    actions.appendChild(toggleBtn);
+    actions.appendChild(resendBtn);
+    actions.appendChild(removeBtn);
+    row.appendChild(actions);
     elements.adminCouponList.appendChild(row);
   });
 
@@ -12944,9 +12953,12 @@ function renderAdminCoupons() {
       await deleteAdminCoupon(item.id);
     });
 
-    row.appendChild(copyBtn);
-    row.appendChild(toggleBtn);
-    row.appendChild(removeBtn);
+    const actions = document.createElement('div');
+    actions.className = 'admin-coupon-card-actions';
+    actions.appendChild(copyBtn);
+    actions.appendChild(toggleBtn);
+    actions.appendChild(removeBtn);
+    row.appendChild(actions);
     elements.adminSeasonalCouponList.appendChild(row);
   });
 }
@@ -13094,8 +13106,8 @@ async function saveAdminCoupon({ sendEmail = true } = {}) {
       showNotice({ title: 'Saved', body: `Coupon ${sentCode} saved.` });
     } else if (result.emailStatus === 'failed') {
       showNotice({
-        title: 'Email failed',
-        body: `Coupon ${sentCode} was created, but the email could not be sent. ${result.emailMessage || ''}`.trim(),
+        title: 'Coupon created',
+        body: `Coupon ${sentCode} was created. Email was not sent yet; use Send on the coupon card to retry. ${result.emailMessage || ''}`.trim(),
       });
     } else {
       showNotice({ title: 'Email sent', body: `Coupon ${sentCode} sent to ${recipientEmail}.` });

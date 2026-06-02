@@ -1202,7 +1202,7 @@ h1, h2, h3 {
 .membership-calendar-day {
   border: 0;
   border-radius: 999px;
-  padding: 10px 0;
+  padding: 12px 0;
   font-size: 0.88rem;
   min-height: 36px;
   text-align: center;
@@ -14433,6 +14433,300 @@ img {
 #memberChoiceGate .member-choice-experience-card,
 #membershipPlans .membership-card {
   min-width: 0;
+}
+
+.membership-dashboard-row > .membership-progress-card,
+.membership-dashboard-row > .membership-calendar-card,
+.membership-dashboard-row > .membership-highlight-card {
+  height: 100%;
+  padding: 20px;
+  margin-bottom: 0;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.membership-dashboard-row .membership-calendar-weekdays,
+.membership-dashboard-row .membership-calendar-grid {
+  margin-bottom: 0;
+}
+
+.membership-dashboard-row > .membership-highlight-card {
+  text-align: left;
+}
+
+.membership-dashboard-row > .membership-highlight-card .membership-highlight-kicker {
+  order: 1;
+}
+
+.membership-dashboard-row > .membership-highlight-card h4 {
+  order: 2;
+}
+
+.membership-dashboard-row > .membership-highlight-card .membership-highlight-visual {
+  order: 3;
+  margin-bottom: 0;
+  justify-content: flex-start;
+}
+
+.membership-dashboard-row > .membership-highlight-card .membership-copy {
+  order: 4;
+}
+
+.membership-dashboard-row > .membership-highlight-card .service-sticky-actions {
+  order: 5;
+  justify-content: flex-start;
+}
+
+body.auth-mode .portal {
+  align-content: start;
+  padding-top: clamp(32px, 7vh, 72px);
+  padding-bottom: clamp(24px, 5vh, 48px);
+}
+
+#authCard.auth-card {
+  width: min(560px, 92vw);
+  max-width: 560px;
+  padding: clamp(1.35rem, 2.4vw, 1.75rem);
+}
+
+#cmp-perfect-01 .member-choice-matrix-block {
+  height: auto;
+  grid-template-columns: minmax(220px, 0.42fr) minmax(0, 1fr);
+}
+
+#cmp-perfect-01 .member-choice-matrix-side {
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  padding: 24px;
+}
+
+#cmp-perfect-01 .member-choice-matrix-side h3,
+#cmp-perfect-01 .member-choice-matrix-side p {
+  margin: 0;
+}
+
+#cmp-perfect-01 .member-choice-matrix-table-wrap {
+  width: 100%;
+}
+
+#adminMembershipSection .admin-section-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.55fr);
+  align-items: end;
+}
+
+#adminMembershipSection .admin-inline-search {
+  min-width: min(100%, 360px);
+}
+
+#adminMembershipSearch {
+  width: 100%;
+  min-width: 0;
+}
+
+#adminCouponsSection .admin-discount-form {
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+}
+
+#adminCouponsSection .admin-coupon-expiry-field,
+#adminCouponsSection .admin-coupon-actions {
+  grid-column: auto;
+}
+
+#adminCouponsSection .admin-coupon-actions {
+  align-self: end;
+}
+
+#adminCouponsSection .admin-discount-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 1rem;
+}
+
+#adminCouponsSection .admin-discount-card > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.28rem;
+}
+
+#adminCouponsSection .admin-discount-card h3,
+#adminCouponsSection .admin-discount-card p {
+  margin: 0;
+}
+
+#adminCouponsSection .admin-discount-card h3 {
+  overflow-wrap: anywhere;
+}
+
+#adminCouponsSection .admin-discount-card .admin-coupon-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+#adminCouponsSection .admin-discount-card .btn {
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+#userCartSection {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+
+#userCartSection .panel-head,
+#userCartSection .table-wrap,
+#userCartSection .dialog-actions {
+  margin: 0;
+}
+
+#userCartSection .table-wrap {
+  padding-bottom: 4px;
+}
+
+#userCartSection #cartEmptyState {
+  margin: 18px 0 0;
+  padding: 16px 18px;
+  border: 1px solid rgba(201, 106, 45, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 251, 246, 0.72);
+}
+
+#userCartSection .dialog-actions {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(220px, auto) auto auto auto;
+  align-items: end;
+  gap: 12px;
+}
+
+#userCartSection .coupon-entry,
+#userCartSection .user-checkout-summary {
+  align-self: stretch;
+}
+
+#adminRescheduledSection .admin-section-toolbar,
+#adminRescheduledSection .admin-reschedule-date-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px) auto auto;
+  align-items: end;
+  gap: 12px;
+}
+
+#adminRescheduledSection .admin-section-toolbar .membership-copy {
+  padding-top: 0;
+}
+
+#adminRescheduledSection .admin-section-toolbar .admin-inline-search {
+  min-width: 0;
+  width: 100%;
+}
+
+#adminRescheduledSection .admin-reschedule-date-filter {
+  grid-template-columns: minmax(220px, 320px) auto auto minmax(0, 1fr);
+  justify-content: start;
+}
+
+#adminRescheduledSection .admin-reschedule-date-filter .admin-inline-search {
+  min-width: 0;
+  width: 100%;
+}
+
+.admin-reschedule-slot-filters {
+  grid-template-columns: repeat(auto-fit, minmax(146px, 1fr));
+  align-items: stretch;
+}
+
+.admin-slot-filter-btn {
+  grid-template-rows: auto auto;
+  min-height: 72px;
+  height: 100%;
+  padding: 0.62rem 0.75rem;
+}
+
+.admin-slot-filter-btn span {
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.15;
+}
+
+.admin-slot-filter-btn strong {
+  min-height: 1.1em;
+}
+
+#adminCouponsSection .admin-coupon-expiry-field {
+  grid-column: span 2;
+  display: grid;
+  gap: 0.35rem;
+}
+
+#adminCouponsSection .admin-coupon-expiry-controls {
+  grid-template-columns: minmax(150px, 1fr) minmax(130px, 0.75fr);
+  gap: 0.65rem;
+}
+
+#adminCouponsSection .admin-coupon-expiry-control {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+#adminCouponsSection .admin-coupon-expiry-control > span {
+  font-size: 0.68rem;
+  line-height: 1;
+  color: rgba(var(--ink-rgb), 0.62);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+#adminCouponsSection .admin-coupon-actions {
+  grid-column: span 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  align-self: end;
+  gap: 0.65rem;
+}
+
+#adminCouponsSection .admin-coupon-actions .btn {
+  width: 100%;
+  min-height: 42px;
+}
+
+@media (max-width: 900px) {
+  #cmp-perfect-01 .member-choice-matrix-block,
+  #adminMembershipSection .admin-section-toolbar,
+  #adminCouponsSection .admin-discount-form,
+  #adminCouponsSection .admin-discount-card {
+    grid-template-columns: 1fr;
+  }
+
+  #adminMembershipSection .admin-inline-search {
+    min-width: 100%;
+  }
+
+  #adminCouponsSection .admin-discount-card .admin-coupon-card-actions {
+    justify-content: flex-start;
+  }
+
+  #userCartSection .dialog-actions,
+  #adminRescheduledSection .admin-section-toolbar,
+  #adminRescheduledSection .admin-reschedule-date-filter,
+  #adminCouponsSection .admin-coupon-actions {
+    grid-template-columns: 1fr;
+  }
+
+  #adminCouponsSection .admin-coupon-expiry-field,
+  #adminCouponsSection .admin-coupon-actions {
+    grid-column: auto;
+  }
 }
 
 #memberChoiceGate .member-choice-experience-card,

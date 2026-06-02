@@ -116,8 +116,6 @@
               <a href="#cmp-perfect-01">Benefits</a>
               <a href="#member-choice-experience">Treatments</a>
               <a href="#member-choice-pricing">Pricing</a>
-              <a href="#member-choice-about">About Us</a>
-              <a href="#member-choice-faqs">FAQs</a>
             </nav>
             <button id="topExplorePlansBtn" class="member-choice-topbar-cta" type="button" aria-label="Sign in or login to member account">
               Sign Up / Log In
@@ -996,7 +994,7 @@
           <p class="membership-copy">Click any member card to view full details, invoices, and covered members.</p>
           <label class="admin-inline-search">
             <span>Search</span>
-            <input id="adminMembershipSearch" type="text" placeholder="Search by ID, username, email, or phone" />
+            <input id="adminMembershipSearch" type="text" placeholder="Search member by ID, name, email, or phone" />
           </label>
         </div>
         <div id="adminMembershipOrdersList" class="admin-membership-circles"></div>
@@ -1129,8 +1127,14 @@
           <label class="admin-coupon-expiry-field">
             Expires At
             <div class="admin-coupon-expiry-controls">
-              <input id="adminCouponExpiryDate" type="date" aria-label="Coupon expiry date" />
-              <input id="adminCouponExpiryTime" type="time" aria-label="Coupon expiry time" />
+              <span class="admin-coupon-expiry-control">
+                <span>Date</span>
+                <input id="adminCouponExpiryDate" type="date" aria-label="Coupon expiry date" />
+              </span>
+              <span class="admin-coupon-expiry-control">
+                <span>Time</span>
+                <input id="adminCouponExpiryTime" type="time" aria-label="Coupon expiry time" />
+              </span>
             </div>
             <small>Leave blank for no expiry.</small>
             <input id="adminCouponExpiresAt" type="hidden" />

@@ -77,6 +77,11 @@
   display: none !important;
 }
 
+#appArea[hidden],
+.top-actions[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -89,7 +94,8 @@ body {
 }
 
 body.auth-mode {
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 a,
@@ -150,7 +156,7 @@ body.auth-mode .portal {
   align-content: center;
   justify-items: center;
   gap: 1rem;
-  padding: 1.5rem 0;
+  padding: clamp(20px, 4vh, 48px) clamp(16px, 4vw, 56px);
 }
 
 .portal-header {
@@ -231,12 +237,12 @@ h1, h2, h3 {
 
 .auth-brand {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   margin-bottom: 0.55rem;
 }
 
 .auth-logo {
-  width: min(148px, 64%);
+  width: min(172px, 64%);
   height: auto;
   display: block;
 }
@@ -2967,12 +2973,35 @@ h1, h2, h3 {
 }
 
 .auth-card {
-  width: min(480px, 92vw);
-  max-width: 480px;
+  width: min(980px, 100%);
+  max-width: 980px;
   margin: 0 auto;
-  padding: 1.3rem 1.2rem 1.1rem;
+  padding: clamp(1rem, 2.2vw, 1.55rem);
   border-color: rgba(var(--brand-primary-rgb), 0.24);
   box-shadow: 0 20px 42px rgba(96, 62, 34, 0.14);
+  display: grid;
+  grid-template-columns: minmax(280px, 1.08fr) minmax(320px, 0.92fr);
+  align-items: center;
+  gap: clamp(1rem, 3vw, 2.25rem);
+  min-height: min(680px, calc(100vh - 96px));
+  overflow: hidden;
+}
+
+.auth-card::before {
+  content: '';
+  grid-row: 1 / span 9;
+  align-self: stretch;
+  min-height: 480px;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(55, 30, 18, 0.02), rgba(55, 30, 18, 0.28)),
+    url('assets/membership_choice_hero.png') center / cover no-repeat;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32), 0 18px 38px rgba(96, 62, 34, 0.12);
+}
+
+.auth-card > * {
+  grid-column: 2;
+  min-width: 0;
 }
 
 .auth-kicker {
@@ -2986,13 +3015,14 @@ h1, h2, h3 {
 
 .auth-card h2 {
   margin: 0.35rem 0 0.4rem;
-  font-size: 1.45rem;
+  font-size: clamp(1.75rem, 2.6vw, 2.35rem);
+  line-height: 1.08;
 }
 
 .auth-lead {
   margin: 0 0 0.9rem;
   color: rgba(var(--ink-rgb), 0.78);
-  font-size: 0.93rem;
+  font-size: clamp(0.95rem, 1.3vw, 1.05rem);
   line-height: 1.45;
 }
 
@@ -3002,7 +3032,7 @@ h1, h2, h3 {
 }
 
 .auth-form input {
-  height: 2.8rem;
+  height: 3rem;
   background: #fffdfb;
 }
 
@@ -3012,7 +3042,7 @@ h1, h2, h3 {
 }
 
 .auth-password-field input {
-  padding-right: 1.rem;
+  padding-right: 5.8rem;
 }
 
 .auth-password-field input[type='password'] {
@@ -3073,7 +3103,7 @@ h1, h2, h3 {
 }
 
 .auth-form .btn {
-  height: 2.8rem;
+  height: 3rem;
   margin-top: 0.15rem;
 }
 
@@ -14479,15 +14509,14 @@ img {
 }
 
 body.auth-mode .portal {
-  align-content: start;
-  padding-top: clamp(32px, 7vh, 72px);
-  padding-bottom: clamp(24px, 5vh, 48px);
+  align-content: center;
+  padding: clamp(20px, 4vh, 48px) clamp(16px, 4vw, 56px);
 }
 
 #authCard.auth-card {
-  width: min(560px, 92vw);
-  max-width: 560px;
-  padding: clamp(1.35rem, 2.4vw, 1.75rem);
+  width: min(980px, 100%);
+  max-width: 980px;
+  padding: clamp(1rem, 2.2vw, 1.55rem);
 }
 
 #cmp-perfect-01 .member-choice-matrix-block {
@@ -15411,5 +15440,77 @@ body.auth-mode .portal {
   .cart-empty-state {
     min-height: 136px;
     padding: 1.15rem 0.9rem;
+  }
+}
+
+@media (max-width: 900px) {
+  body.auth-mode .portal {
+    align-content: start;
+    padding: 18px 12px 28px;
+  }
+
+  #authCard.auth-card {
+    width: min(100%, 620px);
+    max-width: 620px;
+    min-height: 0;
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: clamp(18px, 5vw, 28px);
+  }
+
+  #authCard.auth-card::before {
+    display: none;
+  }
+
+  #authCard.auth-card > * {
+    grid-column: 1;
+  }
+
+  #authCard .auth-brand {
+    justify-content: center;
+  }
+
+  #authCard .auth-kicker,
+  #authCard.auth-card h2,
+  #authCard .auth-lead {
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  body.auth-mode .portal {
+    padding: 10px;
+  }
+
+  #authCard.auth-card {
+    width: 100%;
+    border-radius: 18px !important;
+    padding: 18px 14px;
+  }
+
+  #authCard .auth-logo {
+    width: min(138px, 70%);
+  }
+
+  #authCard.auth-card h2 {
+    font-size: 1.55rem;
+  }
+
+  #authCard .auth-lead,
+  #authCard .auth-switch,
+  #authCard .auth-forgot {
+    font-size: 0.86rem;
+  }
+
+  #authCard .auth-switch,
+  #authCard .auth-forgot {
+    justify-content: center;
+    flex-wrap: wrap;
+    text-align: center;
+  }
+
+  #authCard .auth-form input,
+  #authCard .auth-form .btn {
+    height: 2.85rem;
   }
 }

@@ -6475,6 +6475,17 @@ function renderAdminRescheduleSlotFilters() {
   }
 }
 
+function renderMemberChoiceGateCta() {
+  if (!elements.topExplorePlansBtn) return;
+  const isAuthenticatedUser = state.user?.role === 'user';
+  const label = isAuthenticatedUser ? 'Continue Booking' : 'Sign Up / Log In';
+  const ariaLabel = isAuthenticatedUser
+    ? 'Continue to services'
+    : 'Sign in or create an account to continue';
+  elements.topExplorePlansBtn.innerHTML = `${label} <span aria-hidden="true">&rarr;</span>`;
+  elements.topExplorePlansBtn.setAttribute('aria-label', ariaLabel);
+}
+
 function render() {
   const isAuthenticated = Boolean(state.user);
   const showAuthCard = !isAuthenticated && state.showAuthCard;
@@ -6482,6 +6493,7 @@ function render() {
   document.body.classList.toggle('auth-mode', showAuthCard);
   elements.authCard.hidden = !showAuthCard;
   elements.appArea.hidden = !isAuthenticated;
+  renderMemberChoiceGateCta();
 
   document.querySelectorAll('.app-only').forEach((el) => {
     el.hidden = !isAuthenticated;

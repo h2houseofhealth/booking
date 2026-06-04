@@ -15007,9 +15007,13 @@ body.auth-mode .portal {
     position: relative !important;
     inset: auto !important;
     width: 100% !important;
-    height: clamp(140px, 42vw, 210px) !important;
-    object-fit: cover !important;
-    object-position: center !important;
+    height: clamp(104px, 31vw, 180px) !important;
+    object-fit: contain !important;
+    object-position: center bottom !important;
+    background:
+      linear-gradient(90deg, rgba(255, 248, 242, 0.96), rgba(246, 229, 216, 0.68)),
+      #fff8f2;
+    border-radius: 16px;
   }
 }
 
@@ -15326,8 +15330,16 @@ body.auth-mode .portal {
   }
 
   .service-showcase-media {
-    aspect-ratio: 16 / 9;
-    max-height: 168px;
+    aspect-ratio: auto !important;
+    max-height: none !important;
+  }
+
+  .service-showcase-media img {
+    display: block;
+    width: 100%;
+    height: auto !important;
+    max-height: none !important;
+    object-fit: contain !important;
   }
 
   .service-showcase-content {
@@ -15439,7 +15451,7 @@ body.auth-mode .portal {
 
 @media (max-width: 480px) {
   .service-showcase-media {
-    max-height: 138px;
+    max-height: none !important;
   }
 
   .service-showcase-title {

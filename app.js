@@ -319,6 +319,7 @@ function isHydrogenCategory(category) {
 }
 
 const elements = {
+  authShell: document.getElementById('authShell'),
   authCard: document.getElementById('authCard'),
   authTitle: document.getElementById('authTitle'),
   authSwitchText: document.getElementById('authSwitchText'),
@@ -6491,6 +6492,7 @@ function render() {
   const showAuthCard = !isAuthenticated && state.showAuthCard;
   const showPublicChoiceGate = !isAuthenticated && !showAuthCard;
   document.body.classList.toggle('auth-mode', showAuthCard);
+  if (elements.authShell) elements.authShell.hidden = !showAuthCard;
   elements.authCard.hidden = !showAuthCard;
   elements.appArea.hidden = !isAuthenticated;
   renderMemberChoiceGateCta();

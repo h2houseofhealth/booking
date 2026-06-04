@@ -46,65 +46,75 @@
         </div>
       </header>
 
-      <section id="authCard" class="auth-card panel" aria-label="Authentication">
-        <div class="auth-brand">
-          <img class="auth-logo" src="assets/brand/H2_Logo.png" alt="H2 House of Health" />
+      <div id="authShell" class="auth-shell" hidden>
+        <div class="auth-hero" aria-hidden="true">
+          <img
+            class="auth-hero-img"
+            src="assets/membership_choice_hero.png"
+            alt=""
+          />
         </div>
-        <p class="auth-kicker">Secure Access</p>
-        <h2 id="authTitle">Sign in to continue</h2>
-        <p class="auth-lead">Book Hydrogen Sessions, Therapies, and Shots in one place.</p>
-        <form id="authForm" class="auth-form">
-          <label id="authNameWrap" hidden>
-            Full name
-            <input id="authName" type="text" autocomplete="name" />
-          </label>
-          <label id="authRoleWrap" hidden>
-            Register as
-            <select id="authRole">
-              <option value="user">Patient/User</option>
-            </select>
-          </label>
-          <label>
-            Email
-            <input id="authEmail" type="email" autocomplete="email" required />
-          </label>
-          <label>
-            Password
-            <div class="auth-password-field">
-              <input id="authPassword" type="password" autocomplete="current-password" required />
-              <button
-                type="button"
-                id="authPasswordToggleBtn"
-                class="password-toggle-btn"
-                aria-label="Show password"
-                aria-pressed="false"
-              >
-                <span class="password-toggle-text">Show password</span>
-              </button>
-            </div>
-          </label>
-          <label id="authOtpWrap" hidden>
-            OTP
-            <input id="authOtp" type="text" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit OTP" />
-          </label>
-          <div id="authOtpActions" class="auth-otp-actions" hidden>
-            <button type="button" id="authResendOtpBtn" class="link-btn">Resend OTP</button>
-            <span id="authResendOtpHint" class="auth-otp-hint" hidden></span>
+
+        <section id="authCard" class="auth-card panel" aria-label="Authentication" hidden>
+          <div class="auth-brand">
+            <img class="auth-logo" src="assets/brand/H2_Logo.png" alt="H2 House of Health" />
           </div>
-          <button id="authSubmitBtn" class="btn btn-primary" type="submit">Sign in</button>
-        </form>
-        <p id="authError" class="auth-error"></p>
-        <p class="auth-forgot">
-          <button type="button" id="forgotPasswordBtn" class="link-btn">Forgot password?</button>
-        </p>
-        <p class="auth-switch">
-          <span id="authSwitchText">Don't have an account?</span>
-          <button type="button" id="authSwitchBtn" class="link-btn">Register</button>
-        </p>
-        <p class="auth-switch">
-          <button type="button" id="authBackToChoicesBtn" class="link-btn">Back to choices</button>
-        </p>
-      </section>
+          <p class="auth-kicker">Secure Access</p>
+          <h2 id="authTitle">Sign in to continue</h2>
+          <p class="auth-lead">Book Hydrogen Sessions, Therapies, and Shots in one place.</p>
+          <form id="authForm" class="auth-form">
+            <label id="authNameWrap" hidden>
+              Full name
+              <input id="authName" type="text" autocomplete="name" />
+            </label>
+            <label id="authRoleWrap" hidden>
+              Register as
+              <select id="authRole">
+                <option value="user">Patient/User</option>
+              </select>
+            </label>
+            <label>
+              Email
+              <input id="authEmail" type="email" autocomplete="email" required />
+            </label>
+            <label>
+              Password
+              <div class="auth-password-field">
+                <input id="authPassword" type="password" autocomplete="current-password" required />
+                <button
+                  type="button"
+                  id="authPasswordToggleBtn"
+                  class="password-toggle-btn"
+                  aria-label="Show password"
+                  aria-pressed="false"
+                >
+                  <span class="password-toggle-text">Show password</span>
+                </button>
+              </div>
+            </label>
+            <label id="authOtpWrap" hidden>
+              OTP
+              <input id="authOtp" type="text" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit OTP" />
+            </label>
+            <div id="authOtpActions" class="auth-otp-actions" hidden>
+              <button type="button" id="authResendOtpBtn" class="link-btn">Resend OTP</button>
+              <span id="authResendOtpHint" class="auth-otp-hint" hidden></span>
+            </div>
+            <button id="authSubmitBtn" class="btn btn-primary" type="submit">Sign in</button>
+          </form>
+          <p id="authError" class="auth-error"></p>
+          <p class="auth-forgot">
+            <button type="button" id="forgotPasswordBtn" class="link-btn">Forgot password?</button>
+          </p>
+          <p class="auth-switch">
+            <span id="authSwitchText">Don't have an account?</span>
+            <button type="button" id="authSwitchBtn" class="link-btn">Register</button>
+          </p>
+          <p class="auth-switch">
+            <button type="button" id="authBackToChoicesBtn" class="link-btn">Back to choices</button>
+          </p>
+        </section>
+      </div>
 
       <section id="memberChoiceGate" class="panel app-only user-only member-choice-gate" aria-label="Choose membership mode" hidden>
         <div class="container">
@@ -429,11 +439,13 @@
               <button id="membershipQuickAddPersonBtn" class="btn btn-secondary" type="button">Add Person</button>
               <button id="membershipQuickHistoryBtn" class="btn btn-secondary" type="button">View History</button>
             </div>
-            <img
-              class="dashboard-hero-img"
-              src="assets/dashboard_membership_hero.png"
-              alt="Hydrogen therapy dashboard hero"
-            />
+            <div class="hero-banner dashboard-hero-banner">
+              <img
+                class="dashboard-hero-img"
+                src="assets/dashboard_membership_hero.png"
+                alt="Hydrogen therapy dashboard hero"
+              />
+            </div>
           </div>
           <div class="membership-stat-grid">
             <button id="membershipStatMembersCard" class="membership-stat-card" type="button">

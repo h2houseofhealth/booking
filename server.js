@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_super_secret_change_me';
 const IS_PRODUCTION = normalizeEnvValue(process.env.NODE_ENV).toLowerCase() === 'production';
 const AUTH_COOKIE_SECURE_MODE = normalizeEnvValue(process.env.AUTH_COOKIE_SECURE || 'auto').toLowerCase();
-const ALLOW_DEV_OTP_FALLBACK = !IS_PRODUCTION && normalizeEnvValue(process.env.ALLOW_DEV_OTP_FALLBACK || 'true').toLowerCase() !== 'false';
+const ALLOW_DEV_OTP_FALLBACK = normalizeEnvValue(process.env.ALLOW_DEV_OTP_FALLBACK || 'true').toLowerCase() !== 'false';
 const TOKEN_COOKIE = 'booking_portal_token';
 const ALLOWED_SLOT_START_TIMES = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
 const LEGACY_ALLOWED_SLOT_START_TIMES = ['10:30', '11:30', '12:30', '13:30', '14:30', '15:30', '16:30', '17:30', '18:30', '19:30'];
@@ -766,7 +766,7 @@ app.post('/api/auth/register/start', async (req, res) => {
     otpRequired: true,
     verificationRequired: true,
   };
-  if (!IS_PRODUCTION && ALLOW_DEV_OTP_FALLBACK && mailResult.delivery === 'console') {
+  if (ALLOW_DEV_OTP_FALLBACK && mailResult.delivery === 'console') {
     responsePayload.devOtp = otp;
   }
   return res.status(200).json(responsePayload);
@@ -1051,7 +1051,7 @@ app.post('/api/auth/password/forgot', async (req, res) => {
   const responsePayload = {
     message: mailResult.message || `Password reset OTP sent to ${email}. It expires in ${OTP_TTL_MINUTES} minutes.`,
   };
-  if (!IS_PRODUCTION && ALLOW_DEV_OTP_FALLBACK && mailResult.delivery === 'console') {
+  if (ALLOW_DEV_OTP_FALLBACK && mailResult.delivery === 'console') {
     responsePayload.devOtp = otp;
   }
   return res.json(responsePayload);
@@ -11042,7 +11042,7 @@ async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
       responseBody: sendGridError.responseBody,
     });
     const statusCode = sendGridError.statusCode;
-    if (ALLOW_DEV_OTP_FALLBACK && !IS_PRODUCTION) {
+    if (ALLOW_DEV_OTP_FALLBACK) {
       console.warn(
         `[DEV OTP FALLBACK] ${flowLabel} OTP for ${normalizedToEmail}: ${otpValue}. SendGrid request failed, using local fallback.`
       );

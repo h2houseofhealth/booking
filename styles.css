@@ -468,6 +468,12 @@ h1, h2, h3 {
   padding: 0.35rem 0.75rem;
 }
 
+@media (max-width: 768px) {
+  .membership-status.is-alert {
+    text-align: center;
+  }
+}
+
 .membership-copy {
   margin: 0.15rem 0 0.9rem;
   line-height: 1.6;

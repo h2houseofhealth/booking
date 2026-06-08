@@ -3179,7 +3179,7 @@ h1, h2, h3 {
 @media (min-width: 1024px) {
   .auth-shell {
     flex-direction: row;
-    align-items: flex-start;
+    align-items: stretch;
   }
 
   .auth-hero,
@@ -3189,6 +3189,13 @@ h1, h2, h3 {
 
   .auth-hero {
     height: auto;
+    display: flex;
+  }
+
+  .auth-hero-img {
+    height: auto;
+    min-height: 100%;
+    object-fit: cover;
   }
 
   .auth-card {

@@ -10704,8 +10704,20 @@ function formatDateTimeWithComma(bookingDate, bookingTime) {
   const normalizedDate = String(bookingDate || '').trim();
   const normalizedTime = String(bookingTime || '').trim();
   if (!normalizedDate || !normalizedTime) return `${normalizedDate} ${normalizedTime}`.trim();
+  if (normalizedTime.includes('-')) return `${formatDateAsDayMonthYear(normalizedDate)}, ${normalizedTime}`;
 
-  const dt = new Date(`${normalizedDate}T${normalizedTime}:00`);
+  let dt = new Date(`${normalizedDate}T${normalizedTime}:00`);
+  if (Number.isNaN(dt.getTime())) {
+    const timeMatch = normalizedTime.match(/^(\d{1,2}):(\d{2})\s*([ap]m)?$/i);
+    if (timeMatch) {
+      let hours = Number(timeMatch[1]);
+      const minutes = Number(timeMatch[2]);
+      const meridiem = String(timeMatch[3] || '').toLowerCase();
+      if (meridiem === 'pm' && hours < 12) hours += 12;
+      if (meridiem === 'am' && hours === 12) hours = 0;
+      dt = new Date(`${normalizedDate}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`);
+    }
+  }
   if (Number.isNaN(dt.getTime())) return `${normalizedDate}, ${normalizedTime}`;
 
   const datePart = formatDateAsDayMonthYear(dt);
@@ -10714,7 +10726,13 @@ function formatDateTimeWithComma(bookingDate, bookingTime) {
     minute: '2-digit',
     hour12: true,
   });
-  return `${datePart}, ${timePart}`;
+  const endTime = new Date(dt.getTime() + 60 * 60 * 1000);
+  const endTimePart = endTime.toLocaleTimeString('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return `${datePart}, ${timePart} - ${endTimePart}`;
 }
 
 function formatInvoiceDateTime(value) {

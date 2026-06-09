@@ -15685,3 +15685,117 @@ body.auth-mode .portal {
     line-height: 1.2 !important;
   }
 }
+
+/* Admin mobile viewport guard */
+@media (max-width: 900px) {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  body.auth-mode .portal {
+    display: grid;
+    justify-items: center;
+    align-content: start;
+    width: 100%;
+    max-width: 100vw;
+  }
+
+  #authShell.auth-shell {
+    width: 100%;
+    max-width: min(620px, calc(100vw - 24px));
+    margin-inline: auto;
+  }
+
+  #authCard.auth-card {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .app-only.admin-only.panel,
+  .admin-stats-grid,
+  .admin-tab-nav,
+  .admin-calendar-shell,
+  .admin-calendar-controls,
+  .admin-section-toolbar,
+  .admin-reschedule-date-filter,
+  .admin-discount-finder,
+  .admin-discount-dropdown,
+  .admin-discount-search-wrap,
+  .admin-discount-apply,
+  .admin-discount-manual,
+  .admin-discount-form,
+  .admin-coupon-actions {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .admin-section-toolbar,
+  .admin-reschedule-date-filter,
+  .admin-discount-apply,
+  .admin-coupon-actions {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .admin-section-toolbar .membership-copy,
+  .admin-section-toolbar .admin-inline-search,
+  .admin-reschedule-date-filter .admin-inline-search,
+  .admin-discount-form label,
+  .admin-discount-apply label,
+  .admin-coupon-expiry-field,
+  .admin-coupon-expiry-controls,
+  .admin-coupon-expiry-control {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    flex: 0 1 auto !important;
+  }
+
+  .admin-section-toolbar .btn,
+  .admin-reschedule-date-filter .btn,
+  .admin-discount-apply .btn,
+  .admin-discount-form .btn,
+  .admin-coupon-actions .btn {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .admin-inline-search input,
+  .admin-discount-form input,
+  .admin-discount-form select,
+  .admin-discount-search input,
+  .admin-coupon-expiry-control input {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .app-only.admin-only.panel .table-wrap {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+}
+
+@media (max-width: 480px) {
+  body.auth-mode .portal {
+    padding-inline: 10px;
+  }
+
+  #authShell.auth-shell {
+    max-width: calc(100vw - 20px);
+  }
+}

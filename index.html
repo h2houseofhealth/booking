@@ -12,11 +12,11 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260603-auth-layout" />
+    <link rel="stylesheet" href="styles.css?v=20260610-admin-search-fit" />
 
   </head>
 
-  <body class="auth-mode">
+  <body class="auth-mode app-booting">
     <div class="background-shape shape-a"></div>
     <div class="background-shape shape-b"></div>
     <div class="leaf leaf-top-right" aria-hidden="true"></div>
@@ -916,7 +916,7 @@
         <p id="adminUserCardsEmpty" class="empty-state" hidden>No users found.</p>
       </section>
 
-      <section id="adminHistorySection" class="panel app-only admin-only" aria-label="Admin bookings">
+      <section id="adminHistorySection" class="panel app-only admin-only" aria-label="Admin bookings" hidden>
         <div class="panel-head">
           <h2 id="adminTableTitle">Today's Bookings</h2>
         </div>
@@ -1006,7 +1006,7 @@
           <p class="membership-copy">Click any member card to view full details, invoices, and covered members.</p>
           <label class="admin-inline-search">
             <span>Search</span>
-            <input id="adminMembershipSearch" type="text" placeholder="Search member by ID, name, email, or phone" />
+            <input id="adminMembershipSearch" type="text" placeholder="Search by ID, name, email, phone" />
           </label>
         </div>
         <div id="adminMembershipOrdersList" class="admin-membership-circles"></div>
@@ -1450,7 +1450,21 @@
       </div>
     </dialog>
 
+    <dialog id="confirmDialog" class="notice-dialog confirm-dialog">
+      <div class="notice-shell">
+        <div class="dialog-head">
+          <h2 id="confirmDialogTitle">Confirm</h2>
+          <button id="confirmDialogCloseBtn" class="icon-btn" type="button" aria-label="Close">&times;</button>
+        </div>
+        <pre id="confirmDialogBody" class="notice-body"></pre>
+        <div class="dialog-actions confirm-dialog-actions">
+          <button id="confirmDialogCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="confirmDialogOkBtn" class="btn btn-primary" type="button">OK</button>
+        </div>
+      </div>
+    </dialog>
+
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-    <script src="app.js?v=19"></script>
+    <script src="app.js?v=21"></script>
   </body>
 </html>

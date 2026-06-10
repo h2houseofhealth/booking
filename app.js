@@ -530,6 +530,12 @@ const elements = {
   noticeDialogBody: document.getElementById('noticeDialogBody'),
   noticeDialogCloseBtn: document.getElementById('noticeDialogCloseBtn'),
   noticeDialogOkBtn: document.getElementById('noticeDialogOkBtn'),
+  confirmDialog: document.getElementById('confirmDialog'),
+  confirmDialogTitle: document.getElementById('confirmDialogTitle'),
+  confirmDialogBody: document.getElementById('confirmDialogBody'),
+  confirmDialogCloseBtn: document.getElementById('confirmDialogCloseBtn'),
+  confirmDialogCancelBtn: document.getElementById('confirmDialogCancelBtn'),
+  confirmDialogOkBtn: document.getElementById('confirmDialogOkBtn'),
   bookingEmailTimelineDialog: document.getElementById('bookingEmailTimelineDialog'),
   bookingEmailTimelineCloseBtn: document.getElementById('bookingEmailTimelineCloseBtn'),
   bookingEmailTimelineBookingId: document.getElementById('bookingEmailTimelineBookingId'),
@@ -6488,6 +6494,7 @@ function renderMemberChoiceGateCta() {
 }
 
 function render() {
+  document.body.classList.remove('app-booting');
   const isAuthenticated = Boolean(state.user);
   const showAuthCard = !isAuthenticated && state.showAuthCard;
   const showPublicChoiceGate = !isAuthenticated && !showAuthCard;

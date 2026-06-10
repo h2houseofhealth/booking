@@ -15787,6 +15787,17 @@ body.app-booting .user-only {
     min-width: 0;
   }
 
+  .admin-inline-search input[type='text'],
+  .admin-discount-search input[type='text'] {
+    height: 48px;
+    min-height: 48px;
+    padding: 0 14px;
+    font-size: 16px;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .app-only.admin-only.panel .table-wrap {
     width: 100%;
     max-width: 100%;
@@ -15803,5 +15814,11 @@ body.app-booting .user-only {
 
   #authShell.auth-shell {
     max-width: calc(100vw - 20px);
+  }
+
+  .admin-inline-search input[type='text'],
+  .admin-discount-search input[type='text'] {
+    padding-inline: 12px;
+    font-size: 15px;
   }
 }

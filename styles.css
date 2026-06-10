@@ -3201,7 +3201,7 @@ h1, h2, h3 {
   .auth-hero-img {
     height: auto;
     min-height: 100%;
-    object-fit: cover;
+    object-fit: fill !important;
   }
 
   .auth-card {
@@ -15687,6 +15687,12 @@ body.auth-mode .portal {
 }
 
 /* Admin mobile viewport guard */
+body.app-booting .app-only,
+body.app-booting .admin-only,
+body.app-booting .user-only {
+  display: none !important;
+}
+
 @media (max-width: 900px) {
   *,
   *::before,

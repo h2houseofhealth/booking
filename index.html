@@ -878,8 +878,19 @@
           </table>
           <div id="cartMobileList" class="cart-mobile-list" hidden></div>
           <div id="cartEmptyState" class="empty-state cart-empty-state" hidden>
-            <strong>Your cart is empty.</strong>
-            <span>Add a hydrogen session or therapy to review it here.</span>
+            <div class="cart-empty-copy">
+              <strong>Your cart is empty.</strong>
+              <span>Add a hydrogen session or therapy to review it here.</span>
+            </div>
+            <div class="cart-empty-recommendations" aria-label="Recommended next steps">
+              <span>Hydrogen sessions</span>
+              <span>IV therapies</span>
+              <span>Wellness add-ons</span>
+            </div>
+            <div class="cart-empty-actions">
+              <button id="cartEmptyBrowseBtn" class="btn btn-primary" type="button">Browse Services</button>
+              <button id="cartEmptyBookingsBtn" class="btn btn-secondary" type="button">View My Bookings</button>
+            </div>
           </div>
         </div>
         <div class="dialog-actions">

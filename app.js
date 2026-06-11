@@ -551,6 +551,8 @@ const elements = {
   userCheckoutSummary: document.getElementById('userCheckoutSummary'),
   cartContinueShoppingBtn: document.getElementById('cartContinueShoppingBtn'),
   cartViewBookingsBtn: document.getElementById('cartViewBookingsBtn'),
+  cartEmptyBrowseBtn: document.getElementById('cartEmptyBrowseBtn'),
+  cartEmptyBookingsBtn: document.getElementById('cartEmptyBookingsBtn'),
   membershipDialog: document.getElementById('membershipDialog'),
   membershipForm: document.getElementById('membershipForm'),
   membershipDialogTitle: document.getElementById('membershipDialogTitle'),
@@ -1520,22 +1522,16 @@ function attachEvents() {
     });
   });
   elements.cartContinueShoppingBtn?.addEventListener('click', () => {
-    resetServiceBrowserState();
-    state.activeUserTab = 'services';
-    window.location.hash = '#services';
-    render();
-    requestAnimationFrame(() => {
-      elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    navigateToUserServices();
+  });
+  elements.cartEmptyBrowseBtn?.addEventListener('click', () => {
+    navigateToUserServices();
   });
   elements.cartViewBookingsBtn?.addEventListener('click', () => {
-    resetServiceBrowserState();
-    state.activeUserTab = 'bookings';
-    window.location.hash = '#bookings';
-    render();
-    requestAnimationFrame(() => {
-      elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    navigateToUserBookings();
+  });
+  elements.cartEmptyBookingsBtn?.addEventListener('click', () => {
+    navigateToUserBookings();
   });
   elements.bookingsPayAllBtn?.addEventListener('click', async () => {
     try {
@@ -3361,6 +3357,26 @@ function resetServiceBrowserState() {
   state.slotHoldCounts = {};
   state.slotAvailabilityLoading = false;
   state.slotAutoShiftedNotice = '';
+}
+
+function navigateToUserServices() {
+  resetServiceBrowserState();
+  state.activeUserTab = 'services';
+  window.location.hash = '#services';
+  render();
+  requestAnimationFrame(() => {
+    elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+function navigateToUserBookings() {
+  resetServiceBrowserState();
+  state.activeUserTab = 'bookings';
+  window.location.hash = '#bookings';
+  render();
+  requestAnimationFrame(() => {
+    elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 }
 
 function getHydrogenSlotsForSubmit(requiredSlots) {
@@ -9998,6 +10014,7 @@ function getMembershipAddPersonPriceInr() {
 
 function openMembershipCheckoutDialog(plan, additionalPeople) {
   if (!elements.membershipDialog || !elements.membershipMembersGrid) return;
+  restoreMembershipCheckoutFooter();
   const targetPeopleCount = Number(plan.peopleCount || 1) + Number(additionalPeople || 0);
   const addPersonPriceInr = getMembershipAddPersonPriceInr();
   const estimatedAmountInr = Number(plan.priceInr || 0) + Number(additionalPeople || 0) * addPersonPriceInr;
@@ -10110,6 +10127,7 @@ function openMembershipAddPersonDialog() {
 
 function openMembershipAddPersonUpgradeCheckoutDialog() {
   if (!elements.membershipDialog || !elements.membershipMembersGrid) return;
+  restoreMembershipCheckoutFooter();
   if (state.user?.role !== 'user' || !isCurrentUserMembershipActive()) {
     showNotice({ title: 'Members only', body: 'Active membership is required to add a person.' });
     return;
@@ -12278,6 +12296,7 @@ async function confirmAdminRescheduleBooking(booking, otpValue = '') {
 
 function openMembershipDetailsModal(order) {
   if (!elements.membershipDialog) return;
+  configureAdminMembershipDetailsFooter(order);
   
   const amountInr = Math.round(Number(order.amountPaise || 0) / 100);
   const memberDetails = Array.isArray(order.memberDetails) ? order.memberDetails : [];
@@ -12339,14 +12358,34 @@ function openMembershipDetailsModal(order) {
     `;
   }
 
-  const actions = document.querySelector('.membership-dialog-actions');
-  if (actions) {
-    actions.innerHTML = '';
-    const invoiceBtn = createActionButton('View Invoice', () => openMembershipInvoice(order.orderId));
-    actions.appendChild(invoiceBtn);
-  }
-
   elements.membershipDialog.showModal();
+}
+
+function restoreMembershipCheckoutFooter() {
+  const actions = document.querySelector('.membership-dialog-actions');
+  const dialogActions = elements.membershipForm?.querySelector('.dialog-actions');
+  if (!actions) return;
+  actions.classList.remove('admin-membership-footer');
+  actions.innerHTML = '<button class="btn btn-primary" type="submit">Proceed to Payment</button>';
+  if (dialogActions && elements.cancelMembershipBtn) {
+    dialogActions.appendChild(elements.cancelMembershipBtn);
+  }
+}
+
+function configureAdminMembershipDetailsFooter(order) {
+  const actions = document.querySelector('.membership-dialog-actions');
+  const dialogActions = elements.membershipForm?.querySelector('.dialog-actions');
+  if (!actions) return;
+  actions.classList.add('admin-membership-footer');
+  actions.innerHTML = '';
+  const invoiceBtn = createActionButton('View Invoice', () => openMembershipInvoice(order.orderId));
+  actions.appendChild(invoiceBtn);
+  if (elements.cancelMembershipBtn) {
+    actions.appendChild(elements.cancelMembershipBtn);
+  }
+  if (dialogActions) {
+    dialogActions.innerHTML = '';
+  }
 }
 
 function renderAdminDiscountPhones() {

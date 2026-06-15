@@ -1929,7 +1929,7 @@ h1, h2, h3 {
   border-radius: 10px;
   border: 1px solid #cfe8dc;
   background: #e8f6ef;
-  color: #2d6b4b;
+  color: #4b290f;
   font-size: 0.82rem;
   font-weight: 600;
 }
@@ -1945,12 +1945,20 @@ h1, h2, h3 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #2f8a5c;
+  background: #8a2f2f;
   color: #fff;
   font-size: 0.64rem;
   line-height: 1;
 }
+.member-choice-card-highlight-neutral {
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  color: #666;
+}
 
+.member-choice-card-highlight-neutral .member-choice-card-highlight-icon {
+  opacity: 0.6;
+}
 .member-choice-card-list {
   margin: 0;
   padding: 0;
@@ -2788,7 +2796,7 @@ h1, h2, h3 {
 .membership-card-head {
   display: grid;
   gap: 0.35rem;
-  min-height: 4.9rem;
+  min-height: 7.5rem;
 }
 
 .membership-card h3 {
@@ -3175,7 +3183,15 @@ h1, h2, h3 {
 .auth-switch {
   margin-top: 0.2rem;
 }
+.auth-back {
+  margin-top: 1.5rem;
+}
 
+.auth-back .link-btn {
+  color: #777;
+  font-size: 0.92rem;
+  text-decoration: none;
+}
 .demo-cred {
   margin-top: 0.55rem;
   padding-top: 0.65rem;
@@ -6848,9 +6864,11 @@ th {
 .admin-payment-choice {
   display: grid;
   gap: 1.25rem;
-  padding: 1rem;
+  padding: 1.25rem !important;
 }
-
+.admin-payment-choice .membership-copy {
+  margin: 0 !important;
+}
 .admin-payment-choice-actions {
   align-items: stretch;
   flex-wrap: wrap;
@@ -8008,6 +8026,8 @@ table tbody td {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 0.85rem;
+  padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
 }
 
 .dialog-head h2 {
@@ -8094,10 +8114,11 @@ table tbody td {
 }
 
 .dialog-actions {
-  margin-top: 0.95rem;
+  margin-top: 0 !important;
   display: flex;
   justify-content: flex-end;
   gap: 0.6rem;
+  padding-top: 0 !important;
 }
 
 .user-reschedule-picker form {
@@ -8726,10 +8747,9 @@ table tbody td {
 }
 
 #membershipPlans .membership-plan-badge {
-  position: absolute;
-  top: 0.88rem;
-  right: 0.88rem;
-  padding: 0.22rem 0.56rem;
+  width: fit-content;
+  margin-top: 0.18rem;
+  padding: 0.26rem 0.62rem;
   border-radius: 999px;
   background: rgba(var(--brand-primary-rgb), 0.09);
   color: var(--brand-primary);
@@ -8737,9 +8757,11 @@ table tbody td {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  margin-bottom: -24px;
 }
 
 #membershipPlans .membership-card-head {
+  padding-top: 0.5rem;
   display: grid;
   grid-template-rows: auto auto minmax(2.3em, auto) auto;
   gap: 0.34rem;

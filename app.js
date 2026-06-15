@@ -7180,16 +7180,6 @@ function renderServices() {
         <p>${services.length} service${services.length === 1 ? '' : 's'} available</p>
       </div>
     `;
-    const collapseBtn = document.createElement('button');
-    collapseBtn.type = 'button';
-    collapseBtn.className = 'btn btn-secondary service-detail-close-btn';
-    collapseBtn.textContent = 'Back';
-    collapseBtn.addEventListener('click', () => {
-      state.expandedServiceCategories[category] = false;
-      state.selectedServiceCategory = null;
-      renderServices();
-    });
-    detailTopbar.appendChild(collapseBtn);
     detailsContainer.appendChild(detailTopbar);
 
     if (category === 'HYDROGEN SESSION') {

@@ -1,0 +1,25 @@
+
+> booking_management_portal@1.0.0 start
+> node server.js
+
+FRONTEND_ORIGINS: 
+HAS_EXPLICIT_CORS_ORIGINS: false
+ALLOWED_CORS_ORIGINS: [ 'http://localhost:3000', 'http://127.0.0.1:3000' ]
+Server listening on http://127.0.0.1:3000
+SendGrid OTP mailer configured with sender otpsender@zaynlevi.com
+SendGrid booking mailer configured with sender bookings@zaynlevi.com
+Port 3000 is in use. Retrying on 3001...
+Server listening on http://127.0.0.1:3001
+Port 3000 was busy. Using fallback port 3001.
+SendGrid OTP mailer configured with sender otpsender@zaynlevi.com
+SendGrid booking mailer configured with sender bookings@zaynlevi.com
+Port 3001 is in use. Retrying on 3002...
+Server listening on http://127.0.0.1:3002
+Port 3000 was busy. Using fallback port 3002.
+SendGrid OTP mailer configured with sender otpsender@zaynlevi.com
+SendGrid booking mailer configured with sender bookings@zaynlevi.com
+Port 3002 is in use. Retrying on 3003...
+Server listening on http://127.0.0.1:3003
+Port 3000 was busy. Using fallback port 3003.
+SendGrid OTP mailer configured with sender otpsender@zaynlevi.com
+SendGrid booking mailer configured with sender bookings@zaynlevi.com

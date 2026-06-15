@@ -9941,12 +9941,14 @@ function renderMembership() {
     card.className = 'membership-card';
     if (theme.featured) card.classList.add('is-featured');
     if (isCurrentBasePlan) card.classList.add('is-current');
+    
     card.innerHTML = `
-      ${theme.badge ? `<span class="membership-plan-badge">${escapeHtml(theme.badge)}</span>` : ''}
+      
       <div class="membership-card-head">
         <p class="membership-plan-name">${escapeHtml(coverageLabel)}</p>
         <h3>${escapeHtml(theme.title)}</h3>
         <p class="membership-card-subtitle">${escapeHtml(theme.subtitle)}</p>
+        ${theme.badge ? `<span class="membership-plan-badge">${escapeHtml(theme.badge)}</span>` : ''}
         <span class="membership-card-active${isCurrentBasePlan ? '' : ' is-placeholder'}">Current Plan</span>
       </div>
       <div class="membership-card-body">

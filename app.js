@@ -632,6 +632,7 @@ const elements = {
   userApplyCouponBtn: document.getElementById('userApplyCouponBtn'),
   userCouponPreview: document.getElementById('userCouponPreview'),
   userGeneralCoupons: document.getElementById('userGeneralCoupons'),
+  userCouponEntry: document.getElementById('userCouponEntry'),
 
   adminHistoryToggleBtn: document.getElementById('adminHistoryToggleBtn'),
   adminHistoryToggleBtnWrap: document.getElementById('adminHistoryToggleBtnWrap'),
@@ -6575,7 +6576,7 @@ function render() {
     });
   }
 
-  elements.userName.textContent = state.user.name;
+  elements.userName.textContent = formatDisplayName(state.user.name);
   elements.userRole.textContent = state.user.role;
   renderProfileAvatar();
   renderProfileMembershipBadge();
@@ -9612,7 +9613,7 @@ function renderMembership() {
     elements.membershipTakeMembershipBtn.hidden = active;
   }
 
-  const firstName = String(state.user?.name || 'Member').trim().split(/\s+/)[0] || 'Member';
+  const firstName = formatDisplayName(state.user?.name || 'Member').split(/\s+/)[0] || 'Member';
   if (elements.membershipWelcomeName) {
     elements.membershipWelcomeName.textContent = `Welcome, ${firstName}`;
   }
@@ -10409,6 +10410,12 @@ function renderCartCouponPreview() {
 
 function renderGeneralCouponsForTarget({ coupons = [], container, onApply }) {
   if (!container) return;
+  const isCartOffersContainer = container === elements.userGeneralCoupons;
+  if (isCartOffersContainer && getUserCartUnitCount(state.bookings || []) === 0) {
+    container.hidden = true;
+    container.innerHTML = '';
+    return;
+  }
   container.innerHTML = '';
   container.hidden = false;
   const heading = document.createElement('p');
@@ -10423,6 +10430,10 @@ function renderGeneralCouponsForTarget({ coupons = [], container, onApply }) {
       isCouponWithinDateRangeClient(coupon)
   );
   if (!visibleCoupons.length) {
+    if (isCartOffersContainer) {
+      container.hidden = true;
+      return;
+    }
     const empty = document.createElement('p');
     empty.className = 'membership-copy';
     empty.textContent = 'No active offers right now.';
@@ -11273,6 +11284,10 @@ function renderUserCheckoutSummary(bookings) {
   if (!summary.unitCount) {
     elements.userCheckoutSummary.hidden = true;
     elements.userCheckoutSummary.innerHTML = '';
+    if (elements.userCouponEntry) elements.userCouponEntry.hidden = true;
+    if (elements.userCouponCode) elements.userCouponCode.disabled = true;
+    if (elements.userApplyCouponBtn) elements.userApplyCouponBtn.disabled = true;
+    if (elements.userGeneralCoupons) elements.userGeneralCoupons.hidden = true;
     elements.bookingsPayAllBtn.hidden = true;
     elements.bookingsPayAllBtn.disabled = true;
     state.cartCouponPreview = null;
@@ -11290,6 +11305,9 @@ function renderUserCheckoutSummary(bookings) {
     ? `<span class="user-hold-alert">Complete payment within ${holdMinutes} minute${holdMinutes === 1 ? '' : 's'} to keep this booking.</span>`
     : '';
   elements.userCheckoutSummary.hidden = false;
+  if (elements.userCouponEntry) elements.userCouponEntry.hidden = false;
+  if (elements.userCouponCode) elements.userCouponCode.disabled = false;
+  if (elements.userApplyCouponBtn) elements.userApplyCouponBtn.disabled = false;
   elements.userCheckoutSummary.innerHTML = `
     <strong>${summary.unitCount} item${summary.unitCount === 1 ? '' : 's'} ready for one payment</strong>
     ${
@@ -14352,6 +14370,24 @@ function getServiceDisplayName(serviceOrName) {
   const normalized = name.toLowerCase();
   if (normalized === 'experience session' || normalized === 'demo session') return 'Demo Hydrogen Session';
   return name;
+}
+
+function formatDisplayName(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return '';
+  return raw
+    .split(/\s+/)
+    .map((part) =>
+      part
+        .split(/(-|')/)
+        .map((segment) => {
+          if (segment === '-' || segment === "'") return segment;
+          const lower = segment.toLowerCase();
+          return lower.charAt(0).toUpperCase() + lower.slice(1);
+        })
+        .join('')
+    )
+    .join(' ');
 }
 
 function escapeHtml(value) {

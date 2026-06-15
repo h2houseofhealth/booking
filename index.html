@@ -38,7 +38,13 @@
             </span>
           </button>
           <button id="cartBtn" class="btn btn-secondary cart-btn user-only" type="button" aria-label="Cart">
-            <span class="cart-btn-icon" aria-hidden="true">&#128722;</span>
+            <span class="cart-btn-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" focusable="false">
+                <path d="M4 5h2.2l1.6 8.4a1.4 1.4 0 0 0 1.38 1.16h7.6a1.4 1.4 0 0 0 1.35-1.03L19.6 8H7.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="9.4" cy="19" r="1.05" fill="currentColor"/>
+                <circle cx="17" cy="19" r="1.05" fill="currentColor"/>
+              </svg>
+            </span>
             <span class="cart-btn-text">Cart</span>
             <span id="cartCount" class="cart-count" hidden>0</span>
           </button>
@@ -905,12 +911,10 @@
             </label>
             <div id="userCouponPreview" class="coupon-preview" hidden></div>
           </div>
-          <div id="userCheckoutSummary" class="user-checkout-summary" hidden></div>
-          <button id="bookingsPayAllBtn" class="btn btn-primary" type="button" hidden>Pay Now</button>
-          <button id="cartContinueShoppingBtn" class="btn btn-secondary" type="button">Continue Shopping</button>
-          <button id="cartViewBookingsBtn" class="btn btn-secondary" type="button">My Bookings</button>
-        </div>
-      </section>
+            <div id="userCheckoutSummary" class="user-checkout-summary" hidden></div>
+            <button id="bookingsPayAllBtn" class="btn btn-primary" type="button" hidden>Pay Now</button>
+          </div>
+        </section>
 
       <section id="adminUserSessionsSection" class="panel app-only admin-only admin-user-session-panel" aria-label="Admin bookings" hidden>
         <div class="panel-head">

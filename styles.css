@@ -263,6 +263,9 @@ h1, h2, h3 {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  --cart-btn-size: clamp(48px, 4.4vw, 60px);
 }
 
 .cart-btn {
@@ -271,19 +274,32 @@ h1, h2, h3 {
   align-items: center;
   justify-content: center;
   gap: 0;
-  width: 44px;
-  height: 44px;
-  min-height: 44px;
+  width: var(--cart-btn-size);
+  height: var(--cart-btn-size);
+  min-height: var(--cart-btn-size);
   border-radius: 999px;
   padding: 0;
-  border: 1px solid rgba(var(--brand-primary-rgb), 0.22);
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 8px 20px rgba(var(--brand-primary-rgb), 0.2);
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.3);
+  background: linear-gradient(180deg, rgba(255, 251, 247, 0.98), rgba(244, 233, 222, 0.96));
+  color: var(--brand-primary);
+  box-shadow: 0 10px 24px rgba(var(--brand-primary-rgb), 0.16);
 }
 
 .cart-btn-icon {
-  font-size: 1.15rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(1.4rem, 1.2vw, 1.85rem);
+  height: clamp(1.4rem, 1.2vw, 1.85rem);
+  color: var(--brand-primary);
+  font-size: clamp(1.4rem, 1.2vw, 1.85rem);
   line-height: 1;
+}
+
+.cart-btn-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .cart-btn-text {
@@ -298,7 +314,7 @@ h1, h2, h3 {
   height: 1.22rem;
   padding: 0 0.28rem;
   border-radius: 999px;
-  background: linear-gradient(180deg, #dd7f56, #b55733);
+  background: linear-gradient(180deg, var(--brand-primary), var(--brand-primary-dark));
   color: #fff;
   display: inline-flex;
   align-items: center;
@@ -309,30 +325,33 @@ h1, h2, h3 {
 }
 
 .cart-btn.has-items {
-  border-color: rgba(var(--brand-primary-rgb), 0.38);
+  border-color: rgba(var(--brand-primary-rgb), 0.45);
+  box-shadow: 0 12px 28px rgba(var(--brand-primary-rgb), 0.2);
 }
 
 .cart-btn.is-active {
-  border-color: rgba(var(--brand-primary-rgb), 0.4);
-  background: rgba(var(--brand-primary-rgb), 0.12);
+  border-color: rgba(var(--brand-primary-rgb), 0.52);
+  background: linear-gradient(135deg, rgba(var(--brand-primary-rgb), 0.16), rgba(var(--brand-primary-rgb), 0.08));
   color: var(--brand-primary);
 }
 
 .top-actions .cart-btn {
-  width: 44px;
+  width: var(--cart-btn-size);
   justify-content: center;
 }
 
 .profile-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.7rem;
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 999px;
-  padding: 0.3rem 0.6rem 0.3rem 0.35rem;
+  padding: 0.5rem 0.85rem 0.5rem 0.45rem;
   cursor: pointer;
-  height: 40px;
+  height: auto;
+  min-height: 52px;
+  max-width: 100%;
   transition: all var(--transition-fast);
 }
 
@@ -362,44 +381,49 @@ h1, h2, h3 {
 
 .profile-meta {
   display: grid;
-  gap: 0.12rem;
+  gap: 0.18rem;
   font-size: 0.86rem;
   color: var(--ink);
+  align-content: center;
+  min-width: 0;
 }
 
 .profile-meta strong {
+  font-size: 1rem;
   font-weight: 700;
-  line-height: 1.28;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
 }
 
 .profile-badges {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.5rem;
   flex-wrap: wrap;
+  margin-top: 0.1rem;
 }
 
 .role-chip {
   display: inline-block;
-  padding: 0.15rem 0.45rem;
+  padding: 0.22rem 0.6rem;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
   text-transform: uppercase;
   font-size: 0.65rem;
   letter-spacing: 0.06em;
   font-weight: 600;
-  color: var(--ink-secondary);
-  background: var(--panel);
+  color: rgba(var(--ink-rgb), 0.6);
+  background: rgba(255, 255, 255, 0.88);
 }
 
 .membership-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.15rem 0.45rem;
+  padding: 0.22rem 0.6rem;
   border-radius: 999px;
-  border: 1px solid rgba(var(--brand-primary-rgb), 0.24);
-  background: rgba(var(--brand-primary-rgb), 0.12);
-  color: var(--brand-primary);
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.18);
+  background: rgba(var(--brand-primary-rgb), 0.08);
+  color: #b85a25;
   font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -8521,9 +8545,9 @@ table tbody td {
 
   .top-actions .cart-btn {
     position: relative;
-    width: 44px !important;
-    height: 44px;
-    min-height: 44px;
+    width: var(--cart-btn-size) !important;
+    height: var(--cart-btn-size);
+    min-height: var(--cart-btn-size);
     padding: 0;
     justify-content: center !important;
     align-self: auto;
@@ -13683,7 +13707,7 @@ img {
 }
 
 #userBookingsSection .dialog-actions {
-  justify-content: flex-start;
+  justify-content: flex-end;
   margin-top: 1rem;
 }
 
@@ -14620,6 +14644,22 @@ img {
   }
 }
 
+#userBookingsSection .dialog-actions {
+  margin-bottom: 0.75rem;
+}
+
+@media (max-width: 700px) {
+  #userBookingsSection .dialog-actions {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.35rem;
+  }
+
+  #userBookingsSection #bookingsBackBtn {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
 /* Final responsive alignment overrides */
 .membership-stat-grid,
 .membership-dashboard-row,
@@ -15260,7 +15300,7 @@ body.auth-mode .portal {
 
   .top-actions {
     display: grid !important;
-    grid-template-columns: 52px minmax(0, 1fr) !important;
+    grid-template-columns: var(--cart-btn-size) minmax(0, 1fr) !important;
     gap: 10px !important;
     width: 100%;
     align-items: center;
@@ -15269,11 +15309,11 @@ body.auth-mode .portal {
   .top-actions .profile-btn {
     grid-column: 1 / -1;
     width: 100%;
-    min-height: 48px;
+    min-height: 54px;
     height: auto;
     justify-content: flex-start;
-    gap: 10px;
-    padding: 5px 14px 5px 6px;
+    gap: 12px;
+    padding: 8px 14px 8px 8px;
     border-radius: 999px;
   }
 
@@ -15285,8 +15325,8 @@ body.auth-mode .portal {
 
   .top-actions .profile-meta {
     min-width: 0;
-    gap: 2px;
-    line-height: 1.1;
+    gap: 6px;
+    line-height: 1.08;
   }
 
   .top-actions .profile-meta strong {
@@ -15298,7 +15338,7 @@ body.auth-mode .portal {
 
   .top-actions .profile-badges {
     min-width: 0;
-    gap: 5px;
+    gap: 10px;
   }
 
   .top-actions .role-chip,
@@ -15309,9 +15349,9 @@ body.auth-mode .portal {
 
   .top-actions .cart-btn {
     grid-column: 1;
-    width: 46px !important;
-    height: 46px;
-    min-height: 46px;
+    width: var(--cart-btn-size) !important;
+    height: var(--cart-btn-size);
+    min-height: var(--cart-btn-size);
     align-self: stretch;
   }
 

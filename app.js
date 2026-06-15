@@ -7626,6 +7626,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     state.selectedHydrogenAddOnServiceName = selectedValue || shotSelect.value || '';
     if (selectedValue) shotSelect.value = '';
     refreshAddOnScheduleSelectors();
+    renderServices();
   });
   shotSelect.addEventListener('change', () => {
     const selectedValue = shotSelect.value || '';
@@ -7640,6 +7641,7 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     state.selectedHydrogenAddOnServiceName = selectedValue || therapySelect.value || '';
     if (selectedValue) therapySelect.value = '';
     refreshAddOnScheduleSelectors();
+    renderServices();
   });
 
   const refreshAddOnScheduleSelectors = () => {
@@ -7910,14 +7912,14 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     selectedAddOnPriceInr <= 0;
   const stickyPriceText =
     isTopUpFlow
-      ? `₹${selectedServicePrice.toLocaleString('en-IN')}`
+      ? `₹${(selectedServicePrice + selectedAddOnPriceInr).toLocaleString('en-IN')}`
       : hydrogenSessionSummary.active && includedSessionsRemaining > 0
       ? `${includedSessionsRemaining} hydrogen session${includedSessionsRemaining === 1 ? '' : 's'} left in membership`
       : selectedServiceIsMembershipOnly
         ? selectedServiceHasMemberAccess
           ? 'Included in Membership'
           : 'Members only'
-        : `₹${selectedServicePrice.toLocaleString('en-IN')}`;
+        : `₹${(selectedServicePrice + selectedAddOnPriceInr).toLocaleString('en-IN')}`;
   const stickyPriceClass = /₹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
 
   const stickyWrap = document.createElement('div');

@@ -651,6 +651,8 @@ const elements = {
   adminAllBookingStartDate: document.getElementById('adminAllBookingStartDate'),
   adminAllBookingEndDate: document.getElementById('adminAllBookingEndDate'),
   adminAllBookingDateResetBtn: document.getElementById('adminAllBookingDateResetBtn'),
+  adminAllBookingDatePrevBtn: document.getElementById('adminAllBookingDatePrevBtn'),
+  adminAllBookingDateNextBtn: document.getElementById('adminAllBookingDateNextBtn'),
   adminAllBookingSlotDate: document.getElementById('adminAllBookingSlotDate'),
   adminAllBookingSlotTime: document.getElementById('adminAllBookingSlotTime'),
   adminAllBookingSlotResetBtn: document.getElementById('adminAllBookingSlotResetBtn'),
@@ -1879,6 +1881,14 @@ function attachEvents() {
     if (elements.adminAllBookingStartDate) elements.adminAllBookingStartDate.value = '';
     if (elements.adminAllBookingEndDate) elements.adminAllBookingEndDate.value = '';
     if (elements.adminAllBookingSearch) elements.adminAllBookingSearch.value = '';
+    render();
+  });
+  elements.adminAllBookingDatePrevBtn?.addEventListener('click', () => {
+    shiftAdminAllBookingDateFilters(-1);
+    render();
+  });
+  elements.adminAllBookingDateNextBtn?.addEventListener('click', () => {
+    shiftAdminAllBookingDateFilters(1);
     render();
   });
   elements.adminAllBookingSlotDate?.addEventListener('change', () => {
@@ -9349,6 +9359,18 @@ function addDaysToIsoDate(dateKey, daysToAdd = 0) {
   const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
   date.setDate(date.getDate() + Number(daysToAdd || 0));
   return toLocalIsoDate(date);
+}
+
+function shiftAdminAllBookingDateFilters(daysToAdd = 0) {
+  const currentStart = String(state.adminAllBookingDateFilters?.startDate || '').trim();
+  const currentEnd = String(state.adminAllBookingDateFilters?.endDate || '').trim();
+  const fallbackDate = getTodayIsoDate();
+  const effectiveStart = currentStart || currentEnd || fallbackDate;
+  const effectiveEnd = currentEnd || currentStart || effectiveStart;
+  state.adminAllBookingDateFilters = {
+    startDate: addDaysToIsoDate(effectiveStart, daysToAdd) || effectiveStart,
+    endDate: addDaysToIsoDate(effectiveEnd, daysToAdd) || effectiveEnd,
+  };
 }
 
 function isBookingSlotInPast(bookingDate, bookingTime) {

@@ -7924,10 +7924,26 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
 
   const stickyWrap = document.createElement('div');
   stickyWrap.className = 'service-sticky-book';
+
+  let priceBreakdownHtml = '';
+  if (/₹|Rs\./i.test(stickyPriceText)) {
+    priceBreakdownHtml = `<div class="sticky-price-breakdown">`;
+    if (selectedServicePrice > 0) {
+      priceBreakdownHtml += `<div class="breakdown-item"><span>${escapeHtml(selectedService.name)}</span><span>₹${selectedServicePrice.toLocaleString('en-IN')}</span></div>`;
+    }
+    if (selectedAddOnService && selectedAddOnPriceInr > 0) {
+      priceBreakdownHtml += `<div class="breakdown-item"><span>${escapeHtml(selectedAddOnService.name)}</span><span>₹${selectedAddOnPriceInr.toLocaleString('en-IN')}</span></div>`;
+    }
+    if ((selectedServicePrice + selectedAddOnPriceInr) > 0) {
+      priceBreakdownHtml += `<div class="breakdown-total"><span>Total</span><span>₹${(selectedServicePrice + selectedAddOnPriceInr).toLocaleString('en-IN')}</span></div>`;
+    }
+    priceBreakdownHtml += `</div>`;
+  }
+
   stickyWrap.innerHTML = `
     <div class="service-sticky-meta">
       <strong>${escapeHtml(selectedService.name)}</strong>
-      <span class="${stickyPriceClass}">${escapeHtml(stickyPriceText)}</span>
+      ${priceBreakdownHtml || `<span class="${stickyPriceClass}">${escapeHtml(stickyPriceText)}</span>`}
     </div>
   `;
   const stickyButton = document.createElement('button');

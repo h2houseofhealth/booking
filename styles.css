@@ -7720,6 +7720,47 @@ table tbody td {
   color: var(--brand-primary);
 }
 
+.sticky-price-breakdown {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(var(--brand-primary-rgb), 0.15);
+}
+
+.breakdown-item,
+.breakdown-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.breakdown-item {
+  color: rgba(var(--ink-rgb), 0.7);
+  font-weight: 500;
+}
+
+.breakdown-item span:last-child {
+  text-align: right;
+  min-width: fit-content;
+}
+
+.breakdown-total {
+  font-weight: 700;
+  color: var(--brand-primary);
+  margin-top: 0.2rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(var(--brand-primary-rgb), 0.15);
+}
+
+.breakdown-total span:last-child {
+  font-size: 1.1rem;
+  text-align: right;
+  min-width: fit-content;
+}
+
 .service-sticky-actions {
   display: flex;
   align-items: center;

@@ -3335,6 +3335,20 @@ h1, h2, h3 {
   min-width: min(420px, 100%);
 }
 
+.admin-date-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  align-self: end;
+}
+
+.admin-date-nav-btn.btn {
+  min-width: 2.6rem;
+  padding-inline: 0.85rem;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
 .admin-section-toolbar .btn {
   align-self: end;
 }

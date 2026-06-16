@@ -89,6 +89,7 @@ const state = {
   showAuthCard: false,
   activeUserTab: 'services',
   servicesBackTargetTab: '',
+  comboSidebarOpen: false,
   userBookingsFilter: 'all',
   memberSessionDisplayCount: 0,
   adminActiveTab: 'calendar',
@@ -390,6 +391,10 @@ const elements = {
   userTabMembership: document.getElementById('userTabMembership'),
   userTabBookings: document.getElementById('userTabBookings'),
   userTabCart: document.getElementById('userTabCart'),
+  comboSidebar: document.getElementById('comboSidebar'),
+  comboSidebarTab: document.getElementById('comboSidebarTab'),
+  comboSidebarPanel: document.getElementById('comboSidebarPanel'),
+  comboSidebarClose: document.getElementById('comboSidebarClose'),
   joinAsMemberBtn: document.getElementById('joinAsMemberBtn'),
   topExplorePlansBtn: document.getElementById('topExplorePlansBtn'),
   continueAsMemberBtn: document.getElementById('continueAsMemberBtn'),
@@ -786,6 +791,24 @@ function resetServicesUiStateForUserSwitch() {
   resetServiceBrowserState();
   state.expandedServiceCategories = {};
   state.serviceDetailSelections = {};
+  state.comboSidebarOpen = false;
+}
+
+function syncComboSidebarUi() {
+  const isServicesView = Boolean(state.user) && state.user.role !== 'admin' && (state.activeUserTab || 'services') === 'services';
+
+  if (elements.comboSidebar) {
+    elements.comboSidebar.hidden = !isServicesView;
+    elements.comboSidebar.classList.toggle('is-open', isServicesView && state.comboSidebarOpen);
+  }
+
+  if (elements.comboSidebarTab) {
+    elements.comboSidebarTab.setAttribute('aria-expanded', isServicesView && state.comboSidebarOpen ? 'true' : 'false');
+  }
+
+  if (elements.comboSidebarPanel) {
+    elements.comboSidebarPanel.setAttribute('aria-hidden', isServicesView && state.comboSidebarOpen ? 'false' : 'true');
+  }
 }
 
 function routeAfterAuthSuccess() {
@@ -1261,6 +1284,7 @@ function attachEvents() {
     state.selectedHydrogenFlow = 'topup';
     state.servicesBackTargetTab = '';
     state.activeUserTab = 'services';
+    state.comboSidebarOpen = false;
     window.location.hash = '#services';
     render();
   });
@@ -1509,11 +1533,21 @@ function attachEvents() {
   elements.servicesNextBtn?.addEventListener('click', () => {
     resetServiceBrowserState();
     state.activeUserTab = 'cart';
+    state.comboSidebarOpen = false;
     window.location.hash = '#cart';
     render();
     requestAnimationFrame(() => {
       elements.userCartSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
+  });
+  elements.comboSidebarTab?.addEventListener('click', () => {
+    if ((state.activeUserTab || 'services') !== 'services') return;
+    state.comboSidebarOpen = !state.comboSidebarOpen;
+    render();
+  });
+  elements.comboSidebarClose?.addEventListener('click', () => {
+    state.comboSidebarOpen = false;
+    render();
   });
   elements.bookingsBackBtn?.addEventListener('click', () => {
     resetServiceBrowserState();
@@ -3373,6 +3407,7 @@ function resetServiceBrowserState() {
 function navigateToUserServices() {
   resetServiceBrowserState();
   state.activeUserTab = 'services';
+  state.comboSidebarOpen = false;
   window.location.hash = '#services';
   render();
   requestAnimationFrame(() => {
@@ -6597,8 +6632,10 @@ function render() {
     if (elements.servicesSection) elements.servicesSection.hidden = activeTab !== 'services';
     if (elements.userBookingsSection) elements.userBookingsSection.hidden = activeTab !== 'bookings';
     if (elements.userCartSection) elements.userCartSection.hidden = activeTab !== 'cart';
+    if (activeTab !== 'services') state.comboSidebarOpen = false;
   } else {
     if (elements.bookingFiltersSection) elements.bookingFiltersSection.hidden = false;
+    state.comboSidebarOpen = false;
   }
 
   renderStats(state.bookings);
@@ -6608,6 +6645,7 @@ function render() {
   renderMembershipCheckoutSummary();
   renderCartCouponPreview();
   renderGeneralCoupons();
+  syncComboSidebarUi();
 
   if (isAdmin) {
     let activeAdminTab = state.adminActiveTab || 'bookings';

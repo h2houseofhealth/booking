@@ -2074,6 +2074,60 @@ app.get('/api/membership/orders', requireAuth, (req, res) => {
   return res.json({ orders });
 });
 
+app.get('/api/membership/members', requireAuth, (req, res) => {
+  if (req.user.role !== 'user') {
+    return res.status(403).json({ message: 'only users can access membership members' });
+  }
+
+  const subscriptionId = String(req.user.membershipSubscriptionId || getMembershipSubscriptionId(req.user.id) || '').trim();
+  if (!subscriptionId) {
+    return res.status(404).json({ message: 'membership not found' });
+  }
+
+  const subscription = getMembershipSubscriptionById(subscriptionId);
+  if (!subscription) {
+    return res.status(404).json({ message: 'membership not found' });
+  }
+  if (!isMembershipSubscriptionActive(subscription)) {
+    return res.status(404).json({ message: 'membership is not active' });
+  }
+
+  const members = db
+    .prepare(
+      `SELECT id,
+              user_id AS userId,
+              email,
+              name,
+              place,
+              contact_number AS contactNumber,
+              is_registered AS isRegistered,
+              created_at AS createdAt,
+              updated_at AS updatedAt
+       FROM membership_subscription_members
+       WHERE subscription_id = ?
+       ORDER BY id ASC`
+    )
+    .all(subscriptionId)
+    .map((row) => ({
+      id: Number(row.id),
+      userId: Number(row.userId || 0) || null,
+      email: row.email || '',
+      name: row.name || '',
+      place: row.place || '',
+      contactNumber: row.contactNumber || '',
+      isRegistered: Number(row.isRegistered || 0) === 1,
+      createdAt: row.createdAt || null,
+      updatedAt: row.updatedAt || null,
+    }));
+
+  return res.json({
+    subscription,
+    members,
+    totalCovered: Number(subscription.peopleCount || members.length || 0),
+    slotsRemaining: Math.max(0, Number(subscription.peopleCount || members.length || 0) - members.length),
+  });
+});
+
 app.get('/api/membership-orders/:orderId/invoice-link', requireAuth, (req, res) => {
   const orderId = String(req.params.orderId || '').trim();
   if (!orderId) {

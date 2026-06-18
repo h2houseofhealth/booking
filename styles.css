@@ -560,6 +560,8 @@ h1, h2, h3 {
   display: grid;
   gap: 20px;
   animation: membershipFadeUp 0.5s ease both;
+  position: relative;
+  overflow: visible;
 }
 
 .membership-dashboard::after {
@@ -586,7 +588,7 @@ h1, h2, h3 {
     linear-gradient(90deg, rgba(255,248,242,0.98) 0%, rgba(248,236,226,0.92) 42%, rgba(241,220,203,0.74) 65%, rgba(227,182,148,0.2) 100%),
     radial-gradient(circle at 56% 48%, rgba(226, 195, 170, 0.28), transparent 22%);
   box-shadow: 0 16px 34px rgba(115, 77, 49, 0.07);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .membership-dashboard-head::after {
@@ -4347,7 +4349,91 @@ h1, h2, h3 {
 .hydrogen-addon-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.65rem;
+  gap: 0.9rem 1rem;
+}
+
+.iv-addon-panel .hydrogen-addon-grid {
+  row-gap: 0.95rem;
+  column-gap: 1rem;
+}
+
+.hydrogen-addon-hydrogen-schedule {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.25rem;
+}
+
+.hydrogen-addon-hydrogen-schedule[hidden] {
+  display: none;
+}
+
+.hydrogen-addon-schedule-head {
+  display: grid;
+  gap: 0.18rem;
+  padding-top: 0.1rem;
+}
+
+.hydrogen-addon-schedule-head strong {
+  color: var(--brand-primary);
+  font-size: 0.95rem;
+}
+
+.hydrogen-addon-schedule-head span {
+  color: rgba(var(--ink-rgb), 0.72);
+  font-size: 0.82rem;
+}
+
+.hydrogen-addon-schedule-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.hydrogen-addon-schedule-row {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.hydrogen-addon-schedule-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.hydrogen-addon-schedule-row-head strong {
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+
+.hydrogen-addon-schedule-row-head small {
+  color: rgba(var(--ink-rgb), 0.62);
+}
+
+.hydrogen-addon-schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem 0.9rem;
+}
+
+.hydrogen-addon-schedule-grid label {
+  min-width: 0;
+}
+
+.hydrogen-addon-schedule-grid input,
+.hydrogen-addon-schedule-grid select {
+  width: 100%;
+  min-width: 0;
+}
+
+.hydrogen-addon-session-date[disabled] {
+  color: rgba(var(--ink-rgb), 0.72);
+  cursor: not-allowed;
+  background: rgba(245, 241, 236, 0.9);
 }
 
 .hydrogen-addon-note {
@@ -8156,6 +8242,107 @@ table tbody td {
 #bookingDialog #addOnDateLabel,
 #bookingDialog #addOnTimeLabel {
   min-width: 0;
+}
+
+#bookingDialog #addOnServiceLabel {
+  grid-column: 1 / -1;
+}
+
+#bookingDialog #addOnDateLabel,
+#bookingDialog #addOnTimeLabel {
+  margin-top: 0.15rem;
+}
+
+#bookingDialog .booking-hydrogen-addon-scheduler {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+  grid-column: 1 / -1;
+  padding: 0.9rem;
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+#bookingDialog .booking-hydrogen-addon-scheduler[hidden] {
+  display: none;
+}
+
+.booking-hydrogen-addon-head {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.booking-hydrogen-addon-head strong {
+  color: var(--brand-primary);
+  font-size: 0.98rem;
+}
+
+.booking-hydrogen-addon-head span {
+  font-size: 0.86rem;
+  color: rgba(var(--ink-rgb), 0.68);
+}
+
+.booking-hydrogen-addon-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.booking-hydrogen-addon-session {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.booking-hydrogen-addon-session-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.booking-hydrogen-addon-session-head strong {
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+
+.booking-hydrogen-addon-session-head small {
+  color: rgba(var(--ink-rgb), 0.62);
+}
+
+.booking-hydrogen-addon-session-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem 0.9rem;
+}
+
+.booking-hydrogen-addon-session-grid label {
+  min-width: 0;
+}
+
+.booking-hydrogen-addon-session-grid input,
+.booking-hydrogen-addon-session-grid select {
+  width: 100%;
+  min-width: 0;
+}
+
+.booking-hydrogen-addon-session-date[disabled] {
+  color: rgba(var(--ink-rgb), 0.72);
+  cursor: not-allowed;
+  background: rgba(245, 241, 236, 0.9);
+}
+
+@media (max-width: 640px) {
+  .booking-hydrogen-addon-session-grid {
+    grid-template-columns: 1fr;
+  }
+  .hydrogen-addon-schedule-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
@@ -13303,88 +13490,89 @@ img {
 }
 
 .combo-sidebar {
-  position: fixed;
-  top: clamp(6.5rem, 22vh, 11rem);
-  right: 0;
-  width: 0;
-  height: 0;
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: auto;
+  height: auto;
   z-index: 80;
   pointer-events: none;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  max-width: calc(100% - 2rem);
 }
 
 .combo-sidebar-tab {
-  position: absolute;
-  top: 0;
-  right: 0;
   z-index: 2;
   pointer-events: auto;
   display: inline-flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 0.3rem;
-  width: 3.5rem;
-  min-width: 3.5rem;
-  min-height: 10rem;
-  padding: 0.7rem 0.45rem;
+  gap: 0.55rem;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.8rem 1rem;
   border: 1px solid rgba(147, 70, 38, 0.22);
-  border-right: 0;
-  border-radius: 18px 0 0 18px;
+  border-radius: 999px;
   background: linear-gradient(180deg, #b65d31 0%, #8c3c1e 100%);
   color: #fff;
-  box-shadow: -12px 18px 30px rgba(110, 63, 34, 0.24);
+  box-shadow: 0 14px 28px rgba(110, 63, 34, 0.2);
   cursor: pointer;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
   font-family: var(--font-brand);
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .combo-sidebar-tab-icon {
-  writing-mode: horizontal-tb;
   font-size: 0.95rem;
   line-height: 1;
 }
 
 .combo-sidebar-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
+  position: relative;
   z-index: 1;
   pointer-events: auto;
-  width: min(620px, calc(100vw - 4.75rem));
-  max-width: calc(100vw - 4.75rem);
-  aspect-ratio: 1024 / 451;
+  width: clamp(280px, 40vw, 520px);
+  max-width: min(520px, calc(100vw - 5rem));
   height: auto;
   max-height: calc(100vh - 4.5rem);
   border: 1px solid rgba(147, 70, 38, 0.14);
-  border-right: 0;
-  border-radius: 24px 0 0 24px;
+  border-radius: 24px;
   background: rgba(255, 252, 248, 0.98);
-  box-shadow: -20px 24px 44px rgba(91, 55, 30, 0.18);
-  transform: translateX(100%);
-  transition: transform 0.32s ease;
+  box-shadow: 0 24px 44px rgba(91, 55, 30, 0.18);
+  transform: translateY(-0.35rem);
+  transition: opacity 0.24s ease, transform 0.24s ease;
   overflow: hidden;
+  display: none;
 }
 
 .combo-sidebar.is-open .combo-sidebar-panel {
-  transform: translateX(0);
+  display: block;
+  transform: translateY(0);
 }
 
 .combo-sidebar-image {
   width: 100%;
   height: auto;
   display: block;
+  object-fit: contain;
+  object-position: center bottom;
   background: rgba(255, 252, 248, 0.98);
 }
 
 .combo-sidebar-close {
   position: absolute;
   top: 0.65rem;
-  left: 0.65rem;
+  right: 0.65rem;
   z-index: 2;
   width: 2rem;
   height: 2rem;
@@ -15749,25 +15937,25 @@ body.auth-mode .portal {
   }
 
   .combo-sidebar {
-    top: 5.25rem;
+    top: 0.75rem;
+    right: 0.75rem;
+    gap: 0.55rem;
   }
 
   .combo-sidebar-tab {
-    width: 3rem;
-    min-width: 3rem;
-    min-height: 8.75rem;
-    padding: 0.55rem 0.35rem;
+    width: auto;
+    min-width: 0;
+    min-height: 0;
+    padding: 0.65rem 0.85rem;
     font-size: 0.64rem;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.1em;
   }
 
   .combo-sidebar-panel {
-    width: min(100vw - 0.5rem, 100vw);
-    max-width: min(100vw - 0.5rem, 100vw);
-    aspect-ratio: 1024 / 451;
-    height: auto;
+    width: min(100vw - 5rem, 100vw);
+    max-width: min(100vw - 5rem, 100vw);
     max-height: calc(100vh - 0.5rem);
-    border-radius: 18px 0 0 18px;
+    border-radius: 18px;
   }
 
   #servicesSection .panel-head,

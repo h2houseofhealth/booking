@@ -4267,14 +4267,22 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
 
   if (selectedAddOnServiceName) {
     if (req.user.role !== 'user') {
-      return res.status(403).json({ message: 'only users can add an IV add-on while rescheduling' });
-    }
-    if (selectedCategory !== 'HYDROGEN SESSION') {
-      return res.status(400).json({ message: 'IV add-ons can be scheduled only with a hydrogen session.' });
+      return res.status(403).json({ message: 'only users can add an add-on while rescheduling' });
     }
     addOnService = getServiceByName(selectedAddOnServiceName);
-    if (!addOnService || !isAddOnService(addOnService)) {
-      return res.status(400).json({ message: 'Invalid add-on selected. Choose one IV Therapy or IV Shot.' });
+    const addOnCategory = String(addOnService?.category || '').toUpperCase();
+    const isHydrogenAddOn = addOnCategory === 'HYDROGEN SESSION';
+    const isIvAddOn = isAddOnService(addOnService);
+    const validAddOn =
+      (selectedCategory === 'HYDROGEN SESSION' && isIvAddOn) ||
+      ((selectedCategory === 'IV THERAPIES' || selectedCategory === 'IV SHOTS') && isHydrogenAddOn);
+    if (!addOnService || !validAddOn) {
+      return res.status(400).json({
+        message:
+          selectedCategory === 'HYDROGEN SESSION'
+            ? 'Invalid add-on selected. Choose one IV Therapy or IV Shot.'
+            : 'Invalid add-on selected. Choose a Hydrogen Session.',
+      });
     }
     const addOnSlotPayloadValidation = validateBookingPayload(
       {
@@ -4288,24 +4296,61 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
       return res.status(400).json({ message: `Invalid add-on schedule: ${addOnSlotPayloadValidation.error}` });
     }
     addOnAmountInr = Number(getEffectiveServicePriceInr(addOnService, bookingOwner || req.user) || 0);
+    if (isHydrogenAddOn && !nextBookingGroupId) {
+      const dailyLimitConflict = validateHydrogenDailySessionLimit(
+        existing.userId,
+        [{ bookingDate: effectiveAddOnBookingDate, bookingTime: effectiveAddOnBookingTime }],
+        [bookingId]
+      );
+      if (dailyLimitConflict) {
+        return res.status(409).json({
+          message: `Only ${dailyLimitConflict.maxAllowed} hydrogen sessions can be booked in one day.`,
+        });
+      }
+    }
     if (nextBookingGroupId) {
-      existingAddOnBooking = db
-        .prepare(
-          `SELECT id,
-                  service_name AS serviceName,
-                  booking_date AS bookingDate,
-                  booking_time AS bookingTime,
-                  status,
-                  payment_status AS paymentStatus,
-                  notes
-           FROM bookings
-           WHERE booking_group_id = ?
-             AND status <> 'cancelled'
-             AND service_name IN (${getAddOnServiceNames().map(() => '?').join(', ')})
-           ORDER BY id
-           LIMIT 1`
-        )
-        .get(nextBookingGroupId, ...getAddOnServiceNames());
+      if (isHydrogenAddOn) {
+        existingAddOnBooking = db
+          .prepare(
+            `SELECT id,
+                    service_name AS serviceName,
+                    booking_date AS bookingDate,
+                    booking_time AS bookingTime,
+                    status,
+                    payment_status AS paymentStatus,
+                    notes
+             FROM bookings
+             WHERE booking_group_id = ?
+               AND status <> 'cancelled'
+               AND service_name IN (${SERVICE_CATALOG.filter((item) => isHydrogenSessionService(item))
+                 .map(() => '?')
+                 .join(', ')})
+             ORDER BY id
+             LIMIT 1`
+          )
+          .get(
+            nextBookingGroupId,
+            ...SERVICE_CATALOG.filter((item) => isHydrogenSessionService(item)).map((item) => item.name)
+          );
+      } else {
+        existingAddOnBooking = db
+          .prepare(
+            `SELECT id,
+                    service_name AS serviceName,
+                    booking_date AS bookingDate,
+                    booking_time AS bookingTime,
+                    status,
+                    payment_status AS paymentStatus,
+                    notes
+             FROM bookings
+             WHERE booking_group_id = ?
+               AND status <> 'cancelled'
+               AND service_name IN (${getAddOnServiceNames().map(() => '?').join(', ')})
+             ORDER BY id
+             LIMIT 1`
+          )
+          .get(nextBookingGroupId, ...getAddOnServiceNames());
+      }
     }
   }
   if (
@@ -4352,23 +4397,36 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
   if (addOnService) {
     const excludeAddOnBookingId = existingAddOnBooking?.id ? Number(existingAddOnBooking.id) : null;
     const excludeIds = [bookingId, excludeAddOnBookingId].filter((id) => Number.isInteger(Number(id)));
-    if (hasStandaloneIvBookingOnDate(existing.userId, effectiveAddOnBookingDate, excludeIds)) {
-      return res.status(409).json({
-        message:
-          'A separate IV Therapy/IV Shot is already booked on this date. Hydrogen packages with an IV add-on cannot be combined with separate IV bookings on the same day.',
-      });
-    }
-    if (hasConflictingAddOnBooking(existing.userId, effectiveAddOnBookingDate, effectiveAddOnBookingTime, excludeAddOnBookingId)) {
-      return res.status(409).json({
-        message:
-          'Only 1 IV add-on (IV Therapy or IV Shot) can be booked in the same time slot. Additional add-ons are handled by admin after consultation.',
-      });
-    }
-    const cooldownConflict = findIvCooldownConflict(existing.userId, addOnService.name, effectiveAddOnBookingDate, excludeIds);
-    if (cooldownConflict) {
-      return res.status(409).json({
-        message: getIvCooldownResponseMessage(cooldownConflict),
-      });
+    const addOnCategory = String(addOnService.category || '').toUpperCase();
+    const isHydrogenAddOn = addOnCategory === 'HYDROGEN SESSION';
+    if (isHydrogenAddOn) {
+      const addOnDailyLimitConflict = validateHydrogenDailySessionLimit(existing.userId, [
+        { bookingDate: effectiveAddOnBookingDate, bookingTime: effectiveAddOnBookingTime },
+      ], excludeIds);
+      if (addOnDailyLimitConflict) {
+        return res.status(409).json({
+          message: `Only ${addOnDailyLimitConflict.maxAllowed} hydrogen sessions can be booked in one day.`,
+        });
+      }
+    } else {
+      if (hasStandaloneIvBookingOnDate(existing.userId, effectiveAddOnBookingDate, excludeIds)) {
+        return res.status(409).json({
+          message:
+            'A separate IV Therapy/IV Shot is already booked on this date. Hydrogen packages with an IV add-on cannot be combined with separate IV bookings on the same day.',
+        });
+      }
+      if (hasConflictingAddOnBooking(existing.userId, effectiveAddOnBookingDate, effectiveAddOnBookingTime, excludeAddOnBookingId)) {
+        return res.status(409).json({
+          message:
+            'Only 1 IV add-on (IV Therapy or IV Shot) can be booked in the same time slot. Additional add-ons are handled by admin after consultation.',
+        });
+      }
+      const cooldownConflict = findIvCooldownConflict(existing.userId, addOnService.name, effectiveAddOnBookingDate, excludeIds);
+      if (cooldownConflict) {
+        return res.status(409).json({
+          message: getIvCooldownResponseMessage(cooldownConflict),
+        });
+      }
     }
     const addOnSlotStatus = getSlotCapacityStatus(
       addOnService.name,
@@ -4421,7 +4479,7 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
 
   const txn = db.transaction(() => {
     if (addOnService && !nextBookingGroupId) {
-      nextBookingGroupId = createBookingGroupId('hydrogen');
+      nextBookingGroupId = createBookingGroupId('booking');
     }
 
     db.prepare(
@@ -4451,7 +4509,10 @@ app.put('/api/bookings/:id', requireAuth, (req, res) => {
     );
 
     if (addOnService) {
-      const addOnNote = `IV add-on for ${payload.data.serviceName} (rescheduled session)`;
+      const addOnNote =
+        String(addOnService.category || '').toUpperCase() === 'HYDROGEN SESSION'
+          ? `Hydrogen add-on for ${payload.data.serviceName} (rescheduled session)`
+          : `IV add-on for ${payload.data.serviceName} (rescheduled session)`;
       if (existingAddOnBooking) {
         if (
           String(existingAddOnBooking.paymentStatus || '').trim().toLowerCase() === 'paid' &&
@@ -8263,8 +8324,118 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
   const selectedService = getServiceByName(payload.data.serviceName);
   const effectivePriceInr = selectedService ? Number(getEffectiveServicePriceInr(selectedService, targetUser) || 0) : 0;
   const selectedCategory = String(selectedService?.category || '').toUpperCase();
+  const isHydrogenBase = selectedCategory === 'HYDROGEN SESSION';
+  const isTherapyOrShotBase = selectedCategory === 'IV THERAPIES' || selectedCategory === 'IV SHOTS';
   const isExperienceSession = selectedCategory === 'EXPERIENCE SESSION';
-  const computedPaymentStatus = isExperienceSession || effectivePriceInr > 0 ? 'unpaid' : 'paid';
+  const selectedAddOnServiceName = String(req.body?.addOnServiceName || '').trim();
+  const addOnBookingDate = String(req.body?.addOnBookingDate || payload.data.bookingDate || '').trim();
+  const addOnBookingTime = normalizeSlotStartTime(
+    String(req.body?.addOnBookingTime || payload.data.bookingTime || '').trim()
+  );
+  const requestedAddOnHydrogenSlots = Array.isArray(req.body?.addOnHydrogenSlots) ? req.body.addOnHydrogenSlots : [];
+  let addOnService = null;
+  let addOnAmountInr = 0;
+  let bookingGroupId = '';
+  let addOnHydrogenSlots = [];
+  if (selectedAddOnServiceName) {
+    addOnService = getServiceByName(selectedAddOnServiceName);
+    const addOnCategory = String(addOnService?.category || '').toUpperCase();
+    const isHydrogenAddOn = addOnCategory === 'HYDROGEN SESSION';
+    const isIvAddOn = isAddOnService(addOnService);
+    const validAddOn =
+      (isHydrogenBase && isIvAddOn) ||
+      (isTherapyOrShotBase && isHydrogenAddOn);
+    if (!addOnService || !validAddOn) {
+      return res.status(400).json({
+        message: isHydrogenBase
+          ? 'Invalid add-on selected. Choose one IV Therapy or IV Shot.'
+          : 'Invalid add-on selected. Choose a Hydrogen Session.',
+      });
+    }
+    const addOnValidation = validateBookingPayload(
+      {
+        serviceName: addOnService.name,
+        bookingDate: addOnBookingDate,
+        bookingTime: addOnBookingTime,
+        notes: payload.data.notes || defaultNotes,
+      },
+      targetUser
+    );
+    if (addOnValidation.error) {
+      return res.status(400).json({ message: `Invalid add-on schedule: ${addOnValidation.error}` });
+    }
+    if (isHydrogenAddOn) {
+      const expectedSessions = Math.max(1, getHydrogenSessionCountFromServiceName(addOnService.name));
+      const sourceSlots = requestedAddOnHydrogenSlots.length
+        ? requestedAddOnHydrogenSlots
+        : [{ bookingDate: addOnBookingDate, bookingTime: addOnBookingTime }];
+      if (sourceSlots.length !== expectedSessions) {
+        return res.status(400).json({
+          message: `Please select exactly ${expectedSessions} hydrogen add-on session${expectedSessions === 1 ? '' : 's'}.`,
+        });
+      }
+      const normalizedHydrogenSlots = [];
+      const firstHydrogenDate = String(sourceSlots[0]?.bookingDate || '').trim();
+      for (let slotIndex = 0; slotIndex < sourceSlots.length; slotIndex += 1) {
+        const slot = sourceSlots[slotIndex];
+        const bookingDate = String(slot?.bookingDate || '').trim();
+        const bookingTimeRaw = String(slot?.bookingTime || '').trim();
+        const bookingTime = normalizeSlotStartTime(bookingTimeRaw);
+        const selectedDate = new Date(`${bookingDate}T00:00:00`);
+        if (Number.isNaN(selectedDate.getTime())) {
+          return res.status(400).json({ message: `Invalid hydrogen add-on bookingDate: ${bookingDate}` });
+        }
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (selectedDate < today) {
+          return res.status(400).json({ message: 'Hydrogen add-on bookingDate cannot be in the past' });
+        }
+        if (!bookingTime) {
+          return res.status(400).json({ message: `Invalid hydrogen add-on bookingTime: ${bookingTimeRaw}` });
+        }
+        if (isBookingSlotInPast(bookingDate, bookingTime)) {
+          return res.status(400).json({ message: `Hydrogen add-on bookingTime cannot be in the past for ${bookingDate}` });
+        }
+        if (slotIndex > 0) {
+          const expectedDate = new Date(`${firstHydrogenDate}T00:00:00`);
+          expectedDate.setDate(expectedDate.getDate() + slotIndex);
+          const expectedDateIso = `${expectedDate.getFullYear()}-${String(expectedDate.getMonth() + 1).padStart(2, '0')}-${String(expectedDate.getDate()).padStart(2, '0')}`;
+          if (bookingDate !== expectedDateIso) {
+            return res.status(400).json({
+              message: 'Hydrogen add-on sessions must be booked on consecutive dates.',
+            });
+          }
+        }
+        normalizedHydrogenSlots.push({ bookingDate, bookingTime });
+      }
+      const duplicateHydrogenSlot = findDuplicateHydrogenSlot(normalizedHydrogenSlots);
+      if (duplicateHydrogenSlot) {
+        return res.status(409).json({
+          message: `Duplicate/conflicting session slot selected for ${duplicateHydrogenSlot.bookingDate} ${duplicateHydrogenSlot.bookingTime}.`,
+        });
+      }
+      const hydrogenLimitConflict = validateHydrogenDailySessionLimit(targetUser.id, normalizedHydrogenSlots);
+      if (hydrogenLimitConflict) {
+        return res.status(409).json({
+          message: `Only ${hydrogenLimitConflict.maxAllowed} hydrogen sessions can be booked in one day.`,
+        });
+      }
+      addOnHydrogenSlots = normalizedHydrogenSlots;
+    } else {
+      const cooldownConflict = findIvCooldownConflict(targetUser.id, addOnService.name, addOnBookingDate);
+      if (cooldownConflict) {
+        return res.status(409).json({
+          message: getIvCooldownResponseMessage(cooldownConflict),
+        });
+      }
+    }
+    addOnAmountInr = Number(getEffectiveServicePriceInr(addOnService, targetUser) || 0);
+    bookingGroupId = createBookingGroupId('booking');
+  }
+  let computedPaymentStatus = isExperienceSession || effectivePriceInr > 0 ? 'unpaid' : 'paid';
+  if (addOnService && addOnAmountInr > 0) {
+    computedPaymentStatus = 'unpaid';
+  }
   if (
     selectedService &&
     isAddOnService(selectedService) &&
@@ -8316,8 +8487,8 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
     .prepare(
       `INSERT INTO bookings (
         user_id, doctor_id, client_name, client_email, client_phone,
-        service_name, booking_date, booking_time, assigned_staff, status, payment_status, notes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
+        service_name, booking_date, booking_time, assigned_staff, status, payment_status, booking_group_id, notes, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
     )
     .run(
       targetUser.id,
@@ -8330,9 +8501,65 @@ function createSingleBookingResponse(req, res, { targetUser, defaultNotes = '', 
       payload.data.bookingTime,
       'H2 House Of Health',
       computedPaymentStatus,
+      bookingGroupId,
       payload.data.notes || defaultNotes,
       getCurrentSqliteTimestamp()
     );
+
+  if (addOnService) {
+    if (String(addOnService.category || '').trim().toUpperCase() === 'HYDROGEN SESSION') {
+      addOnHydrogenSlots.forEach((slot, index) => {
+        db
+          .prepare(
+            `INSERT INTO bookings (
+              user_id, doctor_id, client_name, client_email, client_phone,
+              service_name, booking_date, booking_time, assigned_staff, status, payment_status, booking_group_id, notes, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
+          )
+          .run(
+            targetUser.id,
+            null,
+            targetUser.name,
+            targetUser.email,
+            targetUser.mobile || '-',
+            addOnService.name,
+            slot.bookingDate,
+            slot.bookingTime,
+            'H2 House Of Health',
+            computedPaymentStatus,
+            bookingGroupId,
+            `Hydrogen add-on for ${payload.data.serviceName} (Session ${index + 1})`,
+            getCurrentSqliteTimestamp()
+          );
+      });
+    } else {
+      const addOnNote = isHydrogenBase
+        ? `IV add-on for ${payload.data.serviceName}`
+        : `Hydrogen add-on for ${payload.data.serviceName}`;
+      db
+        .prepare(
+          `INSERT INTO bookings (
+            user_id, doctor_id, client_name, client_email, client_phone,
+            service_name, booking_date, booking_time, assigned_staff, status, payment_status, booking_group_id, notes, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
+        )
+        .run(
+          targetUser.id,
+          null,
+          targetUser.name,
+          targetUser.email,
+          targetUser.mobile || '-',
+          addOnService.name,
+          addOnBookingDate,
+          addOnBookingTime,
+          'H2 House Of Health',
+          computedPaymentStatus,
+          bookingGroupId,
+          addOnNote,
+          getCurrentSqliteTimestamp()
+        );
+    }
+  }
 
   const booking = db
     .prepare(
@@ -8441,6 +8668,10 @@ function getVisibleServicesForUser(user) {
 function isAddOnService(service) {
   const category = String(service?.category || '').toUpperCase();
   return category === 'IV THERAPIES' || category === 'IV SHOTS';
+}
+
+function isHydrogenSessionService(service) {
+  return String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION';
 }
 
 function getAddOnServiceNames() {
@@ -8923,11 +9154,23 @@ function buildHydrogenGroupPaymentSummary(bookings, user) {
 }
 
 function buildAddOnOnlyPaymentSummary(bookings, user) {
-  const addOnBookings = (Array.isArray(bookings) ? bookings : []).filter((entry) => {
+  const orderedBookings = Array.isArray(bookings) ? bookings.filter(Boolean) : [];
+  if (!orderedBookings.length) {
+    throw new Error('No payable add-ons found.');
+  }
+
+  const baseBooking = orderedBookings.find((entry) => {
     const service = getServiceByName(entry.serviceName);
-    return isAddOnService(service);
-  });
-  if (!addOnBookings.length) {
+    return String(service?.category || '').toUpperCase() !== 'HYDROGEN SESSION';
+  }) || null;
+  const addOnBookings = baseBooking
+    ? orderedBookings.filter((entry) => entry !== baseBooking)
+    : orderedBookings.filter((entry) => {
+        const service = getServiceByName(entry.serviceName);
+        const category = String(service?.category || '').toUpperCase();
+        return isAddOnService(service) || category === 'HYDROGEN SESSION';
+      });
+  if (!addOnBookings.length && !baseBooking) {
     throw new Error('No payable add-ons found.');
   }
 
@@ -8942,6 +9185,34 @@ function buildAddOnOnlyPaymentSummary(bookings, user) {
     };
   });
   const addOnAmountInr = addOnItems.reduce((sum, item) => sum + Number(item.amountInr || 0), 0);
+  const baseAmountInr = baseBooking ? Number(getEffectiveServicePriceInr(getServiceByName(baseBooking.serviceName), user) || 0) : 0;
+  const totalAmountInr = baseAmountInr + addOnAmountInr;
+
+  if (baseBooking) {
+    const baseService = getServiceByName(baseBooking.serviceName);
+    return {
+      serviceName: baseService?.name || baseBooking.serviceName || 'Booking',
+      addOnItems,
+      addOnAmountInr,
+      bookingCount: orderedBookings.length,
+      totalAmountInr,
+      amountInr: totalAmountInr,
+      invoiceItems: [
+        {
+          serviceName: baseService?.name || baseBooking.serviceName || 'Booking',
+          bookingDate: baseBooking.bookingDate || '',
+          bookingTime: baseBooking.bookingTime || '',
+          amountInr: baseAmountInr,
+        },
+        ...addOnItems.map((item) => ({
+          serviceName: item.serviceName,
+          bookingDate: item.bookingDate,
+          bookingTime: item.bookingTime,
+          amountInr: Number(item.amountInr || 0),
+        })),
+      ].filter((item) => Number(item.amountInr || 0) > 0),
+    };
+  }
 
   return {
     serviceName: addOnItems.length === 1 ? addOnItems[0].serviceName : 'IV Add-ons',
@@ -9029,6 +9300,14 @@ function buildBookingInvoiceSummary(bookings, user) {
   });
 
   if (hydrogenBookings.length) {
+    const hasNonHydrogenBooking = activeBookings.some((entry) => {
+      const service = getServiceByName(entry.serviceName);
+      return String(service?.category || '').toUpperCase() !== 'HYDROGEN SESSION';
+    });
+    if (hasNonHydrogenBooking) {
+      return buildAddOnOnlyPaymentSummary(activeBookings, user);
+    }
+
     const hasMembershipPricingReference = hydrogenBookings.some((entry) => {
       const ref = String(entry.paymentReference || '').trim().toLowerCase();
       return ref === 'membership' || ref === 'buy_extra';
@@ -9166,6 +9445,23 @@ function buildAggregatePaymentSummary(bookings, user) {
       const service = getServiceByName(entry.serviceName);
       return String(service?.category || '').toUpperCase() === 'HYDROGEN SESSION';
     });
+    const hasNonHydrogenEntry = entries.some((entry) => {
+      const service = getServiceByName(entry.serviceName);
+      return String(service?.category || '').toUpperCase() !== 'HYDROGEN SESSION';
+    });
+
+    if (hydrogenEntries.length && hasNonHydrogenEntry) {
+      const summary = buildAddOnOnlyPaymentSummary(entries, user);
+      units.push({
+        type: 'hydrogen_add_on',
+        key: groupKey,
+        label: summary.serviceName,
+        amountInr: Number(summary.totalAmountInr || 0),
+        bookingCount: Number(summary.bookingCount || entries.length),
+      });
+      totalAmountInr += Number(summary.totalAmountInr || 0);
+      continue;
+    }
 
     if (groupKey.startsWith('hydrogen_') || hydrogenEntries.length) {
       if (!hydrogenEntries.length && entries.every((entry) => isAddOnService(getServiceByName(entry.serviceName)))) {

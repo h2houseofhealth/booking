@@ -409,7 +409,7 @@
       <section id="adminTabNav" class="panel app-only admin-only user-tab-nav admin-tab-nav" aria-label="Admin navigation" hidden>
         <div class="user-tab-grid admin-tab-grid">
           <button id="adminTabCalendar" class="user-tab-btn" type="button">Calendar</button>
-          <button id="adminTabBookings" class="user-tab-btn" type="button">History</button>
+          <button id="adminTabBookings" class="user-tab-btn" type="button">Booking records</button>
           <button id="adminTabSessions" class="user-tab-btn" type="button">Session Tracking</button>
           <button id="adminTabCoupons" class="user-tab-btn" type="button">Coupons</button>
           <button id="adminTabMemberships" class="user-tab-btn" type="button">Memberships</button>
@@ -444,6 +444,32 @@
               <button id="membershipTakeMembershipBtn" class="btn btn-secondary" type="button" hidden>Become a Member</button>
               <button id="membershipQuickAddPersonBtn" class="btn btn-secondary" type="button">Add Person</button>
               <button id="membershipQuickHistoryBtn" class="btn btn-secondary" type="button">View History</button>
+            </div>
+            <div id="comboSidebar" class="combo-sidebar" hidden>
+              <button
+                id="comboSidebarTab"
+                class="combo-sidebar-tab"
+                type="button"
+                aria-expanded="false"
+                aria-controls="comboSidebarPanel"
+                aria-label="Open Combo Details"
+              >
+                <span class="combo-sidebar-tab-icon" aria-hidden="true">✦</span>
+                <span class="combo-sidebar-tab-text">Combo Details</span>
+              </button>
+
+              <aside id="comboSidebarPanel" class="combo-sidebar-panel" aria-hidden="true" aria-label="Combo Details">
+                <button id="comboSidebarClose" class="combo-sidebar-close" type="button" aria-label="Close Combo Details">
+                  &times;
+                </button>
+                <img
+                  class="combo-sidebar-image"
+                  src="assets/combo-banner.png"
+                  alt="Combo details banner"
+                  loading="lazy"
+                  onerror="this.onerror=null;this.src='assets/dashboard_membership_hero.png';"
+                />
+              </aside>
             </div>
             <div class="hero-banner dashboard-hero-banner">
               <img
@@ -659,32 +685,6 @@
               </label>
             </div>
           </div>
-        </div>
-        <div id="comboSidebar" class="combo-sidebar" hidden>
-          <button
-            id="comboSidebarTab"
-            class="combo-sidebar-tab"
-            type="button"
-            aria-expanded="false"
-            aria-controls="comboSidebarPanel"
-            aria-label="Open Combo Details"
-          >
-            <span class="combo-sidebar-tab-icon" aria-hidden="true">✦</span>
-            <span class="combo-sidebar-tab-text">ComboDetails</span>
-          </button>
-
-          <aside id="comboSidebarPanel" class="combo-sidebar-panel" aria-hidden="true" aria-label="Combo Details">
-            <button id="comboSidebarClose" class="combo-sidebar-close" type="button" aria-label="Close Combo Details">
-              &times;
-            </button>
-            <img
-              class="combo-sidebar-image"
-              src="assets/combo-banner.png"
-              alt="Combo details banner"
-              loading="lazy"
-              onerror="this.onerror=null;this.src='assets/dashboard_membership_hero.png';"
-            />
-          </aside>
         </div>
         <div id="adminClientMeta" class="admin-client-meta admin-only" hidden></div>
         <p id="adminCustomerMessage" class="membership-copy admin-only" hidden></p>
@@ -1291,6 +1291,7 @@
             Add-on Time Slot
             <select id="addOnTime"></select>
           </label>
+          <div id="bookingHydrogenAddOnScheduler" class="booking-hydrogen-addon-scheduler full-width" hidden></div>
           <label class="full-width">
             Notes
             <textarea id="bookingNotes" rows="3" placeholder="Optional notes"></textarea>

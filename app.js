@@ -50,6 +50,19 @@ function storeAuthToken(token = '') {
   }
 }
 
+function consumeOAuthTokenFromHash() {
+  const rawHash = String(window.location.hash || '').replace(/^#/, '');
+  if (!rawHash) return false;
+
+  const params = new URLSearchParams(rawHash);
+  const token = params.get('auth_token');
+  if (!token) return false;
+
+  storeAuthToken(token);
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  return true;
+}
+
 function withApiCredentials(options = {}) {
   const headers = new Headers(options.headers || {});
   const authToken = String(state.authToken || '').trim();
@@ -340,6 +353,8 @@ const elements = {
   authResendOtpBtn: document.getElementById('authResendOtpBtn'),
   authResendOtpHint: document.getElementById('authResendOtpHint'),
   authSubmitBtn: document.getElementById('authSubmitBtn'),
+  authDivider: document.getElementById('authDivider'),
+  googleAuthBtn: document.getElementById('googleAuthBtn'),
   authError: document.getElementById('authError'),
   authBackToChoicesBtn: document.getElementById('authBackToChoicesBtn'),
   forgotPasswordBtn: document.getElementById('forgotPasswordBtn'),
@@ -458,6 +473,7 @@ const elements = {
   membershipStatMembersLabel: document.getElementById('membershipStatMembersLabel'),
   membershipStatMembers: document.getElementById('membershipStatMembers'),
   membershipStatMembersMeta: document.getElementById('membershipStatMembersMeta'),
+  membershipStatMembersDetails: document.getElementById('membershipStatMembersDetails'),
   membershipStatValidLabel: document.getElementById('membershipStatValidLabel'),
   membershipStatValid: document.getElementById('membershipStatValid'),
   membershipStatValidMeta: document.getElementById('membershipStatValidMeta'),
@@ -859,6 +875,7 @@ async function finishAuthSuccess(result) {
 
 async function bootstrap() {
   const initialTab = getUserTabFromHash(window.location.hash);
+  consumeOAuthTokenFromHash();
   if (initialTab) state.activeUserTab = initialTab;
   attachEvents();
   populateTimeSlots();
@@ -2174,6 +2191,13 @@ function renderAuthMode(preserveMessage = false) {
   elements.authSwitchBtn.textContent = isRegisterMode ? 'Sign in' : 'Register';
   elements.forgotPasswordBtn.textContent = isForgotPasswordMode ? 'Back to sign in' : 'Forgot password?';
   elements.forgotPasswordBtn.hidden = isRegisterMode;
+  if (elements.googleAuthBtn) {
+    elements.googleAuthBtn.hidden = !isLoginStep;
+    elements.googleAuthBtn.href = buildApiUrl('/auth/google');
+  }
+  if (elements.authDivider) {
+    elements.authDivider.hidden = !isLoginStep;
+  }
 
   updateAuthOtpResendUI();
 }
@@ -10210,6 +10234,48 @@ function renderMembershipCalendar(bookings) {
   );
 }
 
+function getMembershipDashboardMembers(currentPeopleCount = 0) {
+  const roster = state.membershipRoster || {};
+  const fallbackOrder =
+    (Array.isArray(state.userMembershipOrders) ? state.userMembershipOrders : [])
+      .filter((order) => String(order?.status || '').toLowerCase() === 'paid')
+      .sort((a, b) =>
+        `${String(b?.paidAt || b?.createdAt || '')}`.localeCompare(`${String(a?.paidAt || a?.createdAt || '')}`)
+      )[0] || null;
+  const fallbackMembers = Array.isArray(fallbackOrder?.memberDetails) ? fallbackOrder.memberDetails : [];
+  const rosterMembers = Array.isArray(roster?.members) && roster.members.length
+    ? roster.members
+    : Array.isArray(roster) && roster.length
+      ? roster
+      : fallbackMembers;
+  const userMember = {
+    name: state.user?.name || '',
+    place: '',
+    email: state.user?.email || '',
+    contactNumber: state.user?.mobile || '',
+  };
+  const normalizedMembers = (rosterMembers.length ? rosterMembers : [userMember])
+    .map((member) => ({
+      name: String(member?.name || '').trim(),
+      place: String(member?.place || '').trim(),
+      email: String(member?.email || '').trim(),
+      contactNumber: String(member?.contactNumber || '').trim(),
+    }))
+    .filter((member) => member.name || member.place || member.email || member.contactNumber);
+  const resolvedPeopleCount = Math.max(
+    Number(currentPeopleCount || 0),
+    Number(roster?.subscription?.peopleCount || 0),
+    Number(roster?.totalCovered || 0),
+    Number(fallbackOrder?.peopleCount || 0),
+    normalizedMembers.length
+  );
+
+  return {
+    members: normalizedMembers.slice(0, resolvedPeopleCount || normalizedMembers.length),
+    totalCovered: resolvedPeopleCount,
+  };
+}
+
 function renderMembership() {
   if (!elements.membershipPlans || !elements.membershipStatusText) return;
   if (state.user?.role !== 'user') return;
@@ -10308,6 +10374,31 @@ function renderMembership() {
     elements.membershipStatMembersMeta.textContent = active
       ? 'Covered'
       : '/session\nJoin membership to unlock lower pricing and premium benefits';
+  }
+  if (elements.membershipStatMembersDetails) {
+    elements.membershipStatMembersDetails.hidden = !active;
+    elements.membershipStatMembersDetails.innerHTML = '';
+    if (active) {
+      const rosterPreview = getMembershipDashboardMembers(currentPeopleCount);
+      if (rosterPreview.members.length) {
+        rosterPreview.members.forEach((member, index) => {
+          const person = document.createElement('div');
+          person.className = 'membership-stat-member';
+          const name = member.name || `Member ${index + 1}`;
+          const detailParts = [member.place, member.contactNumber, member.email].filter(Boolean);
+          person.innerHTML = `
+            <span>${escapeHtml(name)}</span>
+            <small>${escapeHtml(detailParts.join(' • ') || 'Details pending')}</small>
+          `;
+          elements.membershipStatMembersDetails.appendChild(person);
+        });
+      } else {
+        const empty = document.createElement('div');
+        empty.className = 'membership-stat-member is-empty';
+        empty.textContent = 'Member details not added yet';
+        elements.membershipStatMembersDetails.appendChild(empty);
+      }
+    }
   }
   if (elements.membershipStatValidCard) {
     elements.membershipStatValidCard.title = active

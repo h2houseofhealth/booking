@@ -6,6 +6,9 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const session = require('express-session');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const Database = require('better-sqlite3');
 const nodemailer = require('nodemailer');
 const sgMail = require('@sendgrid/mail');
@@ -18,6 +21,10 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_super_secret_change_me';
 const IS_PRODUCTION = normalizeEnvValue(process.env.NODE_ENV).toLowerCase() === 'production';
 const AUTH_COOKIE_SECURE_MODE = normalizeEnvValue(process.env.AUTH_COOKIE_SECURE || 'auto').toLowerCase();
+const GOOGLE_CLIENT_ID = normalizeEnvValue(process.env.GOOGLE_CLIENT_ID);
+const GOOGLE_CLIENT_SECRET = normalizeEnvValue(process.env.GOOGLE_CLIENT_SECRET);
+const GOOGLE_CALLBACK_URL = normalizeEnvValue(process.env.GOOGLE_CALLBACK_URL);
+const GOOGLE_OAUTH_ENABLED = Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_CALLBACK_URL);
 const ALLOW_DEV_OTP_FALLBACK = normalizeEnvValue(process.env.ALLOW_DEV_OTP_FALLBACK || 'true').toLowerCase() !== 'false';
 const TOKEN_COOKIE = 'booking_portal_token';
 const ALLOWED_SLOT_START_TIMES = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
@@ -422,6 +429,7 @@ if (razorpayConfigError && (RAZORPAY_KEY_ID || RAZORPAY_KEY_SECRET || process.en
 
 migrate();
 seedAdmin();
+configureGoogleOAuth();
 
 const requestCounters = new Map();
 
@@ -675,6 +683,16 @@ app.get("/users", (req, res) => {
   });
 });
 app.use(cookieParser());
+app.use(
+  session({
+    secret: JWT_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: getSessionCookieOptions(),
+  })
+);
+app.use(passport.initialize());
+app.use(passport.session());
 app.use((req, res, next) => {
   const pathName = String(req.path || '');
   if (pathName === '/app.js' || pathName === '/index.html' || pathName === '/styles.css') {
@@ -704,6 +722,31 @@ const upload = multer({
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
+});
+
+app.get('/auth/google', ensureGoogleOAuthConfigured, passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+app.get('/auth/google/callback', ensureGoogleOAuthConfigured, (req, res, next) => {
+  passport.authenticate('google', { session: true }, (error, user) => {
+    if (error) {
+      console.error('Google OAuth callback error:', String(error?.message || error));
+      return res.redirect('/?auth_error=google');
+    }
+
+    if (!user) {
+      return res.redirect('/?auth_error=google');
+    }
+
+    req.logIn(user, (loginError) => {
+      if (loginError) {
+        console.error('Google OAuth login error:', String(loginError?.message || loginError));
+        return res.redirect('/?auth_error=google');
+      }
+
+      const token = setAuthCookie(req, res, user);
+      return res.redirect(`/#auth_token=${encodeURIComponent(token)}`);
+    });
+  })(req, res, next);
 });
 
 app.use('/api/auth', rateLimit({ windowMs: 60_000, max: 40 }));
@@ -10110,6 +10153,74 @@ function backfillMembershipSubscriptionsFromOrders() {
   }
 }
 
+function configureGoogleOAuth() {
+  passport.serializeUser((user, done) => {
+    done(null, Number(user?.id));
+  });
+
+  passport.deserializeUser((id, done) => {
+    try {
+      const user = getUserProfileById(Number(id));
+      done(null, user || false);
+    } catch (error) {
+      done(error);
+    }
+  });
+
+  if (!GOOGLE_OAUTH_ENABLED) {
+    return;
+  }
+
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: GOOGLE_CLIENT_ID,
+        clientSecret: GOOGLE_CLIENT_SECRET,
+        callbackURL: GOOGLE_CALLBACK_URL,
+      },
+      (_accessToken, _refreshToken, profile, done) => {
+        try {
+          const user = findOrCreateGoogleUser(profile);
+          return done(null, user);
+        } catch (error) {
+          return done(error);
+        }
+      }
+    )
+  );
+}
+
+function ensureGoogleOAuthConfigured(_req, res, next) {
+  if (GOOGLE_OAUTH_ENABLED) return next();
+  return res.status(500).send('Google OAuth is not configured.');
+}
+
+function findOrCreateGoogleUser(profile) {
+  const googleId = String(profile?.id || '').trim();
+  const email = String(profile?.emails?.[0]?.value || '').trim().toLowerCase();
+  const name = String(profile?.displayName || profile?.name?.givenName || email || 'User').trim();
+
+  if (!googleId || !email) {
+    throw new Error('Google profile did not include a usable id and email.');
+  }
+
+  const existingUser = getUserProfileByEmail(email);
+  if (existingUser) {
+    db.prepare('UPDATE users SET google_id = ? WHERE id = ?').run(googleId, Number(existingUser.id));
+    return syncMembershipForUser({ userId: Number(existingUser.id), email }) || getUserProfileById(Number(existingUser.id));
+  }
+
+  const result = db
+    .prepare(
+      `INSERT INTO users (name, email, google_id, password_hash, role, created_at)
+       VALUES (?, ?, ?, '', 'user', datetime('now'))`
+    )
+    .run(name || 'User', email, googleId);
+
+  const userId = Number(result.lastInsertRowid);
+  return syncMembershipForUser({ userId, email }) || getUserProfileById(userId);
+}
+
 function setAuthCookie(req, res, user) {
   const token = jwt.sign(
     { sub: user.id, name: user.name, email: user.email, role: user.role },
@@ -10127,6 +10238,25 @@ function setAuthCookie(req, res, user) {
 function getAuthCookieOptions(req) {
   const secure = shouldUseSecureAuthCookie(req);
   const useCrossSiteCookie = secure && FRONTEND_ORIGINS.length > 0;
+  return {
+    httpOnly: true,
+    sameSite: useCrossSiteCookie ? 'none' : 'lax',
+    secure,
+    path: '/',
+  };
+}
+
+function getSessionCookieOptions() {
+  const secureMode = AUTH_COOKIE_SECURE_MODE;
+  const secure =
+    secureMode === 'true' || secureMode === 'always'
+      ? true
+      : secureMode === 'false' || secureMode === 'never'
+        ? false
+        : IS_PRODUCTION
+          ? 'auto'
+          : false;
+  const useCrossSiteCookie = (secure === true || secure === 'auto') && FRONTEND_ORIGINS.length > 0;
   return {
     httpOnly: true,
     sameSite: useCrossSiteCookie ? 'none' : 'lax',
@@ -11425,6 +11555,7 @@ function migrate() {
       age INTEGER,
       gender TEXT,
       mobile TEXT,
+      google_id TEXT,
       avatar_url TEXT,
       membership_status TEXT NOT NULL DEFAULT 'inactive',
       membership_plan TEXT,
@@ -11667,6 +11798,10 @@ function migrate() {
 
   if (!hasColumn('users', 'mobile')) {
     db.exec('ALTER TABLE users ADD COLUMN mobile TEXT');
+  }
+
+  if (!hasColumn('users', 'google_id')) {
+    db.exec('ALTER TABLE users ADD COLUMN google_id TEXT');
   }
 
   if (!hasColumn('users', 'avatar_url')) {

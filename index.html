@@ -108,6 +108,8 @@
             </div>
             <button id="authSubmitBtn" class="btn btn-primary" type="submit">Sign in</button>
           </form>
+          <div id="authDivider" class="auth-divider"><span>or</span></div>
+          <a id="googleAuthBtn" class="btn auth-google-btn" href="/auth/google">Continue with Google</a>
           <p id="authError" class="auth-error"></p>
           <p class="auth-forgot">
             <button type="button" id="forgotPasswordBtn" class="link-btn">Forgot password?</button>
@@ -503,6 +505,7 @@
               <span id="membershipStatMembersLabel" class="stat-label">Members</span>
               <strong id="membershipStatMembers">0</strong>
               <small id="membershipStatMembersMeta">Covered</small>
+              <div id="membershipStatMembersDetails" class="membership-stat-member-details" hidden></div>
             </button>
             <button id="membershipStatExtraCard" class="membership-stat-card" type="button">
               <span class="stat-icon stat-icon-valid" aria-hidden="true">

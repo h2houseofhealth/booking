@@ -157,6 +157,7 @@ const state = {
     addOnScheduleManuallyEdited: false,
     defaultAddOnBookingDate: '',
     defaultAddOnBookingTime: '',
+    hydrogenAddOnSlots: [],
   },
   slotAvailability: {},
   slotCapacityByService: {},
@@ -711,6 +712,7 @@ const elements = {
   bookingCustomerPhone: document.getElementById('bookingCustomerPhone'),
   bookingCustomerInlineMessage: document.getElementById('bookingCustomerInlineMessage'),
   bookingSchedulerSection: document.getElementById('bookingSchedulerSection'),
+  bookingHydrogenAddOnScheduler: document.getElementById('bookingHydrogenAddOnScheduler'),
   bookingSummary: document.getElementById('bookingSummary'),
   summaryContent: document.getElementById('summaryContent'),
   totalPayable: document.getElementById('totalPayable'),
@@ -795,19 +797,19 @@ function resetServicesUiStateForUserSwitch() {
 }
 
 function syncComboSidebarUi() {
-  const isServicesView = Boolean(state.user) && state.user.role !== 'admin' && (state.activeUserTab || 'services') === 'services';
+  const isDashboardView = Boolean(state.user) && state.user.role !== 'admin' && (state.activeUserTab || 'services') === 'membership';
 
   if (elements.comboSidebar) {
-    elements.comboSidebar.hidden = !isServicesView;
-    elements.comboSidebar.classList.toggle('is-open', isServicesView && state.comboSidebarOpen);
+    elements.comboSidebar.hidden = !isDashboardView;
+    elements.comboSidebar.classList.toggle('is-open', isDashboardView && state.comboSidebarOpen);
   }
 
   if (elements.comboSidebarTab) {
-    elements.comboSidebarTab.setAttribute('aria-expanded', isServicesView && state.comboSidebarOpen ? 'true' : 'false');
+    elements.comboSidebarTab.setAttribute('aria-expanded', isDashboardView && state.comboSidebarOpen ? 'true' : 'false');
   }
 
   if (elements.comboSidebarPanel) {
-    elements.comboSidebarPanel.setAttribute('aria-hidden', isServicesView && state.comboSidebarOpen ? 'false' : 'true');
+    elements.comboSidebarPanel.setAttribute('aria-hidden', isDashboardView && state.comboSidebarOpen ? 'false' : 'true');
   }
 }
 
@@ -1541,7 +1543,7 @@ function attachEvents() {
     });
   });
   elements.comboSidebarTab?.addEventListener('click', () => {
-    if ((state.activeUserTab || 'services') !== 'services') return;
+    if ((state.activeUserTab || 'services') !== 'membership') return;
     state.comboSidebarOpen = !state.comboSidebarOpen;
     render();
   });
@@ -3437,6 +3439,35 @@ function getHydrogenSlotsForSubmit(requiredSlots) {
   return slots;
 }
 
+function buildHydrogenAddOnSlots({ sessionCount, baseDate, baseTime, existingSlots = [], keepExisting = false } = {}) {
+  const totalSessions = Math.max(1, Number(sessionCount || 1));
+  const normalizedBaseDate = String(baseDate || getTodayIsoDate()).trim() || getTodayIsoDate();
+  const normalizedBaseTime = normalizeSlotStartTime(String(baseTime || '').trim()) || SLOT_OPTIONS[0].value;
+  const sourceSlots = Array.isArray(existingSlots) ? existingSlots.slice(0, totalSessions) : [];
+  const anchorDate =
+    keepExisting && String(sourceSlots[0]?.bookingDate || '').trim()
+      ? String(sourceSlots[0].bookingDate || '').trim()
+      : normalizedBaseDate;
+  const slots = [];
+
+  for (let index = 0; index < totalSessions; index += 1) {
+    const currentSlot = sourceSlots[index] || {};
+    const bookingDate =
+      index === 0
+        ? anchorDate
+        : addDaysToIsoDate(anchorDate, index) || addDaysToIsoDate(normalizedBaseDate, index) || anchorDate;
+    const bookingTime = normalizeSlotStartTime(
+      String(currentSlot.bookingTime || (index === 0 ? normalizedBaseTime : normalizedBaseTime)).trim()
+    ) || normalizedBaseTime;
+    slots.push({
+      bookingDate,
+      bookingTime,
+    });
+  }
+
+  return slots;
+}
+
 function populateAvailableTimeOptions(selectElement, serviceName, bookingDate, currentReservedSlot = null, preferredTime = '') {
   if (!selectElement) return;
   const selectedValue = normalizeSlotStartTime(
@@ -3626,11 +3657,147 @@ function populateBookingDateOptions(selectedDate = '') {
   elements.bookingDate.value = hasSelected ? selectedDate : options[0].value;
 }
 
+function renderBookingHydrogenAddOnScheduler(addOnService) {
+  if (!elements.bookingHydrogenAddOnScheduler) return;
+  const selectedAddOnName = String(addOnService?.name || '').trim();
+  const isHydrogenAddOn = String(addOnService?.category || '').trim().toUpperCase() === 'HYDROGEN SESSION';
+  const sessionCount = isHydrogenAddOn ? Math.max(1, getHydrogenSessionCountFromServiceName(selectedAddOnName)) : 0;
+  const context = state.bookingDialogContext || {};
+  const currentSlots = Array.isArray(context.hydrogenAddOnSlots) ? context.hydrogenAddOnSlots : [];
+  const baseDate = String(elements.bookingDate?.value || getTodayIsoDate()).trim() || getTodayIsoDate();
+  const baseTime = normalizeSlotStartTime(String(elements.bookingTime?.value || '').trim()) || SLOT_OPTIONS[0].value;
+  const slots =
+    sessionCount > 0
+      ? buildHydrogenAddOnSlots({
+          sessionCount,
+          baseDate,
+          baseTime,
+          existingSlots: currentSlots,
+          keepExisting: Boolean(context.addOnScheduleManuallyEdited),
+        })
+      : [];
+
+  context.hydrogenAddOnSlots = slots;
+  if (!context.addOnScheduleManuallyEdited && slots.length) {
+    context.defaultAddOnBookingDate = slots[0].bookingDate || baseDate;
+    context.defaultAddOnBookingTime = slots[0].bookingTime || baseTime;
+  }
+  state.bookingDialogContext = context;
+
+  elements.bookingHydrogenAddOnScheduler.innerHTML = '';
+  if (!isHydrogenAddOn || !sessionCount) {
+    elements.bookingHydrogenAddOnScheduler.hidden = true;
+    return;
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'booking-hydrogen-addon-head';
+  wrapper.innerHTML = `
+    <strong>Hydrogen Session Schedule</strong>
+    <span>${sessionCount} session${sessionCount === 1 ? '' : 's'} will be booked on consecutive dates.</span>
+  `;
+  elements.bookingHydrogenAddOnScheduler.appendChild(wrapper);
+
+  const list = document.createElement('div');
+  list.className = 'booking-hydrogen-addon-list';
+
+  slots.forEach((slot, index) => {
+    const row = document.createElement('article');
+    row.className = 'booking-hydrogen-addon-session';
+    const sessionNumber = index + 1;
+    row.innerHTML = `
+      <div class="booking-hydrogen-addon-session-head">
+        <strong>Hydrogen Session ${sessionNumber}</strong>
+        <small>${index === 0 ? 'Session 1 starts the sequence' : 'Auto-filled from Session 1'}</small>
+      </div>
+      <div class="booking-hydrogen-addon-session-grid">
+        <label>
+          Date
+          <input
+            class="booking-hydrogen-addon-session-date${index > 0 ? ' is-locked' : ''}"
+            type="date"
+            min="${getTodayIsoDate()}"
+            max="${getMaxBookingIsoDate()}"
+            value="${escapeHtml(slot.bookingDate || baseDate)}"
+            ${index > 0 ? 'disabled' : ''}
+          />
+        </label>
+        <label>
+          Time
+          <select class="booking-hydrogen-addon-session-time"></select>
+        </label>
+      </div>
+    `;
+
+    const dateInput = row.querySelector('.booking-hydrogen-addon-session-date');
+    const timeSelect = row.querySelector('.booking-hydrogen-addon-session-time');
+    populateAvailableTimeOptions(
+      timeSelect,
+      addOnService.name,
+      slot.bookingDate || baseDate,
+      null,
+      slot.bookingTime || baseTime
+    );
+    if (timeSelect && slot.bookingTime) {
+      timeSelect.value = normalizeSlotStartTime(slot.bookingTime) || timeSelect.value;
+    }
+
+    if (index === 0 && dateInput) {
+      dateInput.addEventListener('change', () => {
+        const nextDate = String(dateInput.value || '').trim() || getTodayIsoDate();
+        const nextSlots = buildHydrogenAddOnSlots({
+          sessionCount,
+          baseDate: nextDate,
+          baseTime: String(timeSelect?.value || baseTime || '').trim() || baseTime,
+          existingSlots: state.bookingDialogContext?.hydrogenAddOnSlots || [],
+        });
+        state.bookingDialogContext = {
+          ...(state.bookingDialogContext || {}),
+          addOnScheduleManuallyEdited: true,
+          defaultAddOnBookingDate: nextDate,
+          defaultAddOnBookingTime: String(timeSelect?.value || baseTime || '').trim() || baseTime,
+          hydrogenAddOnSlots: nextSlots,
+        };
+        updateBookingAddOnOptions();
+        updateBookingSummary();
+      });
+    }
+
+    if (timeSelect) {
+      timeSelect.addEventListener('change', () => {
+        const nextSlots = buildHydrogenAddOnSlots({
+          sessionCount,
+          baseDate: String(state.bookingDialogContext?.hydrogenAddOnSlots?.[0]?.bookingDate || baseDate).trim() || baseDate,
+          baseTime: String(state.bookingDialogContext?.hydrogenAddOnSlots?.[0]?.bookingTime || baseTime).trim() || baseTime,
+          existingSlots: state.bookingDialogContext?.hydrogenAddOnSlots || [],
+          keepExisting: true,
+        });
+        nextSlots[index] = {
+          ...nextSlots[index],
+          bookingTime: normalizeSlotStartTime(String(timeSelect.value || '').trim()) || baseTime,
+        };
+        state.bookingDialogContext = {
+          ...(state.bookingDialogContext || {}),
+          addOnScheduleManuallyEdited: true,
+          hydrogenAddOnSlots: nextSlots,
+        };
+        updateBookingSummary();
+      });
+    }
+
+    list.appendChild(row);
+  });
+
+  elements.bookingHydrogenAddOnScheduler.appendChild(list);
+  elements.bookingHydrogenAddOnScheduler.hidden = false;
+}
+
 function updateBookingAddOnOptions() {
   const isAdmin = state.user?.role === 'admin';
   const setAddOnScheduleVisibility = ({ showDateTime = false } = {}) => {
     if (elements.addOnDateLabel) elements.addOnDateLabel.hidden = !showDateTime;
     if (elements.addOnTimeLabel) elements.addOnTimeLabel.hidden = !showDateTime;
+    if (elements.bookingHydrogenAddOnScheduler) elements.bookingHydrogenAddOnScheduler.hidden = true;
   };
   const populateAddOnDateOptions = (selectedDate = '') => {
     if (!elements.addOnDate) return;
@@ -3699,63 +3866,101 @@ function updateBookingAddOnOptions() {
 
   const selectedServiceName = elements.serviceName.value;
   const selectedService = state.services.find((s) => s.name === selectedServiceName);
-  const isHydrogenService = selectedService && String(selectedService.category || '').toUpperCase() === 'HYDROGEN SESSION';
-  
-  elements.addOnServiceLabel.hidden = !isHydrogenService;
+  const selectedCategory = String(selectedService?.category || '').toUpperCase();
+  const isHydrogenService = selectedCategory === 'HYDROGEN SESSION';
+  const isTherapyOrShotService = selectedCategory === 'IV THERAPIES' || selectedCategory === 'IV SHOTS';
+  const showAddOnOptions = isHydrogenService || isTherapyOrShotService;
+
+  elements.addOnServiceLabel.hidden = !showAddOnOptions;
   elements.addOnService.innerHTML = '<option value="">No add-on</option>';
-  if (!isHydrogenService) {
+  if (!showAddOnOptions) {
     if (elements.addOnDate) elements.addOnDate.innerHTML = '';
     if (elements.addOnTime) elements.addOnTime.innerHTML = '';
     setAddOnScheduleVisibility({ showDateTime: false });
+    return;
   }
   
-  if (isHydrogenService) {
-    const addOnServices = state.services.filter((service) => {
-      const category = String(service.category || '').toUpperCase();
-      return category === 'IV THERAPIES' || category === 'IV SHOTS';
-    });
+  const addOnServices = isHydrogenService
+    ? state.services.filter((service) => {
+        const category = String(service.category || '').toUpperCase();
+        return category === 'IV THERAPIES' || category === 'IV SHOTS';
+      })
+    : state.services.filter((service) => String(service.category || '').toUpperCase() === 'HYDROGEN SESSION');
     
-    for (const addOn of addOnServices) {
-      const option = document.createElement('option');
-      option.value = addOn.name;
-      option.textContent = `${addOn.name} - Rs. ${Number(addOn.effectivePriceInr || addOn.priceInr || 0).toLocaleString('en-IN')}`;
-      elements.addOnService.appendChild(option);
+  for (const addOn of addOnServices) {
+    const option = document.createElement('option');
+    option.value = addOn.name;
+    option.textContent = `${addOn.name} - Rs. ${Number(addOn.effectivePriceInr || addOn.priceInr || 0).toLocaleString('en-IN')}`;
+    elements.addOnService.appendChild(option);
+  }
+  const context = state.bookingDialogContext || {};
+  const existingAddOnBooking = context.existingAddOnBooking || null;
+  const existingAddOnServiceName = String(existingAddOnBooking?.serviceName || '').trim();
+  const existingValueStillValid = [...elements.addOnService.options].some(
+    (option) => String(option.value || '').trim() === String(elements.addOnService.value || '').trim()
+  );
+  const preferredAddOnService = existingAddOnServiceName || String(state.selectedBookingAddOnServiceName || '').trim();
+  if (preferredAddOnService && [...elements.addOnService.options].some((option) => option.value === preferredAddOnService)) {
+    elements.addOnService.value = preferredAddOnService;
+  } else if (!existingValueStillValid) {
+    elements.addOnService.value = '';
+  }
+  const hasAddOnSelected = Boolean(String(elements.addOnService.value || '').trim());
+  const selectedAddOnService = hasAddOnSelected
+    ? state.services.find((service) => service.name === String(elements.addOnService.value || '').trim()) || null
+    : null;
+  const isHydrogenAddOn = String(selectedAddOnService?.category || '').trim().toUpperCase() === 'HYDROGEN SESSION';
+  setAddOnScheduleVisibility({ showDateTime: hasAddOnSelected && !isHydrogenAddOn });
+  if (elements.bookingHydrogenAddOnScheduler) {
+    elements.bookingHydrogenAddOnScheduler.hidden = !hasAddOnSelected || !isHydrogenAddOn;
+  }
+  if (hasAddOnSelected && isHydrogenAddOn) {
+    renderBookingHydrogenAddOnScheduler(selectedAddOnService);
+    if (elements.addOnDate) elements.addOnDate.innerHTML = '';
+    if (elements.addOnTime) elements.addOnTime.innerHTML = '';
+    state.bookingDialogContext = {
+      ...context,
+      hydrogenAddOnSlots: Array.isArray(context.hydrogenAddOnSlots) && context.hydrogenAddOnSlots.length
+        ? context.hydrogenAddOnSlots
+        : buildHydrogenAddOnSlots({
+            sessionCount: getHydrogenSessionCountFromServiceName(selectedAddOnService.name),
+            baseDate: String(elements.bookingDate?.value || getTodayIsoDate()).trim() || getTodayIsoDate(),
+            baseTime: normalizeSlotStartTime(String(elements.bookingTime?.value || '').trim()) || SLOT_OPTIONS[0].value,
+          }),
+    };
+    if (elements.addOnDateLabel) elements.addOnDateLabel.hidden = true;
+    if (elements.addOnTimeLabel) elements.addOnTimeLabel.hidden = true;
+    updateBookingSummary();
+    return;
+  }
+  if (hasAddOnSelected) {
+    state.bookingDialogContext = {
+      ...context,
+      hydrogenAddOnSlots: [],
+    };
+    const baseDate = String(elements.bookingDate?.value || getTodayIsoDate()).trim();
+    const baseTime = normalizeSlotStartTime(String(elements.bookingTime?.value || '').trim()) || SLOT_OPTIONS[0].value;
+    const defaultDate = String(context.defaultAddOnBookingDate || existingAddOnBooking?.bookingDate || baseDate).trim() || baseDate;
+    const defaultTime = normalizeSlotStartTime(
+      String(context.defaultAddOnBookingTime || existingAddOnBooking?.bookingTime || baseTime).trim()
+    ) || baseTime;
+    const shouldSyncFromMain = !Boolean(context.addOnScheduleManuallyEdited);
+    const selectedAddOnDate = shouldSyncFromMain ? baseDate : defaultDate;
+    populateAddOnDateOptions(selectedAddOnDate);
+    context.defaultAddOnBookingDate = String(elements.addOnDate?.value || selectedAddOnDate || baseDate).trim() || baseDate;
+    context.defaultAddOnBookingTime = shouldSyncFromMain ? baseTime : defaultTime;
+    state.bookingDialogContext = context;
+    populateAddOnTimeOptions();
+    const preferredTime = normalizeSlotStartTime(
+      String(context.defaultAddOnBookingTime || defaultTime || baseTime).trim()
+    ) || baseTime;
+    if ([...(elements.addOnTime?.options || [])].some((option) => option.value === preferredTime && !option.disabled)) {
+      elements.addOnTime.value = preferredTime;
     }
-    const context = state.bookingDialogContext || {};
-    const existingAddOnBooking = context.existingAddOnBooking || null;
-    const existingAddOnServiceName = String(existingAddOnBooking?.serviceName || '').trim();
-    const existingValueStillValid = [...elements.addOnService.options].some(
-      (option) => String(option.value || '').trim() === String(elements.addOnService.value || '').trim()
-    );
-    const preferredAddOnService = existingAddOnServiceName || String(state.selectedBookingAddOnServiceName || '').trim();
-    if (preferredAddOnService && [...elements.addOnService.options].some((option) => option.value === preferredAddOnService)) {
-      elements.addOnService.value = preferredAddOnService;
-    } else if (!existingValueStillValid) {
-      elements.addOnService.value = '';
-    }
-    const hasAddOnSelected = Boolean(String(elements.addOnService.value || '').trim());
-    setAddOnScheduleVisibility({ showDateTime: hasAddOnSelected });
-    if (hasAddOnSelected) {
-      const baseDate = String(elements.bookingDate?.value || getTodayIsoDate()).trim();
-      const baseTime = normalizeSlotStartTime(String(elements.bookingTime?.value || '').trim()) || SLOT_OPTIONS[0].value;
-      const defaultDate = String(context.defaultAddOnBookingDate || existingAddOnBooking?.bookingDate || baseDate).trim() || baseDate;
-      const defaultTime = normalizeSlotStartTime(
-        String(context.defaultAddOnBookingTime || existingAddOnBooking?.bookingTime || baseTime).trim()
-      ) || baseTime;
-      const shouldSyncFromMain = !Boolean(context.addOnScheduleManuallyEdited);
-      const selectedAddOnDate = shouldSyncFromMain ? baseDate : defaultDate;
-      populateAddOnDateOptions(selectedAddOnDate);
-      context.defaultAddOnBookingDate = String(elements.addOnDate?.value || selectedAddOnDate || baseDate).trim() || baseDate;
-      context.defaultAddOnBookingTime = shouldSyncFromMain ? baseTime : defaultTime;
-      state.bookingDialogContext = context;
-      populateAddOnTimeOptions();
-      const preferredTime = normalizeSlotStartTime(
-        String(context.defaultAddOnBookingTime || defaultTime || baseTime).trim()
-      ) || baseTime;
-      if ([...(elements.addOnTime?.options || [])].some((option) => option.value === preferredTime && !option.disabled)) {
-        elements.addOnTime.value = preferredTime;
-      }
-    }
+  }
+  if (elements.bookingHydrogenAddOnScheduler) {
+    elements.bookingHydrogenAddOnScheduler.innerHTML = '';
+    elements.bookingHydrogenAddOnScheduler.hidden = true;
   }
 }
 
@@ -3832,6 +4037,7 @@ function openDialog(booking = null) {
     addOnScheduleManuallyEdited: false,
     defaultAddOnBookingDate: '',
     defaultAddOnBookingTime: '',
+    hydrogenAddOnSlots: [],
   };
   if (booking) {
     const isHydrogenCategory = getBookingCategory(resolvedBookedServiceName || booking?.serviceName || '') === 'HYDROGEN SESSION';
@@ -3854,6 +4060,7 @@ function openDialog(booking = null) {
       defaultAddOnBookingTime: normalizeSlotStartTime(
         String(existingAddOnBooking?.bookingTime || booking?.bookingTime || '').trim()
       ),
+      hydrogenAddOnSlots: [],
     };
   }
   populateServiceOptions();
@@ -3948,6 +4155,7 @@ function closeDialog() {
     addOnScheduleManuallyEdited: false,
     defaultAddOnBookingDate: '',
     defaultAddOnBookingTime: '',
+    hydrogenAddOnSlots: [],
   };
   state.selectedBookingAddOnServiceName = '';
   const experienceLabel = document.getElementById('experienceServiceLabel');
@@ -4105,10 +4313,32 @@ async function upsertBooking() {
   const selectedAddOnName = elements.addOnService?.value;
   if (selectedAddOnName) {
     payload.addOnServiceName = selectedAddOnName;
-    payload.addOnBookingDate = String(elements.addOnDate?.value || elements.bookingDate?.value || '').trim();
-    payload.addOnBookingTime = normalizeSlotStartTime(
-      String(elements.addOnTime?.value || elements.bookingTime?.value || '').trim()
-    );
+    const selectedAddOnService = state.services.find((service) => service.name === selectedAddOnName) || null;
+    const isHydrogenAddOn = String(selectedAddOnService?.category || '').trim().toUpperCase() === 'HYDROGEN SESSION';
+    if (isHydrogenAddOn) {
+      const hydrogenSlots = Array.isArray(state.bookingDialogContext?.hydrogenAddOnSlots)
+        ? state.bookingDialogContext.hydrogenAddOnSlots
+        : [];
+      const fallbackHydrogenSlots = buildHydrogenAddOnSlots({
+        sessionCount: Math.max(1, getHydrogenSessionCountFromServiceName(selectedAddOnName)),
+        baseDate: String(elements.bookingDate?.value || getTodayIsoDate()).trim() || getTodayIsoDate(),
+        baseTime: normalizeSlotStartTime(String(elements.bookingTime?.value || '').trim()) || SLOT_OPTIONS[0].value,
+      });
+      const slotsToSend = hydrogenSlots.length ? hydrogenSlots : fallbackHydrogenSlots;
+      payload.addOnHydrogenSlots = slotsToSend.map((slot) => ({
+        bookingDate: String(slot?.bookingDate || '').trim(),
+        bookingTime: normalizeSlotStartTime(String(slot?.bookingTime || '').trim()) || SLOT_OPTIONS[0].value,
+      }));
+      payload.addOnBookingDate = String(slotsToSend[0]?.bookingDate || elements.bookingDate?.value || '').trim();
+      payload.addOnBookingTime = normalizeSlotStartTime(
+        String(slotsToSend[0]?.bookingTime || elements.bookingTime?.value || '').trim()
+      );
+    } else {
+      payload.addOnBookingDate = String(elements.addOnDate?.value || elements.bookingDate?.value || '').trim();
+      payload.addOnBookingTime = normalizeSlotStartTime(
+        String(elements.addOnTime?.value || elements.bookingTime?.value || '').trim()
+      );
+    }
   }
   const selectedAddOnService = selectedAddOnName
     ? state.services.find((service) => service.name === selectedAddOnName)
@@ -6632,7 +6862,7 @@ function render() {
     if (elements.servicesSection) elements.servicesSection.hidden = activeTab !== 'services';
     if (elements.userBookingsSection) elements.userBookingsSection.hidden = activeTab !== 'bookings';
     if (elements.userCartSection) elements.userCartSection.hidden = activeTab !== 'cart';
-    if (activeTab !== 'services') state.comboSidebarOpen = false;
+    if (activeTab !== 'membership') state.comboSidebarOpen = false;
   } else {
     if (elements.bookingFiltersSection) elements.bookingFiltersSection.hidden = false;
     state.comboSidebarOpen = false;
@@ -8086,16 +8316,27 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
 
 function renderIvUnifiedComposer({ detailsContainer, services, category }) {
   const detailSelection = state.serviceDetailSelections[category] || {};
+  const hydrogenAddOnServices = state.services.filter(
+    (service) => String(service.category || '').toUpperCase() === 'HYDROGEN SESSION'
+  );
   const selectedPlanName = services.some((service) => service.name === detailSelection.selectedPlanName)
     ? detailSelection.selectedPlanName
     : services[0]?.name || '';
   const selectedDate = String(detailSelection.bookingDate || getTodayIsoDate());
   const selectedTime = String(detailSelection.bookingTime || SLOT_OPTIONS[0].value);
+  const selectedAddOnServiceName = hydrogenAddOnServices.some((service) => service.name === detailSelection.addOnServiceName)
+    ? String(detailSelection.addOnServiceName || '').trim()
+    : '';
+  const selectedAddOnBookingDate = String(detailSelection.addOnBookingDate || selectedDate || getTodayIsoDate());
+  const selectedAddOnBookingTime = String(detailSelection.addOnBookingTime || selectedTime || SLOT_OPTIONS[0].value);
   state.serviceDetailSelections[category] = {
     ...detailSelection,
     selectedPlanName,
     bookingDate: selectedDate,
     bookingTime: selectedTime,
+    addOnServiceName: selectedAddOnServiceName,
+    addOnBookingDate: selectedAddOnBookingDate,
+    addOnBookingTime: selectedAddOnBookingTime,
   };
 
   const selectedService = services.find((service) => service.name === selectedPlanName) || services[0] || null;
@@ -8106,6 +8347,22 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
     detailsContainer.appendChild(empty);
     return;
   }
+
+  const selectedAddOnService =
+    hydrogenAddOnServices.find((service) => service.name === selectedAddOnServiceName) || null;
+  const selectedServicePrice = Number(selectedService.effectivePriceInr ?? selectedService.priceInr ?? 0);
+  const selectedAddOnPrice = selectedAddOnService
+    ? Number(selectedAddOnService.effectivePriceInr ?? selectedAddOnService.priceInr ?? 0)
+    : 0;
+  const isHydrogenAddOn = String(selectedAddOnService?.category || '').trim().toUpperCase() === 'HYDROGEN SESSION';
+  const selectedServiceIsMembershipOnly = Boolean(selectedService.membershipOnly);
+  const selectedServiceHasMemberAccess = isCurrentUserMembershipActive();
+  const basePriceText = selectedServiceIsMembershipOnly
+    ? selectedServiceHasMemberAccess
+      ? 'Included in Membership'
+      : 'Members only'
+    : `₹${selectedServicePrice.toLocaleString('en-IN')}`;
+  const totalPrice = selectedServicePrice + selectedAddOnPrice;
 
   const layout = document.createElement('div');
   layout.className = 'hydrogen-layout hydrogen-unified-layout iv-unified-layout';
@@ -8132,30 +8389,39 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
   }
   planSelect.value = selectedService.name;
 
-  const updateSummary = (service) => {
-    if (!summary || !service) return;
-    const price = Number(service.effectivePriceInr ?? service.priceInr ?? 0);
-    const isMembershipOnly = Boolean(service.membershipOnly);
-    const hasMemberAccess = isCurrentUserMembershipActive();
-    const priceText = isMembershipOnly
-      ? hasMemberAccess
-        ? 'Included in Membership'
-        : 'Members only'
-      : `₹${price.toLocaleString('en-IN')}`;
+  const refreshSummary = () => {
+    if (!summary) return;
+    const addOnHtml = selectedAddOnService
+      ? `
+        <div class="iv-plan-summary-addon">
+          <strong>${escapeHtml(selectedAddOnService.name)}</strong>
+          <span>₹${selectedAddOnPrice.toLocaleString('en-IN')}</span>
+        </div>
+      `
+      : '';
     summary.innerHTML = `
-      <strong>${escapeHtml(service.name)}</strong>
-      <span>${escapeHtml(priceText)}</span>
+      <strong>${escapeHtml(selectedService.name)}</strong>
+      <span>${escapeHtml(basePriceText)}</span>
+      ${addOnHtml}
+      <div class="iv-plan-summary-total">
+        <strong>Total</strong>
+        <span>${selectedServiceIsMembershipOnly && !selectedServiceHasMemberAccess ? 'Members only' : `₹${totalPrice.toLocaleString('en-IN')}`}</span>
+      </div>
     `;
   };
-  updateSummary(selectedService);
+  refreshSummary();
 
   planSelect.addEventListener('change', () => {
     const nextName = planSelect.value;
+    const nextSelection = state.serviceDetailSelections[category] || {};
     state.serviceDetailSelections[category] = {
-      ...(state.serviceDetailSelections[category] || {}),
+      ...nextSelection,
       selectedPlanName: nextName,
       bookingDate: dateInput.value || getTodayIsoDate(),
       bookingTime: timeSelect.value || SLOT_OPTIONS[0].value,
+      addOnServiceName: String(nextSelection.addOnServiceName || '').trim(),
+      addOnBookingDate: addOnDateSelect?.value || nextSelection.addOnBookingDate || dateInput.value || getTodayIsoDate(),
+      addOnBookingTime: addOnTimeSelect?.value || nextSelection.addOnBookingTime || timeSelect.value || SLOT_OPTIONS[0].value,
     };
     renderServices();
   });
@@ -8237,9 +8503,293 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
   scheduleList.appendChild(row);
   schedulePanel.appendChild(scheduleList);
 
-  const selectedServicePrice = Number(selectedService.effectivePriceInr ?? selectedService.priceInr ?? 0);
-  const selectedServiceIsMembershipOnly = Boolean(selectedService.membershipOnly);
-  const selectedServiceHasMemberAccess = isCurrentUserMembershipActive();
+  const addOnPanel = document.createElement('section');
+  addOnPanel.className = 'hydrogen-addon-panel iv-addon-panel';
+  addOnPanel.innerHTML = `
+    <div class="hydrogen-addon-head">
+      <strong>Add-ons</strong>
+      <span>Optional. Choose Hydrogen Session.</span>
+    </div>
+    <div class="hydrogen-addon-grid">
+      <label>
+        Hydrogen Session
+        <select class="hydrogen-addon-select">
+          <option value="">No add-on</option>
+        </select>
+      </label>
+      <label class="hydrogen-addon-date-label">
+        Add-on Date
+        <input class="hydrogen-addon-date-select" type="date" min="${getTodayIsoDate()}" max="${getMaxBookingIsoDate()}" />
+      </label>
+      <label class="hydrogen-addon-time-label">
+        Add-on Time
+        <select class="hydrogen-addon-time-select"></select>
+      </label>
+    </div>
+    <div class="hydrogen-addon-hydrogen-schedule" hidden></div>
+  `;
+
+  const addOnSelect = addOnPanel.querySelector('.hydrogen-addon-select');
+  const addOnDateSelect = addOnPanel.querySelector('.hydrogen-addon-date-select');
+  const addOnTimeSelect = addOnPanel.querySelector('.hydrogen-addon-time-select');
+  const addOnDateLabel = addOnPanel.querySelector('.hydrogen-addon-date-label');
+  const addOnTimeLabel = addOnPanel.querySelector('.hydrogen-addon-time-label');
+  const hydrogenScheduleWrap = addOnPanel.querySelector('.hydrogen-addon-hydrogen-schedule');
+
+  for (const addOn of hydrogenAddOnServices) {
+    const option = document.createElement('option');
+    option.value = addOn.name;
+    option.textContent = `${addOn.name} - Rs. ${Number(addOn.effectivePriceInr || addOn.priceInr || 0).toLocaleString('en-IN')}`;
+    addOnSelect.appendChild(option);
+  }
+  addOnSelect.value = selectedAddOnServiceName;
+
+  const getHydrogenAddOnSlots = () => {
+    const storedSlots = Array.isArray(state.serviceDetailSelections[category]?.addOnHydrogenSlots)
+      ? state.serviceDetailSelections[category].addOnHydrogenSlots
+      : [];
+    const sessionCount = Math.max(1, getHydrogenSessionCountFromServiceName(selectedAddOnService?.name || ''));
+    const baseDate = String(
+      state.serviceDetailSelections[category]?.addOnBookingDate ||
+      state.serviceDetailSelections[category]?.bookingDate ||
+      dateInput.value ||
+      getTodayIsoDate()
+    ).trim() || getTodayIsoDate();
+    const baseTime = normalizeSlotStartTime(
+      String(
+        state.serviceDetailSelections[category]?.addOnBookingTime ||
+        state.serviceDetailSelections[category]?.bookingTime ||
+        timeSelect.value ||
+        SLOT_OPTIONS[0].value
+      ).trim()
+    ) || SLOT_OPTIONS[0].value;
+    return buildHydrogenAddOnSlots({
+      sessionCount,
+      baseDate,
+      baseTime,
+      existingSlots: storedSlots,
+      keepExisting: Boolean(storedSlots.length),
+    });
+  };
+
+  const renderHydrogenAddOnSchedule = () => {
+    if (!hydrogenScheduleWrap) return;
+    hydrogenScheduleWrap.innerHTML = '';
+    if (!selectedAddOnService || !isHydrogenAddOn) {
+      hydrogenScheduleWrap.hidden = true;
+      return;
+    }
+
+    const sessionCount = Math.max(1, getHydrogenSessionCountFromServiceName(selectedAddOnService.name));
+    const slots = getHydrogenAddOnSlots();
+    const nextBaseDate = String(slots[0]?.bookingDate || dateInput.value || getTodayIsoDate()).trim() || getTodayIsoDate();
+    const nextBaseTime = normalizeSlotStartTime(String(slots[0]?.bookingTime || timeSelect.value || '').trim()) || SLOT_OPTIONS[0].value;
+    state.serviceDetailSelections[category] = {
+      ...(state.serviceDetailSelections[category] || {}),
+      addOnServiceName: selectedAddOnService.name,
+      addOnHydrogenSlots: slots,
+      addOnBookingDate: nextBaseDate,
+      addOnBookingTime: nextBaseTime,
+    };
+
+    const head = document.createElement('div');
+    head.className = 'hydrogen-addon-schedule-head';
+    head.innerHTML = `
+      <strong>Hydrogen Session Schedule</strong>
+      <span>${sessionCount} session${sessionCount === 1 ? '' : 's'} will be booked on consecutive dates.</span>
+    `;
+    hydrogenScheduleWrap.appendChild(head);
+
+    const list = document.createElement('div');
+    list.className = 'hydrogen-addon-schedule-list';
+    slots.forEach((slot, index) => {
+      const row = document.createElement('article');
+      row.className = 'hydrogen-addon-schedule-row';
+      row.innerHTML = `
+        <div class="hydrogen-addon-schedule-row-head">
+          <strong>Hydrogen Session ${index + 1}</strong>
+          <small>${index === 0 ? 'Edit the first date to shift the sequence.' : 'Auto-filled from Session 1'}</small>
+        </div>
+        <div class="hydrogen-addon-schedule-grid">
+          <label>
+            Date
+            <input
+              class="hydrogen-addon-session-date${index > 0 ? ' is-locked' : ''}"
+              type="date"
+              min="${getTodayIsoDate()}"
+              max="${getMaxBookingIsoDate()}"
+              value="${escapeHtml(slot.bookingDate || nextBaseDate)}"
+              ${index > 0 ? 'disabled' : ''}
+            />
+          </label>
+          <label>
+            Time
+            <select class="hydrogen-addon-session-time"></select>
+          </label>
+        </div>
+      `;
+      const sessionDateInput = row.querySelector('.hydrogen-addon-session-date');
+      const sessionTimeSelect = row.querySelector('.hydrogen-addon-session-time');
+      populateAvailableTimeOptions(
+        sessionTimeSelect,
+        selectedAddOnService.name,
+        slot.bookingDate || nextBaseDate,
+        null,
+        slot.bookingTime || nextBaseTime
+      );
+      if (sessionTimeSelect && slot.bookingTime) {
+        sessionTimeSelect.value = normalizeSlotStartTime(slot.bookingTime) || sessionTimeSelect.value;
+      }
+
+      if (index === 0 && sessionDateInput) {
+        sessionDateInput.addEventListener('change', () => {
+          const nextDate = String(sessionDateInput.value || '').trim() || getTodayIsoDate();
+          const currentSlots = getHydrogenAddOnSlots();
+          const nextSlots = buildHydrogenAddOnSlots({
+            sessionCount,
+            baseDate: nextDate,
+            baseTime: String(sessionTimeSelect?.value || nextBaseTime || '').trim() || nextBaseTime,
+            existingSlots: currentSlots,
+          });
+          state.serviceDetailSelections[category] = {
+            ...(state.serviceDetailSelections[category] || {}),
+            addOnServiceName: selectedAddOnService.name,
+            addOnHydrogenSlots: nextSlots,
+            addOnBookingDate: String(nextSlots[0]?.bookingDate || nextDate).trim() || nextDate,
+            addOnBookingTime: normalizeSlotStartTime(String(nextSlots[0]?.bookingTime || sessionTimeSelect?.value || '').trim()) || nextBaseTime,
+          };
+          renderServices();
+        });
+      }
+
+      sessionTimeSelect?.addEventListener('change', () => {
+        const currentSlots = getHydrogenAddOnSlots();
+        currentSlots[index] = {
+          ...(currentSlots[index] || {}),
+          bookingDate: String(sessionDateInput?.value || currentSlots[index]?.bookingDate || nextBaseDate).trim() || nextBaseDate,
+          bookingTime: normalizeSlotStartTime(String(sessionTimeSelect.value || '').trim()) || nextBaseTime,
+        };
+        const nextSlots = buildHydrogenAddOnSlots({
+          sessionCount,
+          baseDate: String(currentSlots[0]?.bookingDate || nextBaseDate).trim() || nextBaseDate,
+          baseTime: String(currentSlots[0]?.bookingTime || nextBaseTime).trim() || nextBaseTime,
+          existingSlots: currentSlots,
+          keepExisting: true,
+        });
+        state.serviceDetailSelections[category] = {
+          ...(state.serviceDetailSelections[category] || {}),
+          addOnServiceName: selectedAddOnService.name,
+          addOnHydrogenSlots: nextSlots,
+          addOnBookingDate: String(nextSlots[0]?.bookingDate || nextBaseDate).trim() || nextBaseDate,
+          addOnBookingTime: String(nextSlots[0]?.bookingTime || nextBaseTime).trim() || nextBaseTime,
+        };
+        renderServices();
+      });
+
+      list.appendChild(row);
+    });
+
+    hydrogenScheduleWrap.appendChild(list);
+    hydrogenScheduleWrap.hidden = false;
+  };
+
+  const populateAddOnTimeOptions = () => {
+    if (!addOnTimeSelect || !selectedAddOnService || isHydrogenAddOn) return;
+    const addOnDate = String(addOnDateSelect?.value || '').trim();
+    const preferredTime = String(
+      state.serviceDetailSelections[category]?.addOnBookingTime || selectedAddOnBookingTime || timeSelect.value || SLOT_OPTIONS[0].value
+    ).trim();
+    if (!addOnDate) {
+      addOnTimeSelect.innerHTML = '<option value="">Select add-on date first</option>';
+      return;
+    }
+    populateAvailableTimeOptions(
+      addOnTimeSelect,
+      selectedAddOnService.name,
+      addOnDate,
+      {
+        bookingDate: addOnDate,
+        bookingTime: preferredTime,
+      },
+      preferredTime
+    );
+    if (![...addOnTimeSelect.options].some((option) => option.value === preferredTime)) {
+      addOnTimeSelect.value = addOnTimeSelect.options[0]?.value || '';
+    }
+  };
+
+  const populateAddOnDateOptions = () => {
+    if (!addOnDateSelect || isHydrogenAddOn) return;
+    const dates = [];
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    for (let i = 0; i <= BOOKING_WINDOW_DAYS; i += 1) {
+      const day = new Date(start);
+      day.setDate(start.getDate() + i);
+      const iso = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+      dates.push(iso);
+    }
+    addOnDateSelect.innerHTML = '';
+    for (const dateValue of dates) {
+      const option = document.createElement('option');
+      option.value = dateValue;
+      option.textContent = formatBookingDateLabel(dateValue);
+      addOnDateSelect.appendChild(option);
+    }
+    const preferredDate = String(
+      state.serviceDetailSelections[category]?.addOnBookingDate || selectedAddOnBookingDate || dateInput.value || getTodayIsoDate()
+    ).trim();
+    addOnDateSelect.value = dates.includes(preferredDate) ? preferredDate : dates[0] || '';
+    populateAddOnTimeOptions();
+  };
+
+  const syncAddOnSelection = () => {
+    state.serviceDetailSelections[category] = {
+      ...(state.serviceDetailSelections[category] || {}),
+      addOnServiceName: String(addOnSelect.value || '').trim(),
+      addOnBookingDate: String(addOnDateSelect?.value || '').trim(),
+      addOnBookingTime: String(addOnTimeSelect?.value || '').trim(),
+      addOnHydrogenSlots: isHydrogenAddOn ? getHydrogenAddOnSlots() : [],
+    };
+    refreshSummary();
+  };
+
+  addOnSelect.addEventListener('change', () => {
+    state.serviceDetailSelections[category] = {
+      ...(state.serviceDetailSelections[category] || {}),
+      addOnServiceName: String(addOnSelect.value || '').trim(),
+      addOnBookingDate: String(addOnSelect.value ? addOnDateSelect?.value || dateInput.value || getTodayIsoDate() : '').trim(),
+      addOnBookingTime: String(addOnSelect.value ? addOnTimeSelect?.value || timeSelect.value || SLOT_OPTIONS[0].value : '').trim(),
+      addOnHydrogenSlots: [],
+    };
+    renderServices();
+  });
+  addOnDateSelect.addEventListener('change', () => {
+    populateAddOnTimeOptions();
+    syncAddOnSelection();
+  });
+  addOnTimeSelect.addEventListener('change', () => {
+    syncAddOnSelection();
+  });
+
+  addOnDateLabel.hidden = !selectedAddOnService || isHydrogenAddOn;
+  addOnTimeLabel.hidden = !selectedAddOnService || isHydrogenAddOn;
+  if (hydrogenScheduleWrap) hydrogenScheduleWrap.hidden = !isHydrogenAddOn;
+  if (selectedAddOnService && isHydrogenAddOn) {
+    renderHydrogenAddOnSchedule();
+  } else if (selectedAddOnService) {
+    populateAddOnDateOptions();
+  } else {
+    addOnDateSelect.value = '';
+    addOnTimeSelect.innerHTML = '<option value="">No add-on selected</option>';
+    if (hydrogenScheduleWrap) {
+      hydrogenScheduleWrap.innerHTML = '';
+      hydrogenScheduleWrap.hidden = true;
+    }
+  }
+
+  schedulePanel.appendChild(addOnPanel);
+
   const stickyPriceText = selectedServiceIsMembershipOnly
     ? selectedServiceHasMemberAccess
       ? 'Included in Membership'
@@ -8247,7 +8797,6 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
     : `₹${selectedServicePrice.toLocaleString('en-IN')}`;
   const stickyPriceClass = /₹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
 
-  // Check if editing any service in this category
   const editingBookingId = String(state.ivSelections?.[selectedService.name]?.editingBookingId || '').trim();
   const isEditingIvBooking = Boolean(editingBookingId);
 
@@ -8266,19 +8815,30 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
   stickyButton.disabled = selectedServiceIsMembershipOnly && !selectedServiceHasMemberAccess;
   stickyButton.addEventListener('click', async () => {
     try {
+      const payload = {
+        serviceName: selectedService.name,
+        bookingDate: dateInput.value || getTodayIsoDate(),
+        bookingTime: timeSelect.value || SLOT_OPTIONS[0].value,
+        addOnServiceName: selectedAddOnService ? selectedAddOnService.name : '',
+        addOnBookingDate: selectedAddOnService
+          ? isHydrogenAddOn
+            ? String(state.serviceDetailSelections[category]?.addOnHydrogenSlots?.[0]?.bookingDate || dateInput.value || getTodayIsoDate()).trim()
+            : addOnDateSelect.value || dateInput.value || getTodayIsoDate()
+          : '',
+        addOnBookingTime: selectedAddOnService
+          ? isHydrogenAddOn
+            ? String(state.serviceDetailSelections[category]?.addOnHydrogenSlots?.[0]?.bookingTime || timeSelect.value || SLOT_OPTIONS[0].value).trim()
+            : addOnTimeSelect.value || timeSelect.value || SLOT_OPTIONS[0].value
+          : '',
+        addOnHydrogenSlots: selectedAddOnService && isHydrogenAddOn ? getHydrogenAddOnSlots() : [],
+      };
       if (isEditingIvBooking) {
         await updateIvUnifiedBooking({
           bookingId: editingBookingId,
-          serviceName: selectedService.name,
-          bookingDate: dateInput.value || getTodayIsoDate(),
-          bookingTime: timeSelect.value || SLOT_OPTIONS[0].value,
+          ...payload,
         });
       } else {
-        await saveIvUnifiedBookingToCart({
-          serviceName: selectedService.name,
-          bookingDate: dateInput.value || getTodayIsoDate(),
-          bookingTime: timeSelect.value || SLOT_OPTIONS[0].value,
-        });
+        await saveIvUnifiedBookingToCart(payload);
       }
     } catch (error) {
       showNotice({ title: 'Error', body: error.message || 'Unable to process this request.' });
@@ -8291,7 +8851,15 @@ function renderIvUnifiedComposer({ detailsContainer, services, category }) {
   detailsContainer.appendChild(layout);
 }
 
-async function saveIvUnifiedBookingToCart({ serviceName, bookingDate, bookingTime }) {
+async function saveIvUnifiedBookingToCart({
+  serviceName,
+  bookingDate,
+  bookingTime,
+  addOnServiceName = '',
+  addOnBookingDate = '',
+  addOnBookingTime = '',
+  addOnHydrogenSlots = [],
+}) {
   const service = getServiceCatalogEntry(serviceName);
   if (!service) {
     showNotice({ title: 'Error', body: 'Selected service is not available.' });
@@ -8301,6 +8869,10 @@ async function saveIvUnifiedBookingToCart({ serviceName, bookingDate, bookingTim
   const safeTime = String(bookingTime || '').trim();
   if (!safeDate || !safeTime) {
     showNotice({ title: 'Notice', body: 'Set hydrogen session date and time first.' });
+    return;
+  }
+  if (addOnServiceName && (!String(addOnBookingDate || '').trim() || !String(addOnBookingTime || '').trim())) {
+    showNotice({ title: 'Notice', body: 'Set add-on date and time first.' });
     return;
   }
 
@@ -8343,6 +8915,10 @@ async function saveIvUnifiedBookingToCart({ serviceName, bookingDate, bookingTim
       serviceName,
       bookingDate: safeDate,
       bookingTime: safeTime,
+      addOnServiceName,
+      addOnBookingDate,
+      addOnBookingTime,
+      addOnHydrogenSlots,
       notes: '',
     }),
   });
@@ -8374,7 +8950,16 @@ async function saveIvUnifiedBookingToCart({ serviceName, bookingDate, bookingTim
   });
 }
 
-async function updateIvUnifiedBooking({ bookingId, serviceName, bookingDate, bookingTime }) {
+async function updateIvUnifiedBooking({
+  bookingId,
+  serviceName,
+  bookingDate,
+  bookingTime,
+  addOnServiceName = '',
+  addOnBookingDate = '',
+  addOnBookingTime = '',
+  addOnHydrogenSlots = [],
+}) {
   const service = getServiceCatalogEntry(serviceName);
   if (!service) {
     showNotice({ title: 'Error', body: 'Selected service is not available.' });
@@ -8384,6 +8969,10 @@ async function updateIvUnifiedBooking({ bookingId, serviceName, bookingDate, boo
   const safeTime = String(bookingTime || '').trim();
   if (!safeDate || !safeTime) {
     showNotice({ title: 'Notice', body: 'Set date and time first.' });
+    return;
+  }
+  if (addOnServiceName && (!String(addOnBookingDate || '').trim() || !String(addOnBookingTime || '').trim())) {
+    showNotice({ title: 'Notice', body: 'Set add-on date and time first.' });
     return;
   }
 
@@ -8400,6 +8989,10 @@ async function updateIvUnifiedBooking({ bookingId, serviceName, bookingDate, boo
       serviceName,
       bookingDate: safeDate,
       bookingTime: safeTime,
+      addOnServiceName,
+      addOnBookingDate,
+      addOnBookingTime,
+      addOnHydrogenSlots,
       notes: '',
     }),
   });

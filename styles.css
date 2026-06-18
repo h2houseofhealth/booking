@@ -7051,10 +7051,46 @@ th {
   padding: 1.4rem 1.5rem 1.3rem;
 }
 
+#membershipRosterForm {
+  padding: 1.35rem 1.45rem 1.2rem;
+  box-sizing: border-box;
+}
+
 .membership-dialog-content {
   display: grid;
   gap: 1rem;
   margin-bottom: 1.5rem;
+}
+
+#membershipRosterDialog .membership-dialog-content {
+  gap: 0.9rem;
+  margin-bottom: 1.1rem;
+}
+
+.membership-roster-list {
+  display: grid;
+  gap: 0.85rem;
+  max-height: min(58vh, 520px);
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.membership-roster-item {
+  margin-bottom: 0;
+}
+
+#membershipRosterDialog .membership-checkout-summary {
+  margin-bottom: 0.2rem;
+  line-height: 1.55;
+}
+
+#membershipRosterDialog .dialog-head h2 {
+  line-height: 1.15;
+}
+
+#membershipRosterDialog .admin-member-detail {
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* Service category cards - collapsible inline display */

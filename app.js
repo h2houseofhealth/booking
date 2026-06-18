@@ -502,6 +502,13 @@ const elements = {
   membershipAddPersonPlace: document.getElementById('membershipAddPersonPlace'),
   membershipAddPersonEmail: document.getElementById('membershipAddPersonEmail'),
   membershipAddPersonContact: document.getElementById('membershipAddPersonContact'),
+  membershipRosterDialog: document.getElementById('membershipRosterDialog'),
+  membershipRosterForm: document.getElementById('membershipRosterForm'),
+  membershipRosterDialogTitle: document.getElementById('membershipRosterDialogTitle'),
+  membershipRosterSummary: document.getElementById('membershipRosterSummary'),
+  membershipRosterList: document.getElementById('membershipRosterList'),
+  closeMembershipRosterDialogBtn: document.getElementById('closeMembershipRosterDialogBtn'),
+  cancelMembershipRosterBtn: document.getElementById('cancelMembershipRosterBtn'),
   adminCalendarCustomerDialog: document.getElementById('adminCalendarCustomerDialog'),
   adminCalendarCustomerForm: document.getElementById('adminCalendarCustomerForm'),
   adminCalendarModalCustomerName: document.getElementById('adminCalendarModalCustomerName'),
@@ -1094,6 +1101,7 @@ function attachEvents() {
     if (elements.dialog.open) elements.dialog.close();
     if (elements.profileDialog.open) elements.profileDialog.close();
     if (elements.membershipDialog?.open) elements.membershipDialog.close();
+    if (elements.membershipRosterDialog?.open) elements.membershipRosterDialog.close();
     if (elements.adminUserSessionDialog?.open) elements.adminUserSessionDialog.close();
     renderAuthMode();
     render();
@@ -1492,6 +1500,14 @@ function attachEvents() {
       elements.membershipBrowsePanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
+  elements.membershipStatValidCard?.addEventListener('click', () => {
+    openMembershipRosterDialog().catch((error) => {
+      showNotice({
+        title: 'Unable to open covered members',
+        body: error?.message || 'Please try again in a moment.',
+      });
+    });
+  });
   elements.membershipAddPersonBtn?.addEventListener('click', () => {
     const rosterLoaded = Boolean(state.membershipRoster && typeof state.membershipRoster === 'object');
     const slotsRemaining = rosterLoaded ? Number(state.membershipRoster?.slotsRemaining) : Number.NaN;
@@ -1612,6 +1628,12 @@ function attachEvents() {
   elements.membershipForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     await submitMembershipCheckout();
+  });
+  elements.closeMembershipRosterDialogBtn?.addEventListener('click', closeMembershipRosterDialog);
+  elements.cancelMembershipRosterBtn?.addEventListener('click', closeMembershipRosterDialog);
+  elements.membershipRosterDialog?.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    closeMembershipRosterDialog();
   });
   elements.closeMembershipAddPersonDialogBtn?.addEventListener('click', closeMembershipAddPersonDialog);
   elements.cancelMembershipAddPersonBtn?.addEventListener('click', closeMembershipAddPersonDialog);
@@ -10287,6 +10309,11 @@ function renderMembership() {
       ? 'Covered'
       : '/session\nJoin membership to unlock lower pricing and premium benefits';
   }
+  if (elements.membershipStatValidCard) {
+    elements.membershipStatValidCard.title = active
+      ? 'View covered members'
+      : 'View membership options';
+  }
   if (elements.membershipStatValid) {
     elements.membershipStatValid.textContent = active ? (effectiveExpiry ? formatDateAsDayMonthYear(effectiveExpiry) : '-') : '\u20B9 9,500';
   }
@@ -10748,6 +10775,107 @@ function closeMembershipDialog() {
     elements.membershipDialog.close();
   }
   state.membershipCheckout = null;
+}
+
+function closeMembershipRosterDialog() {
+  if (elements.membershipRosterDialog?.open) {
+    elements.membershipRosterDialog.close();
+  }
+}
+
+async function openMembershipRosterDialog() {
+  if (!elements.membershipRosterDialog || !elements.membershipRosterList || !elements.membershipRosterSummary) return;
+  if (state.user?.role !== 'user') return;
+
+  const active = Boolean(state.membership.active);
+  const currentPeopleCount = Math.max(0, Number(state.membership.current?.peopleCount || 0));
+  if (!active) {
+    showNotice({
+      title: 'No covered members',
+      body: 'This membership does not currently have covered members to show.',
+    });
+    return;
+  }
+
+  if (!state.membershipRoster) {
+    try {
+      const fetchedRoster = await api('/api/membership/members');
+      state.membershipRoster = Array.isArray(fetchedRoster) ? { members: fetchedRoster } : fetchedRoster;
+    } catch {
+      state.membershipRoster = null;
+    }
+  }
+
+  const roster = state.membershipRoster || {};
+  const fallbackOrder = (Array.isArray(state.userMembershipOrders) ? state.userMembershipOrders : [])
+    .filter((order) => String(order?.status || '').toLowerCase() === 'paid')
+    .sort((a, b) => `${String(b?.paidAt || b?.createdAt || '')}`.localeCompare(`${String(a?.paidAt || a?.createdAt || '')}`))[0] || null;
+  const fallbackMembers = Array.isArray(fallbackOrder?.memberDetails) ? fallbackOrder.memberDetails : [];
+  const members = Array.isArray(roster.members) && roster.members.length
+    ? roster.members
+    : Array.isArray(roster) && roster.length
+      ? roster
+      : fallbackMembers;
+  const resolvedPeopleCount = Math.max(
+    currentPeopleCount,
+    Number(roster?.subscription?.peopleCount || 0),
+    Number(roster?.totalCovered || 0),
+    Number(fallbackOrder?.peopleCount || 0),
+    members.length
+  );
+  const visibleMembers = members.slice(0, resolvedPeopleCount || members.length);
+  const startedAtValue =
+    roster?.subscription?.startedAt ||
+    state.membership.current?.startedAt ||
+    state.user?.membershipStartedAt ||
+    null;
+  const expiresAtValue =
+    roster?.subscription?.expiresAt ||
+    state.membership.current?.expiresAt ||
+    state.user?.membershipExpiresAt ||
+    null;
+  const startedAt = startedAtValue ? new Date(startedAtValue) : null;
+  const expiresAt = expiresAtValue ? new Date(expiresAtValue) : null;
+  const validityText =
+    startedAt && !Number.isNaN(startedAt.getTime())
+      ? `Membership validity starts ${formatDateAsDayMonthYear(startedAt)}`
+      : 'Membership validity is active';
+  const endText = expiresAt && !Number.isNaN(expiresAt.getTime()) ? ` and ends ${formatDateAsDayMonthYear(expiresAt)}` : '';
+
+  if (elements.membershipRosterDialogTitle) {
+    elements.membershipRosterDialogTitle.textContent = 'Covered Members';
+  }
+  const summaryCount = resolvedPeopleCount || visibleMembers.length;
+  elements.membershipRosterSummary.textContent =
+    `${visibleMembers.length} of ${summaryCount} covered member${summaryCount === 1 ? '' : 's'}. ` +
+    `${validityText}${endText}.`;
+
+  elements.membershipRosterList.innerHTML = '';
+  if (!visibleMembers.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = 'No covered member details saved yet.';
+    elements.membershipRosterList.appendChild(empty);
+  } else {
+    visibleMembers.forEach((member, index) => {
+      const item = document.createElement('div');
+      item.className = 'admin-member-detail membership-roster-item';
+      const name = String(member?.name || '').trim() || 'Member';
+      const place = String(member?.place || '').trim();
+      const email = String(member?.email || '').trim() || '-';
+      const contactNumber = String(member?.contactNumber || '').trim() || '-';
+      item.innerHTML = `
+        <div><strong>Person ${index + 1}</strong></div>
+        <div><strong>Name:</strong> ${escapeHtml(name)}</div>
+        ${place ? `<div><strong>Place:</strong> ${escapeHtml(place)}</div>` : ''}
+        <div><strong>Email:</strong> ${escapeHtml(email)}</div>
+        <div><strong>Contact:</strong> ${escapeHtml(contactNumber)}</div>
+      `;
+      elements.membershipRosterList.appendChild(item);
+    });
+  }
+
+  elements.membershipRosterDialog.showModal();
 }
 
 function closeMembershipAddPersonDialog() {

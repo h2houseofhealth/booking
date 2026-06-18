@@ -910,14 +910,40 @@
           </table>
           <div id="cartMobileList" class="cart-mobile-list" hidden></div>
           <div id="cartEmptyState" class="empty-state cart-empty-state" hidden>
-            <div class="cart-empty-copy">
-              <strong>Your cart is empty.</strong>
-              <span>Add a hydrogen session or therapy to review it here.</span>
+            <div class="cart-empty-visual" aria-hidden="true">
+              <svg viewBox="0 0 120 120" role="presentation" focusable="false">
+                <defs>
+                  <linearGradient id="cartEmptyGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#f3d3b2" />
+                    <stop offset="100%" stop-color="#c8652d" />
+                  </linearGradient>
+                </defs>
+                <circle cx="60" cy="60" r="46" fill="rgba(255,255,255,0.92)" stroke="url(#cartEmptyGlow)" stroke-width="4" />
+                <path d="M36 48h8l6 26h30l6-18H54" fill="none" stroke="#8f4a2c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+                <circle cx="56" cy="82" r="4" fill="#8f4a2c" />
+                <circle cx="79" cy="82" r="4" fill="#8f4a2c" />
+                <path d="M47 36c3-5 9-8 13-8 4 0 9 2 12 6" fill="none" stroke="#c8652d" stroke-width="3" stroke-linecap="round" />
+                <path d="M78 29l2.4 4.8 5.3.8-3.9 3.8.9 5.2-4.7-2.5-4.7 2.5.9-5.2-3.9-3.8 5.3-.8z" fill="#f0a15f" opacity="0.95" />
+              </svg>
             </div>
-            <div class="cart-empty-recommendations" aria-label="Recommended next steps">
-              <span>Hydrogen sessions</span>
-              <span>IV therapies</span>
-              <span>Wellness add-ons</span>
+            <div class="cart-empty-copy">
+              <span class="cart-empty-eyebrow">Nothing in your cart yet</span>
+              <strong>Your cart is empty.</strong>
+              <span>Choose a service below and add your first session to keep everything in one place.</span>
+            </div>
+            <div class="cart-empty-recommendations" aria-label="Recommended services">
+              <span class="cart-empty-recommendation">
+                <strong>Hydrogen Sessions</strong>
+                <small>Book a session or package</small>
+              </span>
+              <span class="cart-empty-recommendation">
+                <strong>IV Therapies</strong>
+                <small>See wellness and recovery options</small>
+              </span>
+              <span class="cart-empty-recommendation">
+                <strong>Wellness Add-ons</strong>
+                <small>Complete your booking in one visit</small>
+              </span>
             </div>
             <div class="cart-empty-actions">
               <button id="cartEmptyBrowseBtn" class="btn btn-primary" type="button">Browse Services</button>

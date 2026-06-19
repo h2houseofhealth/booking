@@ -45,11 +45,16 @@ function renderPaymentSummary() {
   const addOnLines = Array.isArray(summary.addOnItems) ? summary.addOnItems : [];
   const detailCard = document.createElement('article');
   detailCard.className = 'admin-membership-card';
+  
+  // Get customer name and email - prefer guest info if available
+  const customerName = paymentState.booking?.guestName || paymentState.customer?.name || '';
+  const customerEmail = paymentState.booking?.guestEmail || paymentState.customer?.email || '';
+  
   detailCard.innerHTML = `
     <div class="admin-membership-head">
       <div>
         <h3>${escapeHtml(paymentState.booking?.serviceName || 'Booking')}</h3>
-        <p>${escapeHtml(paymentState.customer?.name || '')} • ${escapeHtml(paymentState.customer?.email || '')}</p>
+        <p>${escapeHtml(customerName)} • ${escapeHtml(customerEmail)}</p>
       </div>
       <span class="status-chip payment-${escapeHtml(paymentState.paymentStatus || 'unpaid')}">${escapeHtml(
     paymentState.paymentStatus || 'unpaid'
@@ -73,6 +78,14 @@ function renderPaymentSummary() {
         <span>Rs. ${Number(summary.totalAmountInr || 0).toLocaleString('en-IN')}</span>
       </div>
     </div>
+    ${paymentState.booking?.guestPhone ? `
+      <div class="admin-membership-meta" style="margin-top: 12px;">
+        <div class="admin-membership-meta-item">
+          <strong>Guest Phone</strong>
+          <span>${escapeHtml(paymentState.booking.guestPhone)}</span>
+        </div>
+      </div>
+    ` : ''}
   `;
 
   const breakdown = document.createElement('div');

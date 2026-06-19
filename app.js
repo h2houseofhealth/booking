@@ -142,6 +142,16 @@ const state = {
   membershipRoster: null,
   cartCouponCode: '',
   cartCouponPreview: null,
+  cart: [],
+  guestCheckout: {
+    isActive: false,
+    guestName: '',
+    guestEmail: '',
+    guestPhone: '',
+    formErrors: {},
+  },
+  isGuestUser: false,
+  guestSessionToken: null,
   ivSelections: {},
   selectedServiceCategory: null,
   selectedSingleSessionServiceName: '',
@@ -750,6 +760,27 @@ const elements = {
   bookingNotes: document.getElementById('bookingNotes'),
   experienceBookBtn: document.getElementById('experienceBookBtn'),
   experienceCardPrice: document.getElementById('experienceCardPrice'),
+
+  // Guest Checkout Elements
+  publicBookSessionBtn: document.getElementById('publicBookSessionBtn'),
+  guestCheckoutDialog: document.getElementById('guestCheckoutDialog'),
+  guestCheckoutForm: document.getElementById('guestCheckoutForm'),
+  guestCheckoutName: document.getElementById('guestCheckoutName'),
+  guestCheckoutEmail: document.getElementById('guestCheckoutEmail'),
+  guestCheckoutPhone: document.getElementById('guestCheckoutPhone'),
+  guestCheckoutError: document.getElementById('guestCheckoutError'),
+  guestCheckoutSubmit: document.getElementById('guestCheckoutSubmit'),
+  guestCheckoutCancel: document.getElementById('guestCheckoutCancel'),
+  closeGuestCheckoutDialog: document.getElementById('closeGuestCheckoutDialog'),
+
+  // Checkout Options Elements
+  checkoutOptionsDialog: document.getElementById('checkoutOptionsDialog'),
+  checkoutOptionsForm: document.getElementById('checkoutOptionsForm'),
+  checkoutWithGoogle: document.getElementById('checkoutWithGoogle'),
+  checkoutWithEmailLogin: document.getElementById('checkoutWithEmailLogin'),
+  checkoutAsGuest: document.getElementById('checkoutAsGuest'),
+  closeCheckoutOptionsDialog: document.getElementById('closeCheckoutOptionsDialog'),
+  checkoutOptionsContinueShopping: document.getElementById('checkoutOptionsContinueShopping'),
 };
 
 let isRegisterMode = false;
@@ -913,7 +944,8 @@ function attachEvents() {
   window.addEventListener('hashchange', () => {
     const nextTab = getUserTabFromHash(window.location.hash);
     if (!nextTab) return;
-    if (!state.user || state.user.role !== 'user' || !state.postLoginChoice) return;
+    if (!state.isGuestUser && (!state.user || state.user.role !== 'user' || !state.postLoginChoice)) return;
+    if (state.isGuestUser && nextTab !== 'services' && nextTab !== 'cart') return;
     if (state.activeUserTab === nextTab) return;
     resetServiceBrowserState();
     state.activeUserTab = nextTab;
@@ -1605,6 +1637,85 @@ function attachEvents() {
   elements.cartEmptyBookingsBtn?.addEventListener('click', () => {
     navigateToUserBookings();
   });
+
+  // Public Book Session Button
+  const handlePublicBookSession = async () => {
+    state.isGuestUser = true;
+    state.activeUserTab = 'services';
+    state.user = null;
+    state.authToken = null;
+    state.showAuthCard = false;
+    state.postLoginChoice = 'guest';
+    storeAuthToken('');
+    
+    const savedCart = localStorage.getItem('h2_guest_cart');
+    if (savedCart) {
+      try {
+        state.cart = JSON.parse(savedCart);
+      } catch {
+        state.cart = [];
+      }
+    }
+    state.bookings = Array.isArray(state.cart) ? state.cart : [];
+    try {
+      await loadGuestDashboardData();
+    } catch (error) {
+      console.error(error);
+      showNotice({ title: 'Services unavailable', type: 'error', body: error?.message || 'Unable to load services for guest booking.' });
+    }
+    
+    render();
+    requestAnimationFrame(() => {
+      elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  const publicBookSessionButtons = new Set([
+    elements.publicBookSessionBtn,
+    ...document.querySelectorAll('[data-public-book-session]'),
+  ]);
+  publicBookSessionButtons.forEach((button) => {
+    button?.addEventListener('click', handlePublicBookSession);
+  });
+
+  // Guest Form Handlers
+  elements.guestCheckoutSubmit?.addEventListener('click', handleGuestCheckoutSubmit);
+  elements.guestCheckoutCancel?.addEventListener('click', () => {
+    elements.guestCheckoutDialog?.close();
+  });
+  elements.closeGuestCheckoutDialog?.addEventListener('click', () => {
+    elements.guestCheckoutDialog?.close();
+  });
+
+  // Checkout Options Handlers
+  elements.checkoutWithGoogle?.addEventListener('click', () => {
+    elements.checkoutOptionsDialog?.close();
+    if (window.gapi && window.gapi.auth2) {
+      window.gapi.auth2.getAuthInstance().signIn();
+    }
+  });
+
+  elements.checkoutWithEmailLogin?.addEventListener('click', () => {
+    elements.checkoutOptionsDialog?.close();
+    state.showAuthCard = true;
+    state.auth = { mode: 'login' };
+    render();
+  });
+
+  elements.checkoutAsGuest?.addEventListener('click', () => {
+    elements.checkoutOptionsDialog?.close();
+    elements.guestCheckoutDialog?.showModal();
+    elements.guestCheckoutName?.focus();
+  });
+
+  elements.closeCheckoutOptionsDialog?.addEventListener('click', () => {
+    elements.checkoutOptionsDialog?.close();
+  });
+
+  elements.checkoutOptionsContinueShopping?.addEventListener('click', () => {
+    elements.checkoutOptionsDialog?.close();
+  });
+
   elements.bookingsPayAllBtn?.addEventListener('click', async () => {
     try {
       await payAllUserBookings();
@@ -2685,6 +2796,10 @@ async function loadPublicCoupons() {
 }
 
 async function loadDashboardData() {
+  if (state.isGuestUser && !state.user) {
+    await loadGuestDashboardData();
+    return;
+  }
   if (state.user?.role === 'admin') {
     const analyticsParams = new URLSearchParams();
     if (state.adminEmailAnalyticsFilters?.startDate) analyticsParams.set('startDate', state.adminEmailAnalyticsFilters.startDate);
@@ -2806,6 +2921,71 @@ async function loadDashboardData() {
   state.slotAutoShiftedNotice = '';
 }
 
+async function loadGuestDashboardData() {
+  const [servicesResult] = await Promise.all([
+    api('/api/public/services'),
+  ]);
+  state.services = servicesResult.services || [];
+  state.bookings = Array.isArray(state.cart) ? state.cart : [];
+  state.membership = { plans: [], active: false, current: null };
+  state.userMembershipOrders = [];
+  state.membershipBrowseVisible = false;
+  state.membershipRoster = null;
+  state.generalCoupons = { services: [], membership: [] };
+}
+
+function getGuestCartBookings() {
+  return Array.isArray(state.cart) ? state.cart : [];
+}
+
+function persistGuestCart() {
+  const cart = getGuestCartBookings();
+  state.cart = cart;
+  state.bookings = cart;
+  try {
+    localStorage.setItem('h2_guest_cart', JSON.stringify(cart));
+  } catch {
+    // Local storage can be unavailable in private or embedded browsing contexts.
+  }
+}
+
+function createGuestCartBooking(payload = {}) {
+  const serviceName = String(payload.serviceName || '').trim();
+  const bookingDate = String(payload.bookingDate || '').trim();
+  const bookingTime = normalizeSlotStartTime(String(payload.bookingTime || '').trim());
+  const addOnServiceName = String(payload.addOnServiceName || payload.addOnService || '').trim();
+  const id = `guest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  return {
+    id,
+    serviceName,
+    bookingDate,
+    bookingTime,
+    addOnService: addOnServiceName,
+    addOnServiceName,
+    notes: String(payload.notes || '').trim(),
+    status: 'pending',
+    paymentStatus: 'unpaid',
+    bookingType: 'guest',
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function addGuestCartBookings(bookings = []) {
+  const nextBookings = (Array.isArray(bookings) ? bookings : [bookings]).filter(
+    (booking) => booking?.serviceName && booking?.bookingDate && booking?.bookingTime
+  );
+  state.cart = [...getGuestCartBookings(), ...nextBookings];
+  persistGuestCart();
+  return nextBookings;
+}
+
+function removeGuestCartBooking(bookingId = '') {
+  const targetId = String(bookingId || '').trim();
+  state.cart = getGuestCartBookings().filter((booking) => String(booking?.id || '') !== targetId);
+  persistGuestCart();
+}
+
 async function loadServiceAvailability() {
   if (!state.selectedServiceCategory || !state.selectedServiceDate) {
     state.slotAvailabilityLoading = false;
@@ -2825,7 +3005,8 @@ async function loadServiceAvailability() {
     bookingDate: state.selectedServiceDate,
     category: state.selectedServiceCategory,
   });
-  const url = `${buildApiUrl('/api/services/availability')}?${params.toString()}`;
+  const availabilityPath = state.isGuestUser && !state.user ? '/api/public/services/availability' : '/api/services/availability';
+  const url = `${buildApiUrl(availabilityPath)}?${params.toString()}`;
 
   fetch(url, withApiCredentials())
     .then((res) => res.json())
@@ -3471,6 +3652,102 @@ function navigateToUserBookings() {
   requestAnimationFrame(() => {
     elements.userBookingsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+}
+
+function validateGuestCheckout() {
+  const name = String(elements.guestCheckoutName?.value || '').trim();
+  const email = String(elements.guestCheckoutEmail?.value || '').trim();
+  const phone = String(elements.guestCheckoutPhone?.value || '').trim();
+  
+  const errors = {};
+  
+  if (!name) {
+    errors.name = 'Full name is required';
+  } else if (name.length < 2 || name.length > 80) {
+    errors.name = 'Name must be 2-80 characters';
+  } else if (!/^[a-zA-Z\s\-']+$/.test(name)) {
+    errors.name = 'Name contains invalid characters';
+  }
+  
+  if (!email) {
+    errors.email = 'Email address is required';
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.email = 'Enter a valid email address';
+  }
+  
+  if (!phone) {
+    errors.phone = 'Phone number is required';
+  } else if (!/^[6-9]\d{9}$/.test(phone)) {
+    errors.phone = 'Enter a valid 10-digit Indian phone number';
+  }
+  
+  return { valid: Object.keys(errors).length === 0, errors };
+}
+
+function handleGuestCheckoutSubmit() {
+  const validation = validateGuestCheckout();
+  
+  if (!validation.valid) {
+    const errorMsg = Object.values(validation.errors)[0] || 'Please fix the errors above';
+    elements.guestCheckoutError.textContent = errorMsg;
+    elements.guestCheckoutError.hidden = false;
+    return;
+  }
+  
+  elements.guestCheckoutError.hidden = true;
+  
+  const guestName = String(elements.guestCheckoutName.value).trim();
+  const guestEmail = String(elements.guestCheckoutEmail.value).trim();
+  const guestPhone = String(elements.guestCheckoutPhone.value).trim();
+  
+  state.guestCheckout = {
+    isActive: true,
+    guestName,
+    guestEmail,
+    guestPhone,
+    formErrors: {},
+  };
+  
+  localStorage.setItem('h2_guest_checkout_info', JSON.stringify({
+    guestName,
+    guestEmail,
+    guestPhone,
+  }));
+  
+  proceedToGuestPayment();
+}
+
+async function proceedToGuestPayment() {
+  if (!state.cart || state.cart.length === 0) {
+    alert('Cart is empty. Please add bookings first.');
+    return;
+  }
+  
+  elements.guestCheckoutDialog.close();
+  
+  try {
+    const response = await api('/api/guest/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        guestName: state.guestCheckout.guestName,
+        guestEmail: state.guestCheckout.guestEmail,
+        guestPhone: state.guestCheckout.guestPhone,
+        bookings: state.cart,
+      }),
+    });
+    
+    if (!response.paymentToken) {
+      throw new Error('Failed to generate payment token');
+    }
+    
+    state.guestSessionToken = response.paymentToken;
+    
+    const paymentUrl = `${window.location.origin}/payment.html?token=${encodeURIComponent(response.paymentToken)}`;
+    window.location.href = paymentUrl;
+  } catch (error) {
+    alert(`Checkout failed: ${error.message}`);
+  }
 }
 
 function getHydrogenSlotsForSubmit(requiredSlots) {
@@ -4826,6 +5103,21 @@ async function payAllUserBookings() {
   }
 
   try {
+    if (state.isGuestUser && !state.user) {
+      state.cart = getUserCartPayableBookings(getGuestCartBookings());
+      persistGuestCart();
+      if (!state.cart.length) {
+        throw new Error('Cart is empty. Please add bookings first.');
+      }
+      if (payButton) {
+        payButton.disabled = false;
+        payButton.textContent = originalLabel;
+      }
+      elements.guestCheckoutDialog?.showModal();
+      elements.guestCheckoutName?.focus();
+      return;
+    }
+
     const result = await api('/api/payments/create-cart-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -5182,6 +5474,15 @@ async function deleteBooking(booking) {
       : `Delete booking for ${booking.serviceName}?`
   );
   if (!ok) return;
+
+  if (state.isGuestUser && !state.user) {
+    removeGuestCartBooking(booking.id);
+    if (state.selectedServiceCategory) {
+      await loadServiceAvailability();
+    }
+    render();
+    return;
+  }
 
   await api(`/api/bookings/${booking.id}`, { method: 'DELETE' });
   await loadDashboardData();
@@ -6834,19 +7135,21 @@ function renderMemberChoiceGateCta() {
 function render() {
   document.body.classList.remove('app-booting');
   const isAuthenticated = Boolean(state.user);
-  const showAuthCard = !isAuthenticated && state.showAuthCard;
-  const showPublicChoiceGate = !isAuthenticated && !showAuthCard;
+  const isGuest = Boolean(state.isGuestUser && !state.user);
+  const isAppUser = isAuthenticated || isGuest;
+  const showAuthCard = !isAppUser && state.showAuthCard;
+  const showPublicChoiceGate = !isAppUser && !showAuthCard;
   document.body.classList.toggle('auth-mode', showAuthCard);
   if (elements.authShell) elements.authShell.hidden = !showAuthCard;
   elements.authCard.hidden = !showAuthCard;
-  elements.appArea.hidden = !isAuthenticated;
+  elements.appArea.hidden = !isAppUser;
   renderMemberChoiceGateCta();
 
   document.querySelectorAll('.app-only').forEach((el) => {
-    el.hidden = !isAuthenticated;
+    el.hidden = !isAppUser;
   });
 
-  if (!isAuthenticated) {
+  if (!isAppUser) {
     document.querySelectorAll('.app-only, .user-only, .admin-only').forEach((el) => {
       el.hidden = true;
     });
@@ -6860,11 +7163,11 @@ function render() {
     return;
   }
 
-  const isAdmin = state.user.role === 'admin';
+  const isAdmin = state.user?.role === 'admin';
   if (!isAdmin) {
     syncPostLoginChoiceWithMembership();
   }
-  const needsPostLoginChoice = state.user.role === 'user' && !state.postLoginChoice;
+  const needsPostLoginChoice = state.user?.role === 'user' && !state.postLoginChoice;
   document.querySelectorAll('.user-only').forEach((el) => {
     el.hidden = isAdmin;
   });
@@ -6887,8 +7190,8 @@ function render() {
     });
   }
 
-  elements.userName.textContent = formatDisplayName(state.user.name);
-  elements.userRole.textContent = state.user.role;
+  elements.userName.textContent = isGuest ? 'Guest' : formatDisplayName(state.user?.name);
+  elements.userRole.textContent = isGuest ? 'Guest' : state.user?.role;
   renderProfileAvatar();
   renderProfileMembershipBadge();
   renderServicePanelContext();
@@ -6904,6 +7207,13 @@ function render() {
     if (elements.userTabMembership) elements.userTabMembership.classList.toggle('is-active', activeTab === 'membership');
     if (elements.userTabBookings) elements.userTabBookings.classList.toggle('is-active', activeTab === 'bookings');
     if (elements.userTabCart) elements.userTabCart.classList.toggle('is-active', activeTab === 'cart');
+    if (isGuest) {
+      if (elements.userTabMembership) elements.userTabMembership.hidden = true;
+      if (elements.userTabBookings) elements.userTabBookings.hidden = true;
+    } else {
+      if (elements.userTabMembership) elements.userTabMembership.hidden = false;
+      if (elements.userTabBookings) elements.userTabBookings.hidden = false;
+    }
     if (elements.membershipSection) elements.membershipSection.hidden = activeTab !== 'membership';
     if (elements.servicesSection) elements.servicesSection.hidden = activeTab !== 'services';
     if (elements.userBookingsSection) elements.userBookingsSection.hidden = activeTab !== 'bookings';
@@ -6971,8 +7281,9 @@ function render() {
     renderAdminCoupons();
     renderMyBookingsSessionTracking();
   } else {
-    const cartPayableBookings = getUserCartPayableBookings(state.bookings || []);
-    const cartDisplayBookings = getUserCartDisplayBookings(state.bookings || []);
+    const cartSourceBookings = isGuest ? getGuestCartBookings() : state.bookings || [];
+    const cartPayableBookings = getUserCartPayableBookings(cartSourceBookings);
+    const cartDisplayBookings = getUserCartDisplayBookings(cartSourceBookings);
     const historyBookings = getUserHistoryBookings(state.bookings || []);
     const filteredHistoryBookings = getFilteredUserHistoryBookings(historyBookings);
     elements.myBookingsFilterAll?.classList.toggle('is-active', (state.userBookingsFilter || 'all') === 'all');
@@ -6986,12 +7297,12 @@ function render() {
     if (elements.memberSessionCountDecBtn) {
       elements.memberSessionCountDecBtn.disabled = Number(state.memberSessionDisplayCount || 0) <= 0;
     }
-    renderUserRows(filteredHistoryBookings, state.userMembershipOrders || [], historyBookings);
+    renderUserRows(isGuest ? [] : filteredHistoryBookings, state.userMembershipOrders || [], historyBookings);
     renderCartRows(cartDisplayBookings);
     renderUserCheckoutSummary(cartPayableBookings);
 
     if (elements.bookingsCartNotice) {
-      const cartCount = getUserCartUnitCount(state.bookings || []);
+      const cartCount = getUserCartUnitCount(cartSourceBookings);
       elements.bookingsCartNotice.hidden = !(state.activeUserTab === 'bookings' && cartCount > 0);
     }
   }
@@ -12803,9 +13114,10 @@ async function resendPaymentLinkForBooking(booking) {
 
 function renderCartButtonState() {
   if (!elements.cartBtn || !elements.cartCount) return;
+  const isGuest = Boolean(state.isGuestUser && !state.user);
   const isUser = state.user?.role === 'user';
   const needsPostLoginChoice = isUser && !state.postLoginChoice && !isCurrentUserMembershipActive();
-  if (!isUser || needsPostLoginChoice) {
+  if ((!isUser && !isGuest) || needsPostLoginChoice) {
     elements.cartBtn.hidden = true;
     elements.cartCount.hidden = true;
     elements.cartBtn.classList.remove('has-items');
@@ -12813,7 +13125,7 @@ function renderCartButtonState() {
     return;
   }
 
-  const count = getUserCartUnitCount(state.bookings || []);
+  const count = getUserCartUnitCount(isGuest ? getGuestCartBookings() : state.bookings || []);
   elements.cartBtn.hidden = false;
   elements.cartBtn.classList.toggle('has-items', count > 0);
   elements.cartBtn.classList.toggle('is-active', (state.activeUserTab || 'services') === 'cart');
@@ -15155,6 +15467,38 @@ function formatBookingCreatedAtIndia(value) {
 }
 
 async function api(url, options = {}) {
+  const method = String(options.method || 'GET').trim().toUpperCase();
+  const isGuestMode = Boolean(state.isGuestUser && !state.user);
+  if (isGuestMode) {
+    const normalizedUrl = String(url || '');
+    if (method === 'GET' && normalizedUrl === '/api/services') {
+      url = '/api/public/services';
+    } else if (method === 'GET' && normalizedUrl.startsWith('/api/services/availability')) {
+      url = normalizedUrl.replace('/api/services/availability', '/api/public/services/availability');
+    } else if (method === 'POST' && normalizedUrl === '/api/bookings') {
+      const payload = JSON.parse(String(options.body || '{}'));
+      const booking = createGuestCartBooking(payload);
+      addGuestCartBookings(booking);
+      return { booking, bookings: [booking] };
+    } else if (method === 'POST' && normalizedUrl === '/api/hydrogen/book-pack') {
+      const payload = JSON.parse(String(options.body || '{}'));
+      const bookings = (Array.isArray(payload.slots) ? payload.slots : []).map((slot) =>
+        createGuestCartBooking({
+          serviceName: payload.serviceName,
+          bookingDate: slot.bookingDate,
+          bookingTime: slot.bookingTime,
+          addOnServiceName: payload.addOnServiceName,
+          notes: payload.notes,
+        })
+      );
+      addGuestCartBookings(bookings);
+      return { bookings };
+    } else if (method === 'DELETE' && /^\/api\/bookings\/[^/]+$/.test(normalizedUrl)) {
+      removeGuestCartBooking(decodeURIComponent(normalizedUrl.split('/').pop() || ''));
+      return { ok: true };
+    }
+  }
+
   const targetUrl = buildApiUrl(url);
   let response;
   try {

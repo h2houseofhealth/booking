@@ -12296,6 +12296,14 @@ body {
   box-shadow: inset 0 0 0 1px rgba(214, 180, 157, 0.55), 0 8px 16px rgba(76, 38, 21, 0.1);
 }
 
+#memberChoiceGate .member-choice-final-cta-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 img {
   max-width: 100%;
   height: auto;
@@ -12518,6 +12526,12 @@ img {
     justify-content: center;
     min-height: 48px;
     font-size: 15px;
+  }
+
+  #memberChoiceGate .member-choice-final-cta-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 
@@ -16523,5 +16537,182 @@ body.app-booting .user-only {
   .admin-discount-search input[type='text'] {
     padding-inline: 12px;
     font-size: 15px;
+  }
+}
+
+/* Guest Checkout Styling */
+.guest-checkout-dialog {
+  --dialog-max-width: 500px;
+}
+
+.guest-checkout-content {
+  padding: 24px;
+}
+
+.guest-checkout-lead {
+  margin-bottom: 20px;
+  font-size: 14px;
+  color: #666;
+}
+
+.guest-form-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.guest-form-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.guest-form-fields input {
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.guest-form-fields input:focus {
+  outline: none;
+  border-color: #8b5e3c;
+  box-shadow: 0 0 0 3px rgba(139, 94, 60, 0.1);
+}
+
+.guest-form-fields input::placeholder {
+  color: #999;
+}
+
+.form-error-message {
+  padding: 12px;
+  background-color: #fee;
+  border: 1px solid #fcc;
+  border-radius: 4px;
+  color: #c33;
+  font-size: 13px;
+  margin-top: -8px;
+}
+
+.guest-checkout-terms {
+  margin-bottom: 20px;
+  padding: 12px;
+  background-color: #f9f9f9;
+  border-radius: 4px;
+}
+
+.guest-checkout-terms small {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.5;
+}
+
+.guest-checkout-terms a {
+  color: #8b5e3c;
+  text-decoration: none;
+}
+
+.guest-checkout-terms a:hover {
+  text-decoration: underline;
+}
+
+/* Checkout Options Dialog */
+.checkout-options-dialog {
+  --dialog-max-width: 600px;
+}
+
+.checkout-options-content {
+  padding: 24px;
+}
+
+.checkout-options-lead {
+  margin-bottom: 24px;
+  font-size: 16px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.checkout-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.checkout-option-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 16px;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.checkout-option-btn:hover {
+  border-color: #8b5e3c;
+  box-shadow: 0 4px 12px rgba(139, 94, 60, 0.15);
+}
+
+.checkout-option-btn:focus {
+  outline: none;
+  border-color: #8b5e3c;
+  box-shadow: 0 0 0 3px rgba(139, 94, 60, 0.1);
+}
+
+.option-icon {
+  font-size: 32px;
+}
+
+.option-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+}
+
+.option-desc {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
+}
+
+/* Mobile Responsive */
+@media (max-width: 600px) {
+  .checkout-options-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .guest-checkout-dialog,
+  .checkout-options-dialog {
+    --dialog-max-width: 100%;
+    border-radius: 0;
+  }
+}
+
+/* Animation for dialogs */
+.booking-dialog[open],
+.guest-checkout-dialog[open],
+.checkout-options-dialog[open] {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

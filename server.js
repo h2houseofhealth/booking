@@ -1414,7 +1414,29 @@ app.get('/api/services', requireAuth, (req, res) => {
   });
   res.json({ services, membershipActive: isMembershipActiveForUser(req.user) });
 });
+app.get('/api/public/services', (_req, res) => {
+  try {
+    const guestUser = {
+      role: 'guest',
+      id: null,
+      email: null,
+    };
 
+    const services = getVisibleServicesForUser(guestUser).map((service) => {
+      return toServiceResponse(service, guestUser);
+    });
+
+    res.json({
+      services,
+      membershipActive: false,
+    });
+  } catch (error) {
+    console.error('Public services error:', error);
+    res.status(500).json({
+      message: 'Unable to load services',
+    });
+  }
+});
 app.get('/api/services/availability', requireAuth, (req, res) => {
   const bookingDate = String(req.query?.bookingDate || '').trim();
   const category = String(req.query?.category || '').trim().toUpperCase();
@@ -6021,6 +6043,144 @@ app.get('/api/public/payments/booking', (req, res) => {
     },
     keyId: RAZORPAY_KEY_ID,
   });
+});
+
+// Guest Checkout Endpoint
+// Allows unauthenticated users to start checkout with basic info
+app.post('/api/guest/checkout', async (req, res) => {
+  const { guestName, guestEmail, guestPhone, bookings } = req.body;
+
+  // Validate guest information
+  if (!guestName || typeof guestName !== 'string' || guestName.trim().length < 2 || guestName.trim().length > 80) {
+    return res.status(400).json({ message: 'Valid guest name (2-80 characters) is required' });
+  }
+
+  if (!guestEmail || typeof guestEmail !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim())) {
+    return res.status(400).json({ message: 'Valid guest email is required' });
+  }
+
+  if (!guestPhone || typeof guestPhone !== 'string' || !/^[6-9]\d{9}$/.test(guestPhone.trim())) {
+    return res.status(400).json({ message: 'Valid 10-digit guest phone number is required' });
+  }
+
+  if (!Array.isArray(bookings) || bookings.length === 0) {
+    return res.status(400).json({ message: 'At least one booking is required' });
+  }
+
+  // Validate each booking and create provisional records
+  const createdBookings = [];
+  const errors = [];
+
+  try {
+    for (const booking of bookings) {
+      const { serviceName, bookingDate, bookingTime, addOnService } = booking;
+
+      if (!serviceName || !bookingDate || !bookingTime) {
+        errors.push('Invalid booking details: service, date, and time required');
+        continue;
+      }
+
+      // Validate service exists
+      const service = getServiceByName(serviceName);
+      if (!service) {
+        errors.push(`Service not found: ${serviceName}`);
+        continue;
+      }
+
+      // Check slot availability
+      const slotCheck = db
+        .prepare(
+          `SELECT COUNT(*) as total FROM bookings
+           WHERE service_name = ? AND booking_date = ? AND booking_time = ? 
+           AND status IN ('booked', 'confirmed') AND payment_status = 'paid'`
+        )
+        .get(serviceName, bookingDate, bookingTime);
+
+      if (Number(slotCheck.total || 0) >= MAX_BOOKINGS_PER_SLOT_HYDROGEN) {
+        errors.push(`Slot full for ${serviceName} on ${bookingDate} at ${bookingTime}`);
+        continue;
+      }
+
+      // Create provisional guest booking
+      const bookingId = crypto.randomUUID();
+      const now = new Date().toISOString();
+
+      db.prepare(
+        `INSERT INTO bookings (
+          booking_group_id, client_name, client_email, client_phone, service_name,
+          booking_date, booking_time, assigned_staff, status, payment_status,
+          is_topup_session, reschedule_count, notes, guest_name, guest_email, guest_phone,
+          booking_type, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        null, // booking_group_id - will be set if group booking
+        guestName.trim(),
+        guestEmail.trim(),
+        guestPhone.trim(),
+        serviceName,
+        bookingDate,
+        bookingTime,
+        'pending',
+        'pending',
+        'unpaid',
+        0,
+        0,
+        '',
+        guestName.trim(),
+        guestEmail.trim(),
+        guestPhone.trim(),
+        'guest',
+        now
+      );
+
+      createdBookings.push({ id: bookingId, serviceName, bookingDate, bookingTime });
+    }
+
+    if (errors.length > 0 && createdBookings.length === 0) {
+      return res.status(400).json({ message: errors[0] });
+    }
+
+    if (createdBookings.length === 0) {
+      return res.status(400).json({ message: 'No valid bookings to create' });
+    }
+
+    // Generate payment token for guest
+    const paymentToken = jwt.sign(
+      {
+        guestEmail: guestEmail.trim(),
+        guestPhone: guestPhone.trim(),
+        guestName: guestName.trim(),
+        bookingIds: createdBookings.map(b => b.id),
+        type: 'guest_checkout',
+      },
+      JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    // Calculate total amount (simplified - use first booking price for now)
+    const firstService = getServiceByName(createdBookings[0].serviceName);
+    const totalAmountInr = firstService ? Number(firstService.priceInr || 0) * createdBookings.length : 0;
+
+    res.json({
+      success: true,
+      paymentToken,
+      summary: {
+        totalAmountInr,
+        bookingCount: createdBookings.length,
+        guestName: guestName.trim(),
+        guestEmail: guestEmail.trim(),
+        guestPhone: guestPhone.trim(),
+        items: createdBookings.map(b => ({
+          serviceName: b.serviceName,
+          bookingDate: b.bookingDate,
+          bookingTime: b.bookingTime,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Guest checkout error:', error);
+    return res.status(500).json({ message: 'Unable to process guest checkout' });
+  }
 });
 
 app.post('/api/public/payments/create-order', async (req, res) => {
@@ -11581,7 +11741,7 @@ function migrate() {
 
     CREATE TABLE IF NOT EXISTS bookings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
+      user_id INTEGER,
       doctor_id INTEGER REFERENCES doctors(id),
       booking_group_id TEXT,
       client_name TEXT NOT NULL,
@@ -11601,8 +11761,12 @@ function migrate() {
       is_topup_session INTEGER NOT NULL DEFAULT 0,
       reschedule_count INTEGER NOT NULL DEFAULT 0,
       notes TEXT,
+      guest_name TEXT,
+      guest_email TEXT,
+      guest_phone TEXT,
+      booking_type TEXT NOT NULL DEFAULT 'registered',
       created_at TEXT NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS booking_email_events (

@@ -6,9 +6,24 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const session = require('express-session');
-const passport = require('passport');
-const GoogleStrategy = require('passport-google-oauth20').Strategy;
+let session;
+try {
+  session = require('express-session');
+} catch {
+  session = require('./session-fallback');
+}
+let passport;
+try {
+  passport = require('passport');
+} catch {
+  passport = require('./passport-fallback');
+}
+let GoogleStrategy;
+try {
+  ({ Strategy: GoogleStrategy } = require('passport-google-oauth20'));
+} catch {
+  GoogleStrategy = null;
+}
 const Database = require('better-sqlite3');
 const nodemailer = require('nodemailer');
 const sgMail = require('@sendgrid/mail');
@@ -5937,108 +5952,181 @@ app.post('/api/bookings/:id/send-payment-link-sms', requireAuth, (req, res) => {
 
 app.get('/api/public/payments/booking', (req, res) => {
   const access = verifyPaymentAccessToken(req.query?.token);
-  if (!access || !Number.isInteger(access.bookingId) || !Number.isInteger(access.userId)) {
+  const guestAccess = access ? null : verifyGuestCheckoutAccessToken(req.query?.token);
+
+  if (access && Number.isInteger(access.bookingId) && Number.isInteger(access.userId)) {
+    const booking = db
+      .prepare(
+        `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, service_name AS serviceName,
+                booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus,
+                payment_reference AS paymentReference, is_topup_session AS isTopUpSession,
+                created_at AS createdAt
+         FROM bookings
+         WHERE id = ?`
+      )
+      .get(access.bookingId);
+    if (!booking || Number(booking.userId) !== access.userId) {
+      return res.status(404).json({ message: 'booking not found' });
+    }
+
+    const bookingOwner = getUserById(booking.userId);
+    const service = getServiceByName(booking.serviceName);
+    if (!service) {
+      return res.status(400).json({ message: 'Invalid service configured on booking' });
+    }
+
+    const groupBookings = booking.bookingGroupId
+      ? db
+          .prepare(
+            `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, service_name AS serviceName,
+                    booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus,
+                    payment_reference AS paymentReference, is_topup_session AS isTopUpSession,
+                    created_at AS createdAt
+             FROM bookings
+             WHERE booking_group_id = ?
+             ORDER BY booking_date, booking_time, id`
+          )
+          .all(booking.bookingGroupId)
+      : [booking];
+    const holdMetaEntries = groupBookings.map(applyHoldMeta);
+    const holdActiveEntries = holdMetaEntries.filter((entry) => entry.holdActive);
+    const holdExpired = holdMetaEntries.some((entry) => entry.holdExpired);
+    const holdActive = holdActiveEntries.length > 0;
+    const holdRemainingMinutes = holdActive
+      ? Math.min(...holdActiveEntries.map((entry) => Number(entry.holdRemainingMinutes || 0)).filter((value) => value > 0))
+      : 0;
+    const holdExpiresAt = holdActive
+      ? holdActiveEntries.map((entry) => entry.holdExpiresAt).filter(Boolean).sort()[0] || ''
+      : '';
+    const activeBookings = groupBookings.filter((entry) => entry.status !== 'cancelled');
+    const payableBookings = activeBookings.filter((entry) => String(entry.paymentStatus || 'unpaid').trim().toLowerCase() !== 'paid');
+    const pricingUser = {
+      membershipStatus: bookingOwner?.membershipStatus || 'inactive',
+      membershipExpiresAt: bookingOwner?.membershipExpiresAt || null,
+      membershipStartedAt: bookingOwner?.membershipStartedAt || null,
+      mobile: bookingOwner?.mobile || '',
+    };
+    let summary;
+    try {
+      if (booking.bookingGroupId) {
+        const summaryBookings = payableBookings.length ? payableBookings : activeBookings;
+        const payableHydrogenBookings = summaryBookings.filter((entry) => {
+          const entryService = getServiceByName(entry.serviceName);
+          return String(entryService?.category || '').toUpperCase() === 'HYDROGEN SESSION';
+        });
+        summary = payableHydrogenBookings.length
+          ? buildHydrogenGroupPaymentSummary(summaryBookings, pricingUser)
+          : buildAddOnOnlyPaymentSummary(summaryBookings, pricingUser);
+      } else {
+        summary = {
+          serviceName: booking.serviceName,
+          amountInr: getEffectiveServicePriceInr(service, pricingUser),
+          totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
+          bookingCount: 1,
+        };
+      }
+    } catch (error) {
+      return res.status(409).json({ message: error?.message || 'Unable to calculate payment details.' });
+    }
+
+    return res.json({
+      bookingId: booking.id,
+      bookingGroupId: booking.bookingGroupId || '',
+      status: booking.status,
+      paymentStatus: booking.paymentStatus || 'unpaid',
+      customer: {
+        name: bookingOwner?.name || '',
+        email: bookingOwner?.email || '',
+        mobile: bookingOwner?.mobile || '',
+      },
+      booking: {
+        serviceName: summary.serviceName || booking.serviceName,
+        bookingDate: booking.bookingDate,
+        bookingTime: booking.bookingTime,
+      },
+      summary,
+      hold: {
+        active: holdActive,
+        expired: holdExpired,
+        remainingMinutes: holdRemainingMinutes,
+        expiresAt: holdExpiresAt,
+        holdMinutes: BOOKING_HOLD_MINUTES,
+      },
+      keyId: RAZORPAY_KEY_ID,
+    });
+  }
+
+  if (!guestAccess) {
     return res.status(400).json({ message: 'Invalid or expired payment link' });
   }
 
-  const booking = db
-    .prepare(
-      `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, service_name AS serviceName,
-              booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus,
-              payment_reference AS paymentReference, is_topup_session AS isTopUpSession,
-              created_at AS createdAt
-       FROM bookings
-       WHERE id = ?`
-    )
-    .get(access.bookingId);
-  if (!booking || Number(booking.userId) !== access.userId) {
+  const bookings = loadBookingsByIds(guestAccess.bookingIds);
+  if (!bookings.length || bookings.length !== guestAccess.bookingIds.length) {
     return res.status(404).json({ message: 'booking not found' });
   }
 
-  const bookingOwner = getUserById(booking.userId);
-  const service = getServiceByName(booking.serviceName);
-  if (!service) {
-    return res.status(400).json({ message: 'Invalid service configured on booking' });
+  const activeBookings = bookings.filter((entry) => entry.status !== 'cancelled');
+  const payableBookings = activeBookings.filter((entry) => String(entry.paymentStatus || 'unpaid').trim().toLowerCase() !== 'paid');
+  if (!payableBookings.length) {
+    return res.status(409).json({ message: 'All bookings in this package are already paid or cancelled.' });
+  }
+  if (payableBookings.some((entry) => isHoldExpiredBooking(entry))) {
+    return res.status(409).json({ message: 'This booking hold has expired. Please book another slot.' });
   }
 
-  const groupBookings = booking.bookingGroupId
-    ? db
-        .prepare(
-          `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, service_name AS serviceName,
-                  booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus,
-                  payment_reference AS paymentReference, is_topup_session AS isTopUpSession,
-                  created_at AS createdAt
-           FROM bookings
-           WHERE booking_group_id = ?
-           ORDER BY booking_date, booking_time, id`
-        )
-        .all(booking.bookingGroupId)
-    : [booking];
-  const holdMetaEntries = groupBookings.map(applyHoldMeta);
-  const holdActiveEntries = holdMetaEntries.filter((entry) => entry.holdActive);
-  const holdExpired = holdMetaEntries.some((entry) => entry.holdExpired);
-  const holdActive = holdActiveEntries.length > 0;
-  const holdRemainingMinutes = holdActive
-    ? Math.min(...holdActiveEntries.map((entry) => Number(entry.holdRemainingMinutes || 0)).filter((value) => value > 0))
-    : 0;
-  const holdExpiresAt = holdActive
-    ? holdActiveEntries
-        .map((entry) => entry.holdExpiresAt)
-        .filter(Boolean)
-        .sort()[0] || ''
-    : '';
-  const activeBookings = groupBookings.filter((entry) => entry.status !== 'cancelled');
-  const payableBookings = activeBookings.filter((entry) => String(entry.paymentStatus || 'unpaid').trim().toLowerCase() !== 'paid');
   const pricingUser = {
-    membershipStatus: bookingOwner?.membershipStatus || 'inactive',
-    membershipExpiresAt: bookingOwner?.membershipExpiresAt || null,
-    membershipStartedAt: bookingOwner?.membershipStartedAt || null,
-    mobile: bookingOwner?.mobile || '',
+    membershipStatus: 'inactive',
+    membershipExpiresAt: null,
+    membershipStartedAt: null,
+    mobile: guestAccess.guestPhone || '',
   };
+
   let summary;
   try {
-    if (booking.bookingGroupId) {
-      const summaryBookings = payableBookings.length ? payableBookings : activeBookings;
-      const payableHydrogenBookings = summaryBookings.filter((entry) => {
-        const entryService = getServiceByName(entry.serviceName);
-        return String(entryService?.category || '').toUpperCase() === 'HYDROGEN SESSION';
-      });
-      summary = payableHydrogenBookings.length
-        ? buildHydrogenGroupPaymentSummary(summaryBookings, pricingUser)
-        : buildAddOnOnlyPaymentSummary(summaryBookings, pricingUser);
-    } else {
-      summary = {
-        serviceName: booking.serviceName,
-        amountInr: getEffectiveServicePriceInr(service, pricingUser),
-        totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
-        bookingCount: 1,
-      };
-    }
+    summary = applyOneUseAdminPhoneDiscountToSummary(
+      payableBookings,
+      pricingUser,
+      buildAggregatePaymentSummary(payableBookings, pricingUser)
+    );
   } catch (error) {
     return res.status(409).json({ message: error?.message || 'Unable to calculate payment details.' });
   }
 
+  const firstBooking = payableBookings[0] || bookings[0];
   return res.json({
-    bookingId: booking.id,
-    bookingGroupId: booking.bookingGroupId || '',
-    status: booking.status,
-    paymentStatus: booking.paymentStatus || 'unpaid',
+    bookingId: Number(firstBooking.id || 0),
+    bookingIds: bookings.map((entry) => Number(entry.id)).filter((id) => Number.isInteger(id) && id > 0),
+    bookingGroupId: '',
+    status: firstBooking.status || 'pending',
+    paymentStatus: firstBooking.paymentStatus || 'unpaid',
     customer: {
-      name: bookingOwner?.name || '',
-      email: bookingOwner?.email || '',
-      mobile: bookingOwner?.mobile || '',
+      name: guestAccess.guestName || firstBooking.guestName || '',
+      email: guestAccess.guestEmail || firstBooking.guestEmail || '',
+      mobile: guestAccess.guestPhone || firstBooking.guestPhone || '',
     },
     booking: {
-      serviceName: summary.serviceName || booking.serviceName,
-      bookingDate: booking.bookingDate,
-      bookingTime: booking.bookingTime,
+      serviceName: summary.units?.[0]?.label || firstBooking.serviceName,
+      bookingDate: firstBooking.bookingDate,
+      bookingTime: firstBooking.bookingTime,
+      guestName: guestAccess.guestName || firstBooking.guestName || '',
+      guestEmail: guestAccess.guestEmail || firstBooking.guestEmail || '',
+      guestPhone: guestAccess.guestPhone || firstBooking.guestPhone || '',
     },
+    bookings: bookings.map((entry) => ({
+      id: entry.id,
+      serviceName: entry.serviceName,
+      bookingDate: entry.bookingDate,
+      bookingTime: entry.bookingTime,
+      guestName: entry.guestName || '',
+      guestEmail: entry.guestEmail || '',
+      guestPhone: entry.guestPhone || '',
+    })),
     summary,
     hold: {
-      active: holdActive,
-      expired: holdExpired,
-      remainingMinutes: holdRemainingMinutes,
-      expiresAt: holdExpiresAt,
+      active: false,
+      expired: false,
+      remainingMinutes: 0,
+      expiresAt: '',
       holdMinutes: BOOKING_HOLD_MINUTES,
     },
     keyId: RAZORPAY_KEY_ID,
@@ -6070,6 +6158,7 @@ app.post('/api/guest/checkout', async (req, res) => {
   // Validate each booking and create provisional records
   const createdBookings = [];
   const errors = [];
+  const guestUserId = ensureGuestBookingOwnerUser();
 
   try {
     for (const booking of bookings) {
@@ -6101,18 +6190,17 @@ app.post('/api/guest/checkout', async (req, res) => {
         continue;
       }
 
-      // Create provisional guest booking
-      const bookingId = crypto.randomUUID();
       const now = new Date().toISOString();
 
-      db.prepare(
+      const insertResult = db.prepare(
         `INSERT INTO bookings (
-          booking_group_id, client_name, client_email, client_phone, service_name,
+          user_id, booking_group_id, client_name, client_email, client_phone, service_name,
           booking_date, booking_time, assigned_staff, status, payment_status,
           is_topup_session, reschedule_count, notes, guest_name, guest_email, guest_phone,
           booking_type, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
+        guestUserId,
         null, // booking_group_id - will be set if group booking
         guestName.trim(),
         guestEmail.trim(),
@@ -6133,6 +6221,7 @@ app.post('/api/guest/checkout', async (req, res) => {
         now
       );
 
+      const bookingId = Number(insertResult.lastInsertRowid);
       createdBookings.push({ id: bookingId, serviceName, bookingDate, bookingTime });
     }
 
@@ -6145,17 +6234,16 @@ app.post('/api/guest/checkout', async (req, res) => {
     }
 
     // Generate payment token for guest
-    const paymentToken = jwt.sign(
-      {
-        guestEmail: guestEmail.trim(),
-        guestPhone: guestPhone.trim(),
-        guestName: guestName.trim(),
-        bookingIds: createdBookings.map(b => b.id),
-        type: 'guest_checkout',
-      },
-      JWT_SECRET,
-      { expiresIn: '15m' }
-    );
+    const paymentToken = createGuestCheckoutAccessToken({
+      guestEmail: guestEmail.trim(),
+      guestPhone: guestPhone.trim(),
+      guestName: guestName.trim(),
+      bookingIds: createdBookings.map((b) => b.id),
+    });
+
+    if (!paymentToken) {
+      return res.status(500).json({ message: 'Unable to prepare guest payment token' });
+    }
 
     // Calculate total amount (simplified - use first booking price for now)
     const firstService = getServiceByName(createdBookings[0].serviceName);
@@ -6189,156 +6277,247 @@ app.post('/api/public/payments/create-order', async (req, res) => {
   }
 
   const access = verifyPaymentAccessToken(req.body?.token);
-  if (!access || !Number.isInteger(access.bookingId) || !Number.isInteger(access.userId)) {
-    return res.status(400).json({ message: 'Invalid or expired payment link' });
-  }
+  const guestAccess = access ? null : verifyGuestCheckoutAccessToken(req.body?.token);
 
-  const booking = db
-    .prepare(
-      `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, status, payment_status AS paymentStatus,
-              payment_reference AS paymentReference, is_topup_session AS isTopUpSession,
-              service_name AS serviceName, booking_date AS bookingDate, booking_time AS bookingTime,
-              created_at AS createdAt
-       FROM bookings
-       WHERE id = ?`
-    )
-    .get(access.bookingId);
-  if (!booking || Number(booking.userId) !== access.userId) {
-    return res.status(404).json({ message: 'booking not found' });
-  }
-
-  if (booking.status === 'cancelled') {
-    return res.status(400).json({ message: 'cannot pay for a cancelled booking' });
-  }
-
-  if (booking.paymentStatus === 'paid' && !booking.bookingGroupId) {
-    return res.status(409).json({ message: 'booking is already paid' });
-  }
-
-  const service = getServiceByName(booking.serviceName);
-  if (!service) {
-    return res.status(400).json({ message: 'Invalid service configured on booking' });
-  }
-  if (service.membershipOnly) {
-    return res.status(409).json({ message: 'This membership service is included. Payment is not required.' });
-  }
-
-  const bookingOwner = getUserById(booking.userId);
-  const pricingUser = {
-    membershipStatus: bookingOwner?.membershipStatus || 'inactive',
-    membershipExpiresAt: bookingOwner?.membershipExpiresAt || null,
-    membershipStartedAt: bookingOwner?.membershipStartedAt || null,
-    mobile: bookingOwner?.mobile || '',
-  };
-  const groupBookings = booking.bookingGroupId
-    ? db
+  const paymentContext = (() => {
+    if (access && Number.isInteger(access.bookingId) && Number.isInteger(access.userId)) {
+      const booking = db
         .prepare(
-          `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, service_name AS serviceName,
-                  booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus,
-                  payment_reference AS paymentReference, is_topup_session AS isTopUpSession
+          `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, status, payment_status AS paymentStatus,
+                  payment_reference AS paymentReference, is_topup_session AS isTopUpSession,
+                  service_name AS serviceName, booking_date AS bookingDate, booking_time AS bookingTime,
+                  created_at AS createdAt
            FROM bookings
-           WHERE booking_group_id = ?
-           ORDER BY booking_date, booking_time, id`
+           WHERE id = ?`
         )
-        .all(booking.bookingGroupId)
-    : [];
-  const payableBookings = booking.bookingGroupId
-    ? groupBookings.filter((entry) => entry.status !== 'cancelled' && entry.paymentStatus !== 'paid')
-    : [booking];
+        .get(access.bookingId);
+      if (!booking || Number(booking.userId) !== access.userId) {
+        return null;
+      }
+      const bookingOwner = getUserById(booking.userId);
+      const service = getServiceByName(booking.serviceName);
+      if (!service) return null;
+      const groupBookings = booking.bookingGroupId
+        ? db
+            .prepare(
+              `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, service_name AS serviceName,
+                      booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus,
+                      payment_reference AS paymentReference, is_topup_session AS isTopUpSession
+               FROM bookings
+               WHERE booking_group_id = ?
+               ORDER BY booking_date, booking_time, id`
+            )
+            .all(booking.bookingGroupId)
+        : [];
+      const payableBookings = booking.bookingGroupId
+        ? groupBookings.filter((entry) => entry.status !== 'cancelled' && entry.paymentStatus !== 'paid')
+        : [booking];
+      if (!payableBookings.length) return null;
+      if (payableBookings.some((entry) => isHoldExpiredBooking(entry))) return null;
+      const pricingUser = {
+        membershipStatus: bookingOwner?.membershipStatus || 'inactive',
+        membershipExpiresAt: bookingOwner?.membershipExpiresAt || null,
+        membershipStartedAt: bookingOwner?.membershipStartedAt || null,
+        mobile: bookingOwner?.mobile || '',
+      };
+      return {
+        kind: 'user',
+        booking,
+        bookingOwner,
+        service,
+        payableBookings,
+        pricingUser,
+      };
+    }
 
-  if (!payableBookings.length) {
-    return res.status(409).json({ message: 'All bookings in this package are already paid or cancelled.' });
-  }
-  if (payableBookings.some((entry) => isHoldExpiredBooking(entry))) {
-    return res.status(409).json({ message: 'This booking hold has expired. Please book another slot.' });
+    if (!guestAccess) return null;
+    const bookings = loadBookingsByIds(guestAccess.bookingIds);
+    if (!bookings.length || bookings.length !== guestAccess.bookingIds.length) return null;
+    const activeBookings = bookings.filter((entry) => entry.status !== 'cancelled');
+    const payableBookings = activeBookings.filter((entry) => String(entry.paymentStatus || 'unpaid').trim().toLowerCase() !== 'paid');
+    if (!payableBookings.length) return null;
+    if (payableBookings.some((entry) => isHoldExpiredBooking(entry))) return null;
+    return {
+      kind: 'guest',
+      booking: activeBookings[0] || bookings[0],
+      bookings,
+      payableBookings,
+      pricingUser: {
+        membershipStatus: 'inactive',
+        membershipExpiresAt: null,
+        membershipStartedAt: null,
+        mobile: guestAccess.guestPhone || '',
+      },
+      guestAccess,
+    };
+  })();
+
+  if (!paymentContext) {
+    return res.status(400).json({ message: 'Invalid or expired payment link' });
   }
 
   let paymentSummary;
   try {
-    if (booking.bookingGroupId) {
-      const payableHydrogenBookings = payableBookings.filter((entry) => {
-        const entryService = getServiceByName(entry.serviceName);
-        return String(entryService?.category || '').toUpperCase() === 'HYDROGEN SESSION';
-      });
-      paymentSummary = payableHydrogenBookings.length
-        ? buildHydrogenGroupPaymentSummary(payableBookings, pricingUser)
-        : buildAddOnOnlyPaymentSummary(payableBookings, pricingUser);
+    if (paymentContext.kind === 'user') {
+      const { booking, bookingOwner, service, payableBookings, pricingUser } = paymentContext;
+      if (booking.bookingGroupId) {
+        const payableHydrogenBookings = payableBookings.filter((entry) => {
+          const entryService = getServiceByName(entry.serviceName);
+          return String(entryService?.category || '').toUpperCase() === 'HYDROGEN SESSION';
+        });
+        paymentSummary = payableHydrogenBookings.length
+          ? buildHydrogenGroupPaymentSummary(payableBookings, pricingUser)
+          : buildAddOnOnlyPaymentSummary(payableBookings, pricingUser);
+      } else {
+        paymentSummary = {
+          serviceName: booking.serviceName,
+          amountInr: getEffectiveServicePriceInr(service, pricingUser),
+          totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
+          bookingCount: 1,
+        };
+      }
+      paymentContext.bookingOwner = bookingOwner;
     } else {
-      paymentSummary = {
-        serviceName: booking.serviceName,
-        amountInr: getEffectiveServicePriceInr(service, pricingUser),
-        totalAmountInr: getEffectiveServicePriceInr(service, pricingUser),
-        bookingCount: 1,
-      };
+      paymentSummary = applyOneUseAdminPhoneDiscountToSummary(
+        paymentContext.payableBookings,
+        paymentContext.pricingUser,
+        buildAggregatePaymentSummary(paymentContext.payableBookings, paymentContext.pricingUser)
+      );
     }
   } catch (error) {
     return res.status(409).json({ message: error?.message || 'Unable to calculate payment total for this booking.' });
   }
 
   const payableTotalInr = Number(paymentSummary.totalAmountInr || 0);
-  if (payableTotalInr <= 0) {
-    if (booking.bookingGroupId) {
-      db.prepare(
-        `UPDATE bookings
-         SET payment_status = 'paid',
-             paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
-             paid_amount_paise = 0,
-             status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
-         WHERE booking_group_id = ?
-           AND status <> 'cancelled'
-           AND payment_status <> 'paid'`
-      ).run(booking.bookingGroupId);
-    } else {
-      db.prepare(
-        `UPDATE bookings
-         SET payment_status = 'paid',
-             paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
-             paid_amount_paise = 0,
-             status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
-         WHERE id = ?`
-      ).run(booking.id);
-    }
-
-    return res.json({
-      paid: true,
-      bookingId: booking.id,
-      bookingCount: Number(paymentSummary.bookingCount || 1),
-      summary: paymentSummary,
-    });
-  }
-
-  const amountInPaise = Math.round(payableTotalInr * 100);
+  const amountInPaise = Math.max(0, Math.round(payableTotalInr * 100));
 
   try {
+    if (amountInPaise <= 0) {
+      if (paymentContext.kind === 'user') {
+        const { booking, payableBookings } = paymentContext;
+        if (booking.bookingGroupId) {
+          db.prepare(
+            `UPDATE bookings
+             SET payment_status = 'paid',
+                 paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+                 paid_amount_paise = 0,
+                 status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
+             WHERE booking_group_id = ?
+               AND status <> 'cancelled'
+               AND payment_status <> 'paid'`
+          ).run(booking.bookingGroupId);
+        } else {
+          db.prepare(
+            `UPDATE bookings
+             SET payment_status = 'paid',
+                 paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+                 paid_amount_paise = 0,
+                 status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
+             WHERE id = ?`
+          ).run(booking.id);
+        }
+        return res.json({
+          paid: true,
+          bookingId: booking.id,
+          bookingCount: Number(paymentSummary.bookingCount || payableBookings.length || 1),
+          summary: paymentSummary,
+        });
+      }
+
+      db.prepare(
+        `UPDATE bookings
+         SET payment_status = 'paid',
+             paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+             paid_amount_paise = 0,
+             status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
+         WHERE id = ?
+           AND status <> 'cancelled'
+           AND payment_status <> 'paid'`
+      );
+      for (const booking of paymentContext.payableBookings) {
+        db.prepare(
+          `UPDATE bookings
+           SET payment_status = 'paid',
+               paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+               paid_amount_paise = 0,
+               status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
+           WHERE id = ?
+             AND status <> 'cancelled'
+             AND payment_status <> 'paid'`
+        ).run(booking.id);
+      }
+      return res.json({
+        paid: true,
+        bookingId: Number(paymentContext.payableBookings[0]?.id || paymentContext.bookings[0]?.id || 0),
+        bookingIds: paymentContext.payableBookings.map((booking) => Number(booking.id)).filter((id) => Number.isInteger(id) && id > 0),
+        bookingCount: Number(paymentSummary.bookingCount || paymentContext.payableBookings.length || 1),
+        summary: paymentSummary,
+      });
+    }
+
+    const booking = paymentContext.booking;
+    const bookingOwner = paymentContext.bookingOwner;
     const order = await razorpay.orders.create({
       amount: amountInPaise,
       currency: 'INR',
-      receipt: buildRazorpayReceipt(booking.bookingGroupId ? 'bkgroup' : 'booking', booking.bookingGroupId || booking.id),
-      notes: {
-        bookingId: String(booking.id),
-        userId: String(booking.userId),
-        bookingGroupId: String(booking.bookingGroupId || ''),
-      },
+      receipt: buildRazorpayReceipt(
+        booking.bookingGroupId ? 'bkgroup' : paymentContext.kind === 'guest' ? 'guest' : 'booking',
+        booking.bookingGroupId || booking.id
+      ),
+      notes: paymentContext.kind === 'guest'
+        ? {
+            bookingIds: paymentContext.payableBookings.map((entry) => String(entry.id)).join(','),
+            guestEmail: paymentContext.guestAccess?.guestEmail || '',
+            guestPhone: paymentContext.guestAccess?.guestPhone || '',
+          }
+        : {
+            bookingId: String(booking.id),
+            userId: String(booking.userId),
+            bookingGroupId: String(booking.bookingGroupId || ''),
+          },
     });
 
-    if (booking.bookingGroupId) {
-      setPaymentAmountForBookings(payableBookings, amountInPaise);
+    if (paymentContext.kind === 'user') {
+      const { payableBookings } = paymentContext;
+      if (booking.bookingGroupId) {
+        setPaymentAmountForBookings(payableBookings, amountInPaise);
+        db.prepare(
+          `UPDATE bookings
+           SET payment_status = CASE WHEN payment_status = 'unpaid' THEN 'payment_pending' ELSE payment_status END,
+               payment_order_id = ?
+           WHERE booking_group_id = ?
+             AND status <> 'cancelled'
+             AND payment_status <> 'paid'`
+        ).run(order.id, booking.bookingGroupId);
+      } else {
+        setPaymentAmountForBookings([booking], amountInPaise);
+        db.prepare(
+          `UPDATE bookings
+           SET payment_status = CASE WHEN payment_status = 'unpaid' THEN 'payment_pending' ELSE payment_status END,
+               payment_order_id = ?
+           WHERE id = ?`
+        ).run(order.id, booking.id);
+      }
+    } else {
+      setPaymentAmountForBookings(paymentContext.payableBookings, amountInPaise);
       db.prepare(
         `UPDATE bookings
          SET payment_status = CASE WHEN payment_status = 'unpaid' THEN 'payment_pending' ELSE payment_status END,
              payment_order_id = ?
-         WHERE booking_group_id = ?
+         WHERE id = ?
            AND status <> 'cancelled'
            AND payment_status <> 'paid'`
-      ).run(order.id, booking.bookingGroupId);
-    } else {
-      setPaymentAmountForBookings([booking], amountInPaise);
-      db.prepare(
-        `UPDATE bookings
-         SET payment_status = CASE WHEN payment_status = 'unpaid' THEN 'payment_pending' ELSE payment_status END,
-             payment_order_id = ?
-         WHERE id = ?`
-      ).run(order.id, booking.id);
+      );
+      for (const guestBooking of paymentContext.payableBookings) {
+        db.prepare(
+          `UPDATE bookings
+           SET payment_status = CASE WHEN payment_status = 'unpaid' THEN 'payment_pending' ELSE payment_status END,
+               payment_order_id = ?
+           WHERE id = ?
+             AND status <> 'cancelled'
+             AND payment_status <> 'paid'`
+        ).run(order.id, guestBooking.id);
+      }
     }
 
     return res.json({
@@ -6346,19 +6525,31 @@ app.post('/api/public/payments/create-order', async (req, res) => {
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
-      bookingId: booking.id,
-      bookingCount: Number(paymentSummary.bookingCount || 1),
+      bookingId: Number(booking.id || 0),
+      bookingIds: paymentContext.kind === 'guest'
+        ? paymentContext.payableBookings.map((entry) => Number(entry.id)).filter((id) => Number.isInteger(id) && id > 0)
+        : undefined,
+      bookingCount: Number(paymentSummary.bookingCount || paymentContext.payableBookings?.length || 1),
       summary: paymentSummary,
       booking: {
         serviceName: paymentSummary.serviceName || booking.serviceName,
         bookingDate: booking.bookingDate,
         bookingTime: booking.bookingTime,
         amountInr: Number(paymentSummary.totalAmountInr || 0),
+        guestName: paymentContext.kind === 'guest' ? paymentContext.guestAccess?.guestName || '' : '',
+        guestEmail: paymentContext.kind === 'guest' ? paymentContext.guestAccess?.guestEmail || '' : '',
+        guestPhone: paymentContext.kind === 'guest' ? paymentContext.guestAccess?.guestPhone || '' : '',
       },
-      customer: {
-        name: bookingOwner?.name || '',
-        email: bookingOwner?.email || '',
-      },
+      customer: paymentContext.kind === 'guest'
+        ? {
+            name: paymentContext.guestAccess?.guestName || '',
+            email: paymentContext.guestAccess?.guestEmail || '',
+            mobile: paymentContext.guestAccess?.guestPhone || '',
+          }
+        : {
+            name: bookingOwner?.name || '',
+            email: bookingOwner?.email || '',
+          },
     });
   } catch (error) {
     console.error('Razorpay public booking order create failed:', getRazorpayOrderErrorMessage(error, 'Unable to create Razorpay order'));
@@ -6368,6 +6559,7 @@ app.post('/api/public/payments/create-order', async (req, res) => {
 
 app.post('/api/public/payments/verify', async (req, res) => {
   const access = verifyPaymentAccessToken(req.body?.token);
+  const guestAccess = access ? null : verifyGuestCheckoutAccessToken(req.body?.token);
   const razorpayOrderId = String(req.body?.razorpay_order_id || '');
   const razorpayPaymentId = String(req.body?.razorpay_payment_id || '');
   const razorpaySignature = String(req.body?.razorpay_signature || '');
@@ -6376,22 +6568,8 @@ app.post('/api/public/payments/verify', async (req, res) => {
     return res.status(503).json({ message: RAZORPAY_UNAVAILABLE_MESSAGE });
   }
 
-  if (!access || !Number.isInteger(access.bookingId) || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
+  if ((!access && !guestAccess) || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
     return res.status(400).json({ message: 'Invalid payment verification payload' });
-  }
-
-  const booking = db
-    .prepare(
-      'SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, payment_order_id AS paymentOrderId FROM bookings WHERE id = ?'
-    )
-    .get(access.bookingId);
-
-  if (!booking || Number(booking.userId) !== access.userId) {
-    return res.status(404).json({ message: 'booking not found' });
-  }
-
-  if (booking.paymentOrderId && booking.paymentOrderId !== razorpayOrderId) {
-    return res.status(400).json({ message: 'Order mismatch' });
   }
 
   const expectedSignature = crypto
@@ -6405,35 +6583,90 @@ app.post('/api/public/payments/verify', async (req, res) => {
 
   const paymentMethod = await getRazorpayPaymentMethod(razorpayPaymentId);
 
-  if (booking.bookingGroupId) {
-    const groupBookings = db
+  if (access && Number.isInteger(access.bookingId) && Number.isInteger(access.userId)) {
+    const booking = db
       .prepare(
-        `SELECT id
-         FROM bookings
+        'SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, payment_order_id AS paymentOrderId FROM bookings WHERE id = ?'
+      )
+      .get(access.bookingId);
+
+    if (!booking || Number(booking.userId) !== access.userId) {
+      return res.status(404).json({ message: 'booking not found' });
+    }
+
+    if (booking.paymentOrderId && booking.paymentOrderId !== razorpayOrderId) {
+      return res.status(400).json({ message: 'Order mismatch' });
+    }
+
+    if (booking.bookingGroupId) {
+      const groupBookings = db
+        .prepare(
+          `SELECT id
+           FROM bookings
+           WHERE booking_group_id = ?
+             AND status <> 'cancelled'
+             AND payment_status <> 'paid'`
+        )
+        .all(booking.bookingGroupId);
+
+      db.prepare(
+        `UPDATE bookings
+         SET payment_status = 'paid',
+             paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+             payment_order_id = CASE WHEN ? <> '' THEN ? ELSE payment_order_id END,
+             payment_reference = CASE WHEN ? <> '' THEN ? ELSE payment_reference END,
+             payment_method = CASE WHEN ? <> '' THEN ? ELSE payment_method END,
+             status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
          WHERE booking_group_id = ?
            AND status <> 'cancelled'
            AND payment_status <> 'paid'`
-      )
-      .all(booking.bookingGroupId);
+      ).run(razorpayOrderId, razorpayOrderId, razorpayPaymentId, razorpayPaymentId, paymentMethod, paymentMethod, booking.bookingGroupId);
 
-    db.prepare(
-      `UPDATE bookings
-       SET payment_status = 'paid',
-           paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
-           payment_order_id = CASE WHEN ? <> '' THEN ? ELSE payment_order_id END,
-           payment_reference = CASE WHEN ? <> '' THEN ? ELSE payment_reference END,
-           payment_method = CASE WHEN ? <> '' THEN ? ELSE payment_method END,
-           status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
-       WHERE booking_group_id = ?
-         AND status <> 'cancelled'
-         AND payment_status <> 'paid'`
-    ).run(razorpayOrderId, razorpayOrderId, razorpayPaymentId, razorpayPaymentId, paymentMethod, paymentMethod, booking.bookingGroupId);
+      return res.json({ bookingId: access.bookingId, paid: true, bookingCount: groupBookings.length });
+    }
 
-    return res.json({ bookingId: access.bookingId, paid: true, bookingCount: groupBookings.length });
+    markBookingPaid(access.bookingId, razorpayOrderId, razorpayPaymentId, paymentMethod);
+    return res.json({ bookingId: access.bookingId, paid: true });
   }
 
-  markBookingPaid(access.bookingId, razorpayOrderId, razorpayPaymentId, paymentMethod);
-  return res.json({ bookingId: access.bookingId, paid: true });
+  const guestBookings = loadBookingsByIds(guestAccess.bookingIds);
+  if (!guestBookings.length || guestBookings.length !== guestAccess.bookingIds.length) {
+    return res.status(404).json({ message: 'booking not found' });
+  }
+  if (guestBookings.some((booking) => booking.paymentOrderId && booking.paymentOrderId !== razorpayOrderId)) {
+    return res.status(400).json({ message: 'Order mismatch' });
+  }
+
+  const payableGuestBookings = guestBookings.filter(
+    (booking) => booking.status !== 'cancelled' && String(booking.paymentStatus || '').trim().toLowerCase() !== 'paid'
+  );
+  if (!payableGuestBookings.length) {
+    return res.status(409).json({ message: 'All bookings in this package are already paid or cancelled.' });
+  }
+
+  db.transaction(() => {
+    for (const booking of payableGuestBookings) {
+      db.prepare(
+        `UPDATE bookings
+         SET payment_status = 'paid',
+             paid_at = CASE WHEN paid_at IS NULL THEN datetime('now') ELSE paid_at END,
+             payment_order_id = CASE WHEN ? <> '' THEN ? ELSE payment_order_id END,
+             payment_reference = CASE WHEN ? <> '' THEN ? ELSE payment_reference END,
+             payment_method = CASE WHEN ? <> '' THEN ? ELSE payment_method END,
+             status = CASE WHEN status = 'pending' THEN 'booked' ELSE status END
+         WHERE id = ?
+           AND status <> 'cancelled'
+           AND payment_status <> 'paid'`
+      ).run(razorpayOrderId, razorpayOrderId, razorpayPaymentId, razorpayPaymentId, paymentMethod, paymentMethod, booking.id);
+    }
+  })();
+
+  return res.json({
+    bookingId: Number(payableGuestBookings[0]?.id || guestBookings[0]?.id || 0),
+    bookingIds: payableGuestBookings.map((booking) => Number(booking.id)).filter((id) => Number.isInteger(id) && id > 0),
+    paid: true,
+    bookingCount: payableGuestBookings.length,
+  });
 });
 
 app.post('/api/payments/preview-cart-coupon', requireAuth, (req, res) => {
@@ -8428,6 +8661,63 @@ function verifyPaymentAccessToken(token) {
   } catch {
     return null;
   }
+}
+
+function createGuestCheckoutAccessToken(payload) {
+  const bookingIds = (Array.isArray(payload?.bookingIds) ? payload.bookingIds : [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+  if (!bookingIds.length) return '';
+  return jwt.sign(
+    {
+      scope: 'guest_checkout',
+      bookingIds,
+      guestName: String(payload?.guestName || '').trim(),
+      guestEmail: String(payload?.guestEmail || '').trim(),
+      guestPhone: String(payload?.guestPhone || '').trim(),
+    },
+    JWT_SECRET,
+    { expiresIn: '15m' }
+  );
+}
+
+function verifyGuestCheckoutAccessToken(token) {
+  try {
+    const payload = jwt.verify(String(token || ''), JWT_SECRET);
+    if (payload?.scope !== 'guest_checkout') return null;
+    const bookingIds = Array.isArray(payload.bookingIds)
+      ? payload.bookingIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+      : [];
+    if (!bookingIds.length) return null;
+    return {
+      bookingIds,
+      guestName: String(payload.guestName || '').trim(),
+      guestEmail: String(payload.guestEmail || '').trim(),
+      guestPhone: String(payload.guestPhone || '').trim(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function loadBookingsByIds(bookingIds = []) {
+  const ids = (Array.isArray(bookingIds) ? bookingIds : [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+  if (!ids.length) return [];
+  const placeholders = ids.map(() => '?').join(', ');
+  return db
+    .prepare(
+      `SELECT id, user_id AS userId, booking_group_id AS bookingGroupId, service_name AS serviceName,
+              booking_date AS bookingDate, booking_time AS bookingTime, status, payment_status AS paymentStatus,
+              payment_order_id AS paymentOrderId, payment_reference AS paymentReference, is_topup_session AS isTopUpSession,
+              guest_name AS guestName, guest_email AS guestEmail, guest_phone AS guestPhone,
+              created_at AS createdAt
+       FROM bookings
+       WHERE id IN (${placeholders})
+       ORDER BY booking_date, booking_time, id`
+    )
+    .all(...ids);
 }
 
 function createInvoiceAccessToken(payload) {
@@ -10830,6 +11120,27 @@ function getServiceByName(name) {
   return null;
 }
 
+function ensureGuestBookingOwnerUser() {
+  const guestEmail = 'guest-bookings@h2hbooking.local';
+  const existingUser = db
+    .prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1')
+    .get(guestEmail);
+
+  if (existingUser && Number.isFinite(Number(existingUser.id))) {
+    return Number(existingUser.id);
+  }
+
+  const passwordHash = bcrypt.hashSync(crypto.randomBytes(24).toString('hex'), 10);
+  const result = db
+    .prepare(
+      `INSERT INTO users (name, email, password_hash, role, created_at)
+       VALUES (?, ?, ?, 'user', datetime('now'))`
+    )
+    .run('Guest Booking', guestEmail, passwordHash);
+
+  return Number(result.lastInsertRowid);
+}
+
 function validateDoctorPayload(body) {
   if (!body || typeof body !== 'object') {
     return { error: 'invalid payload' };
@@ -12206,6 +12517,18 @@ function migrate() {
   }
   if (!hasColumn('bookings', 'payment_link_email_event_at')) {
     db.exec('ALTER TABLE bookings ADD COLUMN payment_link_email_event_at TEXT');
+  }
+  if (!hasColumn('bookings', 'guest_name')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN guest_name TEXT');
+  }
+  if (!hasColumn('bookings', 'guest_email')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN guest_email TEXT');
+  }
+  if (!hasColumn('bookings', 'guest_phone')) {
+    db.exec('ALTER TABLE bookings ADD COLUMN guest_phone TEXT');
+  }
+  if (!hasColumn('bookings', 'booking_type')) {
+    db.exec("ALTER TABLE bookings ADD COLUMN booking_type TEXT NOT NULL DEFAULT 'registered'");
   }
   db.exec(`
     UPDATE bookings

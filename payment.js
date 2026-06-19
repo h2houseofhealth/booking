@@ -49,6 +49,7 @@ function renderPaymentSummary() {
   // Get customer name and email - prefer guest info if available
   const customerName = paymentState.booking?.guestName || paymentState.customer?.name || '';
   const customerEmail = paymentState.booking?.guestEmail || paymentState.customer?.email || '';
+  const customerPhone = paymentState.booking?.guestPhone || paymentState.customer?.mobile || '';
   
   detailCard.innerHTML = `
     <div class="admin-membership-head">
@@ -78,11 +79,11 @@ function renderPaymentSummary() {
         <span>Rs. ${Number(summary.totalAmountInr || 0).toLocaleString('en-IN')}</span>
       </div>
     </div>
-    ${paymentState.booking?.guestPhone ? `
+    ${customerPhone ? `
       <div class="admin-membership-meta" style="margin-top: 12px;">
         <div class="admin-membership-meta-item">
           <strong>Guest Phone</strong>
-          <span>${escapeHtml(paymentState.booking.guestPhone)}</span>
+          <span>${escapeHtml(customerPhone)}</span>
         </div>
       </div>
     ` : ''}

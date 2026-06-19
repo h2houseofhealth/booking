@@ -2211,7 +2211,7 @@ h1, h2, h3 {
 
 .member-choice-topbar {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 1rem;
   padding: 0.2rem 0.2rem 1rem;
@@ -2273,6 +2273,16 @@ h1, h2, h3 {
   padding: 0.65rem 1.3rem;
   border-radius: 12px;
   background: linear-gradient(135deg, #c95c33, #b44b2a);
+}
+
+.member-choice-book-session-btn {
+  min-height: 46px;
+  padding: 0.65rem 1.3rem;
+  border-radius: 12px;
+  border: 1px solid rgba(201, 92, 51, 0.28);
+  background: rgba(255, 250, 247, 0.96);
+  color: #b14c22;
+  box-shadow: 0 8px 18px rgba(200, 101, 45, 0.08);
 }
 
 .member-choice-hero {
@@ -10080,6 +10090,10 @@ table tbody td {
     display: none;
   }
 
+  .member-choice-gate .member-choice-book-session-btn {
+    display: none;
+  }
+
   .member-choice-gate .member-choice-mobile-menu {
     display: inline-flex;
     align-items: center;
@@ -11709,7 +11723,7 @@ body {
 /* Header/topbar restore */
 #memberChoiceGate .member-choice-topbar {
   display: grid !important;
-  grid-template-columns: auto 1fr auto !important;
+  grid-template-columns: auto 1fr auto auto !important;
   align-items: center !important;
   column-gap: 28px !important;
   padding: 18px 0 18px !important;
@@ -12317,6 +12331,10 @@ img {
   }
 
   #memberChoiceGate .member-choice-nav {
+    display: none !important;
+  }
+
+  #memberChoiceGate .member-choice-book-session-btn {
     display: none !important;
   }
 

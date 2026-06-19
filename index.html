@@ -48,7 +48,7 @@
             <span class="cart-btn-text">Cart</span>
             <span id="cartCount" class="cart-count" hidden>0</span>
           </button>
-          <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+          <button id="logoutBtn" class="btn btn-secondary" type="button">Logout</button>
         </div>
       </header>
 
@@ -135,6 +135,10 @@
               <a href="#member-choice-experience">Treatments</a>
               <a href="#member-choice-pricing">Pricing</a>
             </nav>
+            <button id="publicBookSessionBtn" class="member-choice-topbar-cta member-choice-book-session-btn" type="button" data-public-book-session>
+              Book a Session
+              <span aria-hidden="true">→</span>
+            </button>
             <button id="topExplorePlansBtn" class="member-choice-topbar-cta" type="button" aria-label="Sign in or login to member account">
               Sign Up / Log In
               <span aria-hidden="true">→</span>
@@ -195,10 +199,6 @@
                 </div>
                 <button class="member-choice-trust-cta" type="button" data-member-choice-join>
                   Explore All Plans
-                  <span aria-hidden="true">→</span>
-                </button>
-                <button id="publicBookSessionBtn" class="member-choice-trust-cta" type="button" data-public-book-session>
-                  Book a Session
                   <span aria-hidden="true">→</span>
                 </button>
               </div>
@@ -1579,7 +1579,7 @@
         </div>
 
         <div class="guest-checkout-content">
-          <p class="guest-checkout-lead">Complete your booking with just your contact information.</p>
+          <p class="guest-checkout-lead">Complete your booking with your name, email, and phone number so the admin team can track it later.</p>
           
           <div class="guest-form-fields">
             <label>
@@ -1660,7 +1660,7 @@
             <button id="checkoutAsGuest" class="checkout-option-btn" type="button">
               <span class="option-icon">👤</span>
               <span class="option-title">Continue as Guest</span>
-              <span class="option-desc">Quick checkout, just your email</span>
+              <span class="option-desc">Quick checkout with your email and phone</span>
             </button>
           </div>
 
@@ -1672,6 +1672,6 @@
     </dialog>
 
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-    <script src="app.js?v=21"></script>
+    <script src="app.js?v=27"></script>
   </body>
 </html>

@@ -922,6 +922,8 @@ async function bootstrap() {
       state.activeUserTab = 'membership';
       window.location.hash = '#membership';
     }
+  } else {
+    await loadGuestDashboardData();
   }
   render();
 }
@@ -1062,7 +1064,6 @@ function attachEvents() {
 
     state.user = null;
     state.bookings = [];
-    state.services = [];
     state.adminMembershipOrders = [];
     state.adminDiscountPhones = [];
     state.adminUsers = [];
@@ -1138,6 +1139,8 @@ function attachEvents() {
     state.slotCapacityByService = {};
     state.slotAvailabilityLoading = false;
     state.slotAutoShiftedNotice = '';
+    resetGuestCheckoutState();
+    state.isGuestUser = true;
     isForgotPasswordMode = false;
     signupStage = 'details';
     pendingSignupName = '';
@@ -1152,7 +1155,10 @@ function attachEvents() {
     if (elements.membershipDialog?.open) elements.membershipDialog.close();
     if (elements.membershipRosterDialog?.open) elements.membershipRosterDialog.close();
     if (elements.adminUserSessionDialog?.open) elements.adminUserSessionDialog.close();
-    renderAuthMode();
+    state.isGuestUser = false;
+    state.showAuthCard = false;
+    state.postLoginChoice = '';
+    state.pendingPreAuthChoice = '';
     render();
 
     if (logoutWarning) {
@@ -1640,34 +1646,7 @@ function attachEvents() {
 
   // Public Book Session Button
   const handlePublicBookSession = async () => {
-    state.isGuestUser = true;
-    state.activeUserTab = 'services';
-    state.user = null;
-    state.authToken = null;
-    state.showAuthCard = false;
-    state.postLoginChoice = 'guest';
-    storeAuthToken('');
-    
-    const savedCart = localStorage.getItem('h2_guest_cart');
-    if (savedCart) {
-      try {
-        state.cart = JSON.parse(savedCart);
-      } catch {
-        state.cart = [];
-      }
-    }
-    state.bookings = Array.isArray(state.cart) ? state.cart : [];
-    try {
-      await loadGuestDashboardData();
-    } catch (error) {
-      console.error(error);
-      showNotice({ title: 'Services unavailable', type: 'error', body: error?.message || 'Unable to load services for guest booking.' });
-    }
-    
-    render();
-    requestAnimationFrame(() => {
-      elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    await enterGuestBookingMode({ scrollToServices: true });
   };
 
   const publicBookSessionButtons = new Set([
@@ -2863,6 +2842,7 @@ async function loadDashboardData() {
       api('/api/membership/orders'),
     ]);
     state.services = servicesResult.services || [];
+    cacheServicesCatalog(state.services);
     state.bookings = bookingsResult.bookings || [];
     state.membership = {
       plans: membershipResult.plans || [],
@@ -2922,16 +2902,96 @@ async function loadDashboardData() {
 }
 
 async function loadGuestDashboardData() {
-  const [servicesResult] = await Promise.all([
-    api('/api/public/services'),
-  ]);
-  state.services = servicesResult.services || [];
+  const servicesResult = await api('/api/public/services').catch((error) => {
+    console.warn('Guest services load failed, keeping existing catalog if available.', error);
+    return null;
+  });
+  const nextServices = Array.isArray(servicesResult?.services) ? servicesResult.services : [];
+  if (nextServices.length) {
+    state.services = nextServices;
+    cacheServicesCatalog(nextServices);
+  } else {
+    const cachedServices = loadCachedServicesCatalog();
+    if (cachedServices.length) {
+      state.services = cachedServices;
+    }
+  }
   state.bookings = Array.isArray(state.cart) ? state.cart : [];
   state.membership = { plans: [], active: false, current: null };
   state.userMembershipOrders = [];
   state.membershipBrowseVisible = false;
   state.membershipRoster = null;
   state.generalCoupons = { services: [], membership: [] };
+}
+
+function cacheServicesCatalog(services = []) {
+  try {
+    localStorage.setItem('h2_services_catalog_cache', JSON.stringify(Array.isArray(services) ? services : []));
+  } catch {
+    // Ignore storage failures in private or embedded browsing contexts.
+  }
+}
+
+function loadCachedServicesCatalog() {
+  try {
+    const raw = localStorage.getItem('h2_services_catalog_cache');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadStoredGuestCart() {
+  const savedCart = localStorage.getItem('h2_guest_cart');
+  if (!savedCart) return [];
+  try {
+    const parsed = JSON.parse(savedCart);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function resetGuestCheckoutState() {
+  state.guestCheckout = {
+    isActive: false,
+    guestName: '',
+    guestEmail: '',
+    guestPhone: '',
+    formErrors: {},
+  };
+  state.guestSessionToken = null;
+}
+
+async function enterGuestBookingMode({ scrollToServices = true } = {}) {
+  state.isGuestUser = true;
+  state.user = null;
+  state.authToken = null;
+  state.showAuthCard = false;
+  state.postLoginChoice = 'guest';
+  state.pendingPreAuthChoice = '';
+  state.activeUserTab = 'services';
+  state.servicesBackTargetTab = '';
+  state.cart = loadStoredGuestCart();
+  state.bookings = Array.isArray(state.cart) ? state.cart : [];
+  resetGuestCheckoutState();
+  storeAuthToken('');
+
+  try {
+    await loadGuestDashboardData();
+  } catch (error) {
+    console.error(error);
+    showNotice({ title: 'Services unavailable', type: 'error', body: error?.message || 'Unable to load services for guest booking.' });
+  }
+
+  render();
+  if (scrollToServices) {
+    requestAnimationFrame(() => {
+      elements.servicesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
 }
 
 function getGuestCartBookings() {
@@ -3742,12 +3802,71 @@ async function proceedToGuestPayment() {
     }
     
     state.guestSessionToken = response.paymentToken;
-    
-    const paymentUrl = `${window.location.origin}/payment.html?token=${encodeURIComponent(response.paymentToken)}`;
-    window.location.href = paymentUrl;
+    await openGuestPaymentGateway(response.paymentToken);
   } catch (error) {
     alert(`Checkout failed: ${error.message}`);
   }
+}
+
+async function openGuestPaymentGateway(token) {
+  const trimmedToken = String(token || '').trim();
+  if (!trimmedToken) {
+    throw new Error('Missing guest payment token');
+  }
+
+  const order = await api('/api/public/payments/create-order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: trimmedToken }),
+  });
+
+  if (!window.Razorpay) {
+    throw new Error('Razorpay SDK not loaded');
+  }
+
+  const options = {
+    key: order.keyId,
+    amount: order.amount,
+    currency: order.currency || 'INR',
+    name: 'H2 House Of Health',
+    description: order.booking?.serviceName || 'Guest Booking Payment',
+    order_id: order.orderId,
+    prefill: {
+      name: order.customer?.name || '',
+      email: order.customer?.email || '',
+    },
+    theme: {
+      color: '#8b5e3c',
+    },
+    handler: async (response) => {
+      try {
+        await api('/api/public/payments/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: trimmedToken,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+          }),
+        });
+        resetGuestCheckoutState();
+        await loadDashboardData();
+        render();
+        alert('Payment successful. Your booking is confirmed.');
+      } catch (error) {
+        alert(error.message || 'Payment verification failed.');
+      }
+    },
+    modal: {
+      ondismiss: () => {
+        alert('Payment canceled.');
+      },
+    },
+  };
+
+  const checkout = new window.Razorpay(options);
+  checkout.open();
 }
 
 function getHydrogenSlotsForSubmit(requiredSlots) {
@@ -5279,7 +5398,13 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
   const summary = result.summary || {};
   const addOn = summary.addOn || null;
   const paymentBookingId = result.paymentBookingId || null;
-  const totalAmountInr = Number(summary.totalAmountInr || 0);
+  const inferredBaseAmountInr = Number(summary.packagePriceInr || 0) || Number(getDisplayedServicePriceInr(serviceName) || 0);
+  const inferredExtraAmountInr =
+    Number(summary.extraSessions || 0) > 0
+      ? Number(summary.extraSessions || 0) * Number(summary.extraSessionPriceInr || getHydrogenSingleSessionPriceInr() || 0)
+      : 0;
+  const inferredAddOnAmountInr = Number(addOn?.amountInr || 0);
+  const totalAmountInr = Number(summary.totalAmountInr || 0) || inferredBaseAmountInr + inferredExtraAmountInr + inferredAddOnAmountInr;
   const shouldRouteToCart = !isAdmin && totalAmountInr > 0;
   const lines = [
     `Service: ${serviceName}`,
@@ -5287,14 +5412,14 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
       ? `Free hydrogen sessions applied: ${Number(summary.freeSessionsApplied || 0)} (of ${HYDROGEN_FREE_SESSIONS_PER_USER})`
       : summary.membershipActive
         ? 'Free hydrogen sessions applied: 0 (buy extra)'
-      : `Hydrogen Amount: Rs. ${Number(summary.packagePriceInr || 0).toLocaleString('en-IN')}`,
+      : `Amount Payable: Rs. ${Number(inferredBaseAmountInr || 0).toLocaleString('en-IN')}`,
     summary.membershipActive
       ? Number(summary.chargeableHydrogenSessions || 0) > 0
         ? `Chargeable hydrogen sessions: ${Number(summary.chargeableHydrogenSessions || 0)} x Rs. ${Number(summary.memberSessionPriceInr || 0).toLocaleString('en-IN')}`
         : 'Chargeable hydrogen sessions: 0'
       : `Extra Hydrogen Sessions: ${Number(summary.extraSessions || 0)} x Rs. ${Number(summary.extraSessionPriceInr || 0).toLocaleString('en-IN')}`,
     addOn ? `IV Add-on: ${addOn.serviceName} - Rs. ${Number(addOn.amountInr || 0).toLocaleString('en-IN')}` : 'IV Add-on: None',
-    totalAmountInr > 0 ? `Total Payable: Rs. ${totalAmountInr.toLocaleString('en-IN')}` : 'Total Payable: Included',
+    `Total Payable: Rs. ${Number(totalAmountInr || 0).toLocaleString('en-IN')}`,
     '',
     isAdmin ? 'Saved to All User Bookings.' : 'Saved to My Bookings.',
     isAdmin
@@ -5407,7 +5532,13 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
   const addOn = summary.addOn || null;
   const membershipIncludedSessions = Number(summary.membershipIncludedSessions || 0);
   const membershipSessionsRemaining = Number(summary.membershipSessionsRemaining || 0);
-  const totalAmountInr = Number(summary.totalAmountInr || 0);
+  const inferredBaseAmountInr = Number(summary.packagePriceInr || 0) || Number(getDisplayedServicePriceInr(serviceName) || 0);
+  const inferredExtraAmountInr =
+    Number(summary.extraSessions || 0) > 0
+      ? Number(summary.extraSessions || 0) * Number(summary.extraSessionPriceInr || getHydrogenSingleSessionPriceInr() || 0)
+      : 0;
+  const inferredAddOnAmountInr = Number(addOn?.amountInr || 0);
+  const totalAmountInr = Number(summary.totalAmountInr || 0) || inferredBaseAmountInr + inferredExtraAmountInr + inferredAddOnAmountInr;
   const requiresPayment = Boolean(result.requiresPayment || summary.requiresPayment);
   const paymentBookingId = Number(result.paymentBookingId || 0);
   const lines = [`Service: ${serviceName}`];
@@ -5416,7 +5547,7 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
     lines.push(`Hydrogen Sessions Left: ${membershipSessionsRemaining}`);
   }
   if (membershipIncludedSessions <= 0) {
-    lines.push(`Hydrogen Amount: Rs. ${Number(summary.packagePriceInr || 0).toLocaleString('en-IN')}`);
+    lines.push(`Amount Payable: Rs. ${Number(inferredBaseAmountInr || 0).toLocaleString('en-IN')}`);
     if (Number(summary.extraSessions || 0) > 0) {
       lines.push(
         `Extra Hydrogen Sessions: ${Number(summary.extraSessions || 0)} x Rs. ${Number(summary.extraSessionPriceInr || 0).toLocaleString('en-IN')}`
@@ -5424,11 +5555,7 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
     }
   }
   lines.push(addOn ? `IV Add-on: ${addOn.serviceName} - Rs. ${Number(addOn.amountInr || 0).toLocaleString('en-IN')}` : 'IV Add-on: None');
-  lines.push(
-    totalAmountInr > 0
-      ? `Total Payable: Rs. ${totalAmountInr.toLocaleString('en-IN')}`
-      : 'Total Payable: Included in Membership'
-  );
+  lines.push(`Total Payable: Rs. ${Number(totalAmountInr || 0).toLocaleString('en-IN')}`);
 
   resetHydrogenComposer();
   await loadDashboardData();

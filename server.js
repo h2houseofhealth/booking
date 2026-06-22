@@ -11688,9 +11688,9 @@ async function sendCouponEmail({ toEmail, recipientName, code, discountValue, ap
       };
     }
     try {
-      await sgMail.send({
+      await sendMailgunEmail({
         to: normalizedToEmail,
-        from: SENDGRID_MARKETING_FROM_EMAIL,
+        from: MAIL_FROM,
         subject,
         text,
         html,
@@ -11868,75 +11868,36 @@ async function sendBookingPaymentLinkEmail({
     </div>
   `;
 
-  if (SENDGRID_API_KEY) {
-    const senderCandidates = getSendGridBookingSenderCandidates();
-    if (!senderCandidates.length) {
-      return { ok: false, statusCode: 500, message: 'SendGrid booking sender email is not configured.' };
-    }
-
-    let lastSendGridError = null;
-    for (const fromEmail of senderCandidates) {
-      try {
-        const [sendGridResponse] = await sgMail.send({
-          to: normalizedToEmail,
-          from: fromEmail,
-          subject,
-          text,
-          html,
-          customArgs: {
-            context: 'booking_payment_link',
-            bookingId: String(bookingId || ''),
-            userId: String(userId || ''),
-          },
-          categories: ['booking_payment_link'],
-        });
-        const statusCode = Number(sendGridResponse?.statusCode || 0);
-        const headers = sendGridResponse?.headers || {};
-        const messageId = String(
-          (typeof headers.get === 'function' ? headers.get('x-message-id') : headers['x-message-id'] || headers['X-Message-Id']) || ''
-        ).trim();
-
-        console.log('Payment link email send attempt result (SendGrid):', {
-          to: normalizedToEmail,
-          from: fromEmail,
-          subject,
-          statusCode,
-          messageId,
-        });
-
-        if (statusCode !== 202) {
-          lastSendGridError = {
-            statusCode: statusCode || 502,
-            detail: `SendGrid did not return 202 accepted. Received ${statusCode || 'unknown'}.`,
-          };
-          continue;
-        }
-
-        return { ok: true, delivery: 'sendgrid', statusCode, messageId };
-      } catch (error) {
-        const sendGridError = extractSendGridErrorDetails(error);
-        lastSendGridError = sendGridError;
-        console.error('Failed to send booking payment link email via SendGrid:', {
-          to: normalizedToEmail,
-          from: fromEmail,
-          subject,
-          statusCode: sendGridError.statusCode,
-          detail: sendGridError.detail,
-          responseBody: sendGridError.responseBody,
-        });
-        if (![401, 403].includes(Number(sendGridError.statusCode || 0))) {
-          break;
-        }
-      }
-    }
-
+  try {
+    const result = await sendMailgunEmail({
+     to: normalizedToEmail,
+     from: MAIL_FROM,
+     subject,
+     text,
+     html,
+    });
+    console.log('Payment link email sent via Mailgun:', {
+      to: normalizedToEmail,
+      from: MAIL_FROM,
+      subject,
+      messageId: result?.id,
+    });
+    return {
+      ok: true,
+      delivery: 'mailgun',
+      messageId: result?.id || '',
+   };
+  } catch (error) {
+    console.error('Failed to send booking payment link email via Mailgun:', {
+      to: normalizedToEmail,
+      from: MAIL_FROM,
+      subject,
+      error,
+    });
     return {
       ok: false,
-      statusCode: lastSendGridError?.statusCode || 500,
-      message:
-        Number(lastSendGridError?.statusCode || 0) === 403
-          ? 'SendGrid rejected all configured sender identities. Verify SENDGRID_BOOKING_FROM_EMAIL or authenticate the sender domain.'
-          : 'Unable to send payment link email. Please try again.',
+      statusCode: 500,
+      message: 'Unable to send payment link email. Please try again.',
     };
   }
 
@@ -12078,13 +12039,13 @@ async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
       message: `${isBookingReschedule ? 'Booking reschedule' : isPasswordReset ? 'Password reset' : 'Signup'} OTP sent to ${normalizedToEmail}. It expires in ${OTP_TTL_MINUTES} minutes.`,
     };
   } catch (error) {
-    const sendGridError = extractSendGridErrorDetails(error);
-    console.error('Failed to send OTP email via SendGrid:', {
+    const mailgunError = extractMailgunErrorDetails(error);
+    console.error('Failed to send OTP email via Mailgun:', {
       to: normalizedToEmail,
-      from: SENDGRID_OTP_FROM_EMAIL,
-      statusCode: sendGridError.statusCode,
-      detail: sendGridError.detail,
-      responseBody: sendGridError.responseBody,
+      from: MAIL_FROM,
+      statusCode: mailgunError.statusCode,
+      detail: mailgunError.detail,
+      responseBody: mailgunError.responseBody,
     });
     const statusCode = sendGridError.statusCode;
     if (ALLOW_DEV_OTP_FALLBACK) {
@@ -12094,7 +12055,7 @@ async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
       return {
         ok: true,
         delivery: 'console',
-        message: `OTP generated for ${normalizedToEmail}. SendGrid failed, so OTP fallback is active in development.`,
+        message: `OTP generated for ${normalizedToEmail}. Mailgun failed, so OTP fallback is active in development.`,
       };
     }
     const isUnauthorized = statusCode === 401 || statusCode === 403;
@@ -12104,8 +12065,8 @@ async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
       statusCode,
       message: isUnauthorized
         ? statusCode === 403
-          ? 'SendGrid rejected the sender identity. Verify the configured FROM email or authenticated domain.'
-          : 'SendGrid authentication failed. Please contact support.'
+          ? 'Mailgun rejected the sender identity. Verify the configured FROM email or authenticated domain.'
+          : 'Mailgun authentication failed. Please contact support.'
         : 'Unable to send OTP email. Please try again.',
     };
   }

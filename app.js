@@ -4503,13 +4503,20 @@ function updateBookingSummary() {
     return;
   }
   if (isEditingExistingBooking && selectedAddOn) {
-    elements.summaryContent.innerHTML = `<div><span>Add-on: ${escapeHtml(selectedAddOn.name)}</span><span>Rs. ${addOnPrice.toLocaleString('en-IN')}</span></div>`;
-    elements.totalPayable.textContent = `Rs. ${addOnPrice.toLocaleString('en-IN')}`;
+    const gstBreakdown = getGstBreakdownInr(addOnPrice);
+    elements.summaryContent.innerHTML = `
+      <div><span>Add-on: ${escapeHtml(selectedAddOn.name)}</span><span>Rs. ${addOnPrice.toLocaleString('en-IN')}</span></div>
+      <div><span>GST ${GST_RATE_PERCENT}%</span><span>Rs. ${gstBreakdown.gstAmountInr.toLocaleString('en-IN')}</span></div>
+      <div class="summary-total"><span>Total Payable</span><span>Rs. ${gstBreakdown.totalAmountInr.toLocaleString('en-IN')}</span></div>
+    `;
+    elements.totalPayable.textContent = `Rs. ${gstBreakdown.totalAmountInr.toLocaleString('en-IN')}`;
     elements.bookingSummary.hidden = false;
     return;
   }
   const totalPrice = basePrice + addOnPrice;
-  
+  const gstBreakdown = getGstBreakdownInr(totalPrice);
+  const payableTotal = gstBreakdown.totalAmountInr;
+
   const summaryLines = [];
   summaryLines.push(
     `<div><span>${escapeHtml(getServiceDisplayName(selectedService))}${isHydrogenFree ? ` <small>(Included in Membership • ${hydrogenFreeRemaining} left)</small>` : ''}</span><span>Rs. ${basePrice.toLocaleString('en-IN')}</span></div>`
@@ -4518,9 +4525,13 @@ function updateBookingSummary() {
   if (selectedAddOn) {
     summaryLines.push(`<div><span>Add-on: ${escapeHtml(selectedAddOn.name)}</span><span>Rs. ${addOnPrice.toLocaleString('en-IN')}</span></div>`);
   }
+  if (totalPrice > 0) {
+    summaryLines.push(`<div><span>GST ${GST_RATE_PERCENT}%</span><span>Rs. ${gstBreakdown.gstAmountInr.toLocaleString('en-IN')}</span></div>`);
+    summaryLines.push(`<div class="summary-total"><span>Total Payable</span><span>Rs. ${payableTotal.toLocaleString('en-IN')}</span></div>`);
+  }
   
   elements.summaryContent.innerHTML = summaryLines.join('');
-  elements.totalPayable.textContent = `Rs. ${totalPrice.toLocaleString('en-IN')}`;
+  elements.totalPayable.textContent = `Rs. ${payableTotal.toLocaleString('en-IN')}`;
   elements.bookingSummary.hidden = false;
 }
 
@@ -5243,7 +5254,7 @@ async function payBooking(id) {
         await loadDashboardData();
         render();
         const bookingCount = Number(verifyResult.bookingCount || result.bookingCount || 1);
-        const totalAmountInr = Number(result.summary?.totalAmountInr || result.booking?.amountInr || 0);
+        const totalAmountInr = Number(result.summary?.payableAmountInr || result.booking?.amountInr || result.summary?.totalAmountInr || 0);
         showNotice({
           title: 'Payment successful',
           body:
@@ -5340,8 +5351,8 @@ async function payAllUserBookings() {
           const successLines = [
             'You are all set! Your booking is confirmed.',
             ...buildAppliedCouponSuccessLines(appliedCoupon),
-            `Total paid: Rs. ${Number(
-              verifyResult.totalAmountInr || result.summary?.totalAmountInr || 0
+          `Total paid: Rs. ${Number(
+              verifyResult.totalAmountInr || result.summary?.payableAmountInr || result.summary?.totalAmountInr || 0
             ).toLocaleString('en-IN')}.`,
           ];
           showNotice({
@@ -5464,6 +5475,12 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
       : 0;
   const inferredAddOnAmountInr = Number(addOn?.amountInr || 0);
   const totalAmountInr = Number(summary.totalAmountInr || 0) || inferredBaseAmountInr + inferredExtraAmountInr + inferredAddOnAmountInr;
+  const subtotalAmountInr =
+    Number(summary.subtotalAmountInr || 0) || inferredBaseAmountInr + inferredExtraAmountInr + inferredAddOnAmountInr;
+  const payableBreakdown =
+    totalAmountInr > subtotalAmountInr
+      ? getGstBreakdownInr(totalAmountInr, { fromGross: true })
+      : getGstBreakdownInr(subtotalAmountInr);
   const shouldRouteToCart = !isAdmin && totalAmountInr > 0;
   const lines = [
     `Service: ${serviceName}`,
@@ -5471,14 +5488,15 @@ async function saveHydrogenPackBookings({ serviceName, extraSessions, slots, add
       ? `Free hydrogen sessions applied: ${Number(summary.freeSessionsApplied || 0)} (of ${HYDROGEN_FREE_SESSIONS_PER_USER})`
       : summary.membershipActive
         ? 'Free hydrogen sessions applied: 0 (buy extra)'
-      : `Amount Payable: Rs. ${Number(inferredBaseAmountInr || 0).toLocaleString('en-IN')}`,
+      : `Subtotal: Rs. ${Number(subtotalAmountInr || 0).toLocaleString('en-IN')}`,
     summary.membershipActive
       ? Number(summary.chargeableHydrogenSessions || 0) > 0
         ? `Chargeable hydrogen sessions: ${Number(summary.chargeableHydrogenSessions || 0)} x Rs. ${Number(summary.memberSessionPriceInr || 0).toLocaleString('en-IN')}`
         : 'Chargeable hydrogen sessions: 0'
       : `Extra Hydrogen Sessions: ${Number(summary.extraSessions || 0)} x Rs. ${Number(summary.extraSessionPriceInr || 0).toLocaleString('en-IN')}`,
     addOn ? `IV Add-on: ${addOn.serviceName} - Rs. ${Number(addOn.amountInr || 0).toLocaleString('en-IN')}` : 'IV Add-on: None',
-    `Total Payable: Rs. ${Number(totalAmountInr || 0).toLocaleString('en-IN')}`,
+    `GST ${GST_RATE_PERCENT}%: Rs. ${Number(payableBreakdown.gstAmountInr || 0).toLocaleString('en-IN')}`,
+    `Total Payable: Rs. ${Number(payableBreakdown.totalAmountInr || totalAmountInr || 0).toLocaleString('en-IN')}`,
     '',
     isAdmin ? 'Saved to All User Bookings.' : 'Saved to My Bookings.',
     isAdmin
@@ -5598,6 +5616,12 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
       : 0;
   const inferredAddOnAmountInr = Number(addOn?.amountInr || 0);
   const totalAmountInr = Number(summary.totalAmountInr || 0) || inferredBaseAmountInr + inferredExtraAmountInr + inferredAddOnAmountInr;
+  const subtotalAmountInr =
+    Number(summary.subtotalAmountInr || 0) || inferredBaseAmountInr + inferredExtraAmountInr + inferredAddOnAmountInr;
+  const payableBreakdown =
+    totalAmountInr > subtotalAmountInr
+      ? getGstBreakdownInr(totalAmountInr, { fromGross: true })
+      : getGstBreakdownInr(subtotalAmountInr);
   const requiresPayment = Boolean(result.requiresPayment || summary.requiresPayment);
   const paymentBookingId = Number(result.paymentBookingId || 0);
   const lines = [`Service: ${serviceName}`];
@@ -5606,7 +5630,7 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
     lines.push(`Hydrogen Sessions Left: ${membershipSessionsRemaining}`);
   }
   if (membershipIncludedSessions <= 0) {
-    lines.push(`Amount Payable: Rs. ${Number(inferredBaseAmountInr || 0).toLocaleString('en-IN')}`);
+    lines.push(`Subtotal: Rs. ${Number(subtotalAmountInr || 0).toLocaleString('en-IN')}`);
     if (Number(summary.extraSessions || 0) > 0) {
       lines.push(
         `Extra Hydrogen Sessions: ${Number(summary.extraSessions || 0)} x Rs. ${Number(summary.extraSessionPriceInr || 0).toLocaleString('en-IN')}`
@@ -5614,7 +5638,8 @@ async function updateHydrogenPackBookings({ bookingGroupId, serviceName, extraSe
     }
   }
   lines.push(addOn ? `IV Add-on: ${addOn.serviceName} - Rs. ${Number(addOn.amountInr || 0).toLocaleString('en-IN')}` : 'IV Add-on: None');
-  lines.push(`Total Payable: Rs. ${Number(totalAmountInr || 0).toLocaleString('en-IN')}`);
+  lines.push(`GST ${GST_RATE_PERCENT}%: Rs. ${Number(payableBreakdown.gstAmountInr || 0).toLocaleString('en-IN')}`);
+  lines.push(`Total Payable: Rs. ${Number(payableBreakdown.totalAmountInr || totalAmountInr || 0).toLocaleString('en-IN')}`);
 
   resetHydrogenComposer();
   await loadDashboardData();
@@ -8725,14 +8750,14 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     selectedAddOnPriceInr <= 0;
   const stickyPriceText =
     isTopUpFlow
-      ? `₹${(selectedServicePrice + selectedAddOnPriceInr).toLocaleString('en-IN')}`
+      ? formatAmountWithGstLabel(selectedServicePrice + selectedAddOnPriceInr).replace('Rs.', '₹')
       : hydrogenSessionSummary.active && includedSessionsRemaining > 0
       ? `${includedSessionsRemaining} hydrogen session${includedSessionsRemaining === 1 ? '' : 's'} left in membership`
       : selectedServiceIsMembershipOnly
         ? selectedServiceHasMemberAccess
           ? 'Included in Membership'
           : 'Members only'
-        : `₹${(selectedServicePrice + selectedAddOnPriceInr).toLocaleString('en-IN')}`;
+        : formatAmountWithGstLabel(selectedServicePrice + selectedAddOnPriceInr).replace('Rs.', '₹');
   const stickyPriceClass = /₹|Rs\./i.test(stickyPriceText) ? 'service-sticky-price' : '';
 
   const stickyWrap = document.createElement('div');
@@ -8747,8 +8772,10 @@ function renderHydrogenUnifiedComposer({ detailsContainer, services, category, i
     if (selectedAddOnService && selectedAddOnPriceInr > 0) {
       priceBreakdownHtml += `<div class="breakdown-item"><span>${escapeHtml(selectedAddOnService.name)}</span><span>₹${selectedAddOnPriceInr.toLocaleString('en-IN')}</span></div>`;
     }
+    const gstBreakdown = getGstBreakdownInr(selectedServicePrice + selectedAddOnPriceInr);
     if ((selectedServicePrice + selectedAddOnPriceInr) > 0) {
-      priceBreakdownHtml += `<div class="breakdown-total"><span>Total</span><span>₹${(selectedServicePrice + selectedAddOnPriceInr).toLocaleString('en-IN')}</span></div>`;
+      priceBreakdownHtml += `<div class="breakdown-item"><span>GST ${GST_RATE_PERCENT}%</span><span>₹${gstBreakdown.gstAmountInr.toLocaleString('en-IN')}</span></div>`;
+      priceBreakdownHtml += `<div class="breakdown-total"><span>Total</span><span>₹${gstBreakdown.totalAmountInr.toLocaleString('en-IN')}</span></div>`;
     }
     priceBreakdownHtml += `</div>`;
   }
@@ -11166,7 +11193,7 @@ function renderMembership() {
     if (canAddPerson) {
       state.membershipAdditions[plan.id] = additionalPeople;
     }
-    const estimatedAmountInr = Number(plan.priceInr || 0) + additionalPeople * addPersonPriceInr;
+    const estimatedAmountInr = getGstBreakdownInr(Number(plan.priceInr || 0) + additionalPeople * addPersonPriceInr).totalAmountInr;
     const showAddPersonPricing = additionalPeople > 0;
     const isCurrentBasePlan = active && String(current.plan || '') === String(plan.id);
     const theme = getMembershipPlanTheme(plan);
@@ -11192,7 +11219,7 @@ function renderMembership() {
       <div class="membership-card-body">
         <div class="membership-card-price-block">
           <p class="membership-price">Rs. ${estimatedAmountInr.toLocaleString('en-IN')}</p>
-          <p class="membership-price-caption">1-year access • ${escapeHtml(plan.validityDays)} days</p>
+          <p class="membership-price-caption">1-year access • ${escapeHtml(plan.validityDays)} days • Includes GST ${GST_RATE_PERCENT}%</p>
         </div>
         <p class="membership-includes-label">Includes:</p>
         <ul class="membership-feature-list">
@@ -11297,7 +11324,7 @@ function openMembershipCheckoutDialog(plan, additionalPeople) {
   restoreMembershipCheckoutFooter();
   const targetPeopleCount = Number(plan.peopleCount || 1) + Number(additionalPeople || 0);
   const addPersonPriceInr = getMembershipAddPersonPriceInr();
-  const estimatedAmountInr = Number(plan.priceInr || 0) + Number(additionalPeople || 0) * addPersonPriceInr;
+  const estimatedAmountInr = getGstBreakdownInr(Number(plan.priceInr || 0) + Number(additionalPeople || 0) * addPersonPriceInr).totalAmountInr;
   const members = [];
   for (let i = 0; i < targetPeopleCount; i += 1) {
     members.push({
@@ -11530,7 +11557,7 @@ function openMembershipAddPersonUpgradeCheckoutDialog() {
     )
   );
   const targetPeopleCount = currentPeopleCount + 1;
-  const estimatedAmountInr = Number(addPersonPlan.priceInr || 0);
+  const estimatedAmountInr = getGstBreakdownInr(Number(addPersonPlan.priceInr || 0)).totalAmountInr;
 
   const buyerEmail = String(state.user?.email || '').trim().toLowerCase();
   const rosterMembers = Array.isArray(state.membershipRoster?.members) ? state.membershipRoster.members : [];
@@ -11688,6 +11715,7 @@ function renderMembershipCheckoutSummary() {
   if (!elements.membershipPlanSummary || !state.membershipCheckout) return;
   const targetPeopleCount = Number(state.membershipCheckout.targetPeopleCount || 0);
   const estimatedAmountInr = Number(state.membershipCheckout.estimatedAmountInr || 0);
+  const estimatedBreakdown = getGstBreakdownInr(estimatedAmountInr, { fromGross: true });
   const preview = state.membershipCouponPreview;
   const planId = String(state.membershipCheckout.planId || '').trim();
   const startedAtValue =
@@ -11704,17 +11732,20 @@ function renderMembershipCheckoutSummary() {
   if (preview) {
     const original = Number(preview.originalAmountInr || estimatedAmountInr || 0);
     const discount = Number(preview.discountAmountInr || 0);
-    const payable = Number(preview.payableAmountInr || Math.max(0, original - discount));
+    const gst = Number(preview.gstAmountInr || 0);
+    const payable = Number(preview.payableAmountInr || Math.max(0, original - discount + gst));
     elements.membershipPlanSummary.textContent =
       `Members: ${targetPeopleCount} • Estimated: Rs. ${original.toLocaleString('en-IN')}` +
       ` • Coupon: -Rs. ${discount.toLocaleString('en-IN')}` +
+      ` • GST ${GST_RATE_PERCENT}%: Rs. ${gst.toLocaleString('en-IN')}` +
       ` • Payable: Rs. ${payable.toLocaleString('en-IN')}${addPersonValidityNote}`;
     return;
   }
 
-  elements.membershipPlanSummary.textContent = `Members: ${targetPeopleCount} • Estimated Amount: Rs. ${estimatedAmountInr.toLocaleString(
-    'en-IN'
-  )}${addPersonValidityNote}`;
+  elements.membershipPlanSummary.textContent =
+    `Members: ${targetPeopleCount} • Estimated Amount: Rs. ${estimatedBreakdown.subtotalAmountInr.toLocaleString('en-IN')}` +
+    ` • GST ${GST_RATE_PERCENT}%: Rs. ${estimatedBreakdown.gstAmountInr.toLocaleString('en-IN')}` +
+    ` • Payable: Rs. ${estimatedBreakdown.totalAmountInr.toLocaleString('en-IN')}${addPersonValidityNote}`;
 }
 
 function renderCouponPreview(preview, target) {
@@ -11728,12 +11759,14 @@ function renderCouponPreview(preview, target) {
   const description = String(preview.description || '').trim();
   const original = Number(preview.originalAmountInr || 0);
   const discount = Number(preview.discountAmountInr || 0);
+  const gst = Number(preview.gstAmountInr || 0);
   const payable = Number(preview.payableAmountInr || 0);
   target.hidden = false;
   target.innerHTML = `
     <strong>${escapeHtml(preview.code || '')}</strong>
     ${description ? `<span>${escapeHtml(description)}</span>` : ''}
     <span>Discount: Rs. ${discount.toLocaleString('en-IN')} off</span>
+    <span>GST ${GST_RATE_PERCENT}%: Rs. ${gst.toLocaleString('en-IN')}</span>
     <span>Payable: Rs. ${payable.toLocaleString('en-IN')} (was Rs. ${original.toLocaleString('en-IN')})</span>
   `;
 }
@@ -12531,7 +12564,7 @@ function cartAmountCell(row) {
   } else {
     amountInr = getBookingDisplayAmountInr(row.booking || { serviceName: row.serviceTitle });
   }
-  td.textContent = amountInr > 0 ? `Rs. ${amountInr.toLocaleString('en-IN')}` : 'Included';
+  td.textContent = amountInr > 0 ? formatGrossAmountWithGstLabel(amountInr) : 'Included';
   return td;
 }
 
@@ -12548,7 +12581,7 @@ function getCartRowAmountLabel(row) {
   } else {
     amountInr = getBookingDisplayAmountInr(row.booking || { serviceName: row.serviceTitle });
   }
-  return amountInr > 0 ? `Rs. ${amountInr.toLocaleString('en-IN')}` : 'Included';
+  return amountInr > 0 ? formatGrossAmountWithGstLabel(amountInr) : 'Included';
 }
 
 function showCartRowDetails(row) {
@@ -12634,7 +12667,7 @@ function renderUserCheckoutSummary(bookings) {
   }
 
   const coupon = state.cartCouponPreview;
-  const payableAmountInr = Number(coupon?.payableAmountInr || summary.totalAmountInr || 0);
+  const payableAmountInr = Number(coupon?.payableAmountInr || summary.payableAmountInr || summary.totalAmountInr || 0);
   const discountAmountInr = Number(coupon?.discountAmountInr || 0);
   const holdMinutes = summary.holdActive
     ? Number(summary.holdRemainingMinutes || state.bookingHoldMinutes || BOOKING_HOLD_MINUTES)
@@ -12650,10 +12683,13 @@ function renderUserCheckoutSummary(bookings) {
     <strong>${summary.unitCount} item${summary.unitCount === 1 ? '' : 's'} ready for one payment</strong>
     ${
       coupon
-        ? `<span>Subtotal: Rs. ${summary.totalAmountInr.toLocaleString('en-IN')}</span>
+        ? `<span>Subtotal: Rs. ${Number(summary.subtotalAmountInr || summary.totalAmountInr || 0).toLocaleString('en-IN')}</span>
+           <span>GST ${GST_RATE_PERCENT}%: Rs. ${Number(summary.gstAmountInr || 0).toLocaleString('en-IN')}</span>
            <span>Coupon Savings: -Rs. ${discountAmountInr.toLocaleString('en-IN')}</span>
            <span>Total payable: Rs. ${payableAmountInr.toLocaleString('en-IN')}</span>`
-        : `<span>Total payable: Rs. ${summary.totalAmountInr.toLocaleString('en-IN')}</span>`
+        : `<span>Subtotal: Rs. ${Number(summary.subtotalAmountInr || summary.totalAmountInr || 0).toLocaleString('en-IN')}</span>
+           <span>GST ${GST_RATE_PERCENT}%: Rs. ${Number(summary.gstAmountInr || 0).toLocaleString('en-IN')}</span>
+           <span>Total payable: Rs. ${Number(summary.payableAmountInr || summary.totalAmountInr || 0).toLocaleString('en-IN')}</span>`
     }
     ${holdLine}
   `;
@@ -12889,14 +12925,15 @@ function buildUserBookingRows(bookings, allBookings = bookings) {
         ...rescheduleSections,
         ...(addOnDetails.length ? [{ title: 'Add-on', lines: addOnDetails }] : []),
         ...(breakdown.totalAmountInr > 0
-          ? [
+        ? [
               {
                 title: 'Payment',
                 lines: [
-                  breakdown.breakdownText,
-                  `Total: Rs. ${breakdown.totalAmountInr.toLocaleString('en-IN')}`,
+                  `Subtotal: Rs. ${Number(breakdown.subtotalAmountInr || 0).toLocaleString('en-IN')}`,
+                  `GST ${GST_RATE_PERCENT}%: Rs. ${Number(breakdown.gstAmountInr || 0).toLocaleString('en-IN')}`,
+                  `Total: Rs. ${Number(payableBreakdown.totalAmountInr || breakdown.totalAmountInr || 0).toLocaleString('en-IN')}`,
                   ...(payableBreakdown.totalAmountInr > 0
-                    ? [`Payable now: Rs. ${payableBreakdown.totalAmountInr.toLocaleString('en-IN')}`]
+                    ? [`Payable now: Rs. ${Number(payableBreakdown.totalAmountInr).toLocaleString('en-IN')}`]
                     : []),
                 ],
               },
@@ -12985,6 +13022,7 @@ function buildUserCartSummary(bookings = state.bookings) {
       totalAmountInr += getBookingDisplayAmountInr(row.booking || { serviceName: row.serviceTitle });
     }
   }
+  const payableBreakdown = getGstBreakdownInr(totalAmountInr, { fromGross: true });
 
   const holdActiveEntries = payableBookings.filter((booking) => booking.holdActive);
   const holdRemainingMinutes = holdActiveEntries.length
@@ -12999,6 +13037,9 @@ function buildUserCartSummary(bookings = state.bookings) {
     unitCount: rows.length,
     bookingCount: payableBookings.length,
     totalAmountInr,
+    subtotalAmountInr: payableBreakdown.subtotalAmountInr,
+    gstAmountInr: payableBreakdown.gstAmountInr,
+    payableAmountInr: payableBreakdown.totalAmountInr,
     holdActive: holdActiveEntries.length > 0,
     holdRemainingMinutes,
   };
@@ -14834,17 +14875,62 @@ function getHydrogenSingleSessionPriceInr() {
   );
 }
 
-function getBookingDisplayAmountInr(booking) {
-  if (
-    String(booking?.paymentStatus || '').trim().toLowerCase() === 'paid' &&
-    Number.isFinite(Number(booking?.paidAmountPaise)) &&
-    Number(booking.paidAmountPaise) > 0
-  ) {
-    return Number(booking.paidAmountPaise) / 100;
+const GST_RATE_PERCENT = 18;
+
+function normalizeCurrencyAmountInr(amountInr) {
+  return Math.max(0, Math.round(Number(amountInr || 0)));
+}
+
+function getGstBreakdownInr(amountInr, { fromGross = false } = {}) {
+  const sourceAmountInr = normalizeCurrencyAmountInr(amountInr);
+  if (sourceAmountInr <= 0) {
+    return {
+      subtotalAmountInr: 0,
+      gstAmountInr: 0,
+      totalAmountInr: 0,
+    };
   }
+
+  if (fromGross) {
+    const subtotalAmountInr = Math.max(0, Math.round(sourceAmountInr / (1 + GST_RATE_PERCENT / 100)));
+    return {
+      subtotalAmountInr,
+      gstAmountInr: Math.max(0, sourceAmountInr - subtotalAmountInr),
+      totalAmountInr: sourceAmountInr,
+    };
+  }
+
+  const subtotalAmountInr = sourceAmountInr;
+  const gstAmountInr = Math.max(0, Math.round((subtotalAmountInr * GST_RATE_PERCENT) / 100));
+  return {
+    subtotalAmountInr,
+    gstAmountInr,
+    totalAmountInr: subtotalAmountInr + gstAmountInr,
+  };
+}
+
+function formatAmountWithGstLabel(amountInr) {
+  const breakdown = getGstBreakdownInr(amountInr);
+  if (breakdown.gstAmountInr <= 0) {
+    return `Rs. ${breakdown.totalAmountInr.toLocaleString('en-IN')}`;
+  }
+  return `Rs. ${breakdown.totalAmountInr.toLocaleString('en-IN')} (GST ${GST_RATE_PERCENT}%: Rs. ${breakdown.gstAmountInr.toLocaleString('en-IN')})`;
+}
+
+function formatGrossAmountWithGstLabel(amountInr) {
+  const breakdown = getGstBreakdownInr(amountInr, { fromGross: true });
+  if (breakdown.gstAmountInr <= 0) {
+    return `Rs. ${breakdown.totalAmountInr.toLocaleString('en-IN')}`;
+  }
+  return `Rs. ${breakdown.totalAmountInr.toLocaleString('en-IN')} (GST ${GST_RATE_PERCENT}%: Rs. ${breakdown.gstAmountInr.toLocaleString('en-IN')})`;
+}
+
+function getBookingDisplayAmountInr(booking) {
   if (String(booking?.paymentReference || '').trim().toLowerCase() === 'membership') return 0;
-  if (isBuyExtraHydrogenBooking(booking)) return getHydrogenSingleSessionPriceInr();
-  return Number(getDisplayedServicePriceInr(booking?.serviceName || '') || 0);
+  if (isBuyExtraHydrogenBooking(booking)) {
+    return getGstBreakdownInr(getHydrogenSingleSessionPriceInr()).totalAmountInr;
+  }
+  return getGstBreakdownInr(getDisplayedServicePriceInr(booking?.serviceName || '')).totalAmountInr;
 }
 
 function canShowBookingInvoice(booking) {
@@ -15002,22 +15088,6 @@ function hasStandaloneIvOnDateClient(bookingDate, excludeGroupId = '') {
 
 function getHydrogenGroupBreakdown(hydrogenEntries, addOnEntries) {
   const allEntries = [...(Array.isArray(hydrogenEntries) ? hydrogenEntries : []), ...(Array.isArray(addOnEntries) ? addOnEntries : [])];
-  const storedPaidAmountPaise = allEntries.reduce((sum, entry) => {
-    if (String(entry?.paymentStatus || '').trim().toLowerCase() !== 'paid') return sum;
-    return sum + Math.max(0, Math.round(Number(entry?.paidAmountPaise || 0)));
-  }, 0);
-  const activePaidEntries = allEntries.filter(
-    (entry) =>
-      String(entry?.status || '').trim().toLowerCase() !== 'cancelled' &&
-      String(entry?.paymentStatus || '').trim().toLowerCase() === 'paid'
-  );
-  if (storedPaidAmountPaise > 0 && activePaidEntries.length === allEntries.filter((entry) => String(entry?.status || '').trim().toLowerCase() !== 'cancelled').length) {
-    const totalAmountInr = storedPaidAmountPaise / 100;
-    return {
-      breakdownText: `Paid amount Rs. ${totalAmountInr.toLocaleString('en-IN')}`,
-      totalAmountInr,
-    };
-  }
   const membershipActive = isCurrentUserMembershipActive();
   const isAdditionalHydrogenPackage = hydrogenEntries.some((entry) => {
     const paymentReference = String(entry?.paymentReference || '').trim().toLowerCase();
@@ -15068,11 +15138,15 @@ function getHydrogenGroupBreakdown(hydrogenEntries, addOnEntries) {
     }
   });
 
-  const totalAmountInr = hydrogenAmountInr + addOnParts.reduce((sum, item) => sum + Number(item.amountInr || 0), 0);
+  const subtotalAmountInr = hydrogenAmountInr + addOnParts.reduce((sum, item) => sum + Number(item.amountInr || 0), 0);
+  const gstBreakdown = getGstBreakdownInr(subtotalAmountInr);
+  const totalAmountInr = gstBreakdown.totalAmountInr;
 
   return {
     breakdownText: breakdownParts.join(' + '),
     totalAmountInr,
+    subtotalAmountInr,
+    gstAmountInr: gstBreakdown.gstAmountInr,
   };
 }
 

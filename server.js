@@ -27,6 +27,8 @@ try {
 const Database = require('better-sqlite3');
 const nodemailer = require('nodemailer');
 const sgMail = require('@sendgrid/mail');
+const Mailgun = require('mailgun.js');
+const formData = require('form-data');
 const Razorpay = require('razorpay');
 const multer = require('multer');
 
@@ -97,6 +99,11 @@ const SENDGRID_MARKETING_VERIFIED_SENDER = normalizeEnvValue(
 const MARKETING_LIST_UNSUBSCRIBE = normalizeEnvValue(process.env.MARKETING_LIST_UNSUBSCRIBE || '');
 const SENDGRID_WEBHOOK_PUBLIC_KEY = normalizeEnvValue(process.env.SENDGRID_WEBHOOK_PUBLIC_KEY || '');
 const SENDGRID_WEBHOOK_TOLERANCE_SECONDS = 5 * 60;
+const MAILGUN_API_KEY = normalizeEnvValue(process.env.MAILGUN_API_KEY || '');
+const MAILGUN_DOMAIN = normalizeEnvValue(process.env.MAILGUN_DOMAIN || '');
+const MAIL_FROM = normalizeEnvValue(
+  process.env.MAIL_FROM || 'noreply@h2houseofhealth.com'
+);
 const BUSINESS_GSTIN = normalizeEnvValue(process.env.BUSINESS_GSTIN || process.env.GSTIN || '');
 const AVATAR_MAX_SIZE_BYTES = 10 * 1024 * 1024;
 const SEED_DEMO_DOCTORS = normalizeEnvValue(process.env.SEED_DEMO_DOCTORS || 'false').toLowerCase() === 'true';
@@ -129,6 +136,29 @@ function normalizeSlotStartTime(value) {
 
 if (SENDGRID_API_KEY) {
   sgMail.setApiKey(SENDGRID_API_KEY);
+}
+const mailgun = new Mailgun(formData);
+
+const mg =
+  MAILGUN_API_KEY && MAILGUN_DOMAIN
+    ? mailgun.client({
+        username: 'api',
+        key: MAILGUN_API_KEY,
+      })
+    : null;
+
+async function sendMailgunEmail({ to, from, subject, text, html }) {
+  if (!mg) {
+    throw new Error('Mailgun is not configured');
+  }
+
+  return mg.messages.create(MAILGUN_DOMAIN, {
+    from: from || MAIL_FROM,
+    to,
+    subject,
+    text,
+    html,
+  });
 }
 const SERVICE_CATALOG = [
   {
@@ -738,7 +768,30 @@ const upload = multer({
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
+app.get('/test-mailgun', async (_req, res) => {
+  try {
+    const result = await sendMailgunEmail({
+      to: 'yourgmail@gmail.com',
+      subject: 'H2 Mailgun Test',
+      text: 'Mailgun is working',
+      html: '<h1>Mailgun is working</h1>',
+    });
 
+    console.log(result);
+
+    res.json({
+      success: true,
+      result,
+    });
+  } catch (error) {
+    console.error('Mailgun test failed:', error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
 app.get('/auth/google', ensureGoogleOAuthConfigured, passport.authenticate('google', { scope: ['profile', 'email'] }));
 
 app.get('/auth/google/callback', ensureGoogleOAuthConfigured, (req, res, next) => {
@@ -11635,9 +11688,9 @@ async function sendCouponEmail({ toEmail, recipientName, code, discountValue, ap
       };
     }
     try {
-      await sgMail.send({
+      await sendMailgunEmail({
         to: normalizedToEmail,
-        from: SENDGRID_MARKETING_FROM_EMAIL,
+        from: MAIL_FROM,
         subject,
         text,
         html,
@@ -11815,75 +11868,36 @@ async function sendBookingPaymentLinkEmail({
     </div>
   `;
 
-  if (SENDGRID_API_KEY) {
-    const senderCandidates = getSendGridBookingSenderCandidates();
-    if (!senderCandidates.length) {
-      return { ok: false, statusCode: 500, message: 'SendGrid booking sender email is not configured.' };
-    }
-
-    let lastSendGridError = null;
-    for (const fromEmail of senderCandidates) {
-      try {
-        const [sendGridResponse] = await sgMail.send({
-          to: normalizedToEmail,
-          from: fromEmail,
-          subject,
-          text,
-          html,
-          customArgs: {
-            context: 'booking_payment_link',
-            bookingId: String(bookingId || ''),
-            userId: String(userId || ''),
-          },
-          categories: ['booking_payment_link'],
-        });
-        const statusCode = Number(sendGridResponse?.statusCode || 0);
-        const headers = sendGridResponse?.headers || {};
-        const messageId = String(
-          (typeof headers.get === 'function' ? headers.get('x-message-id') : headers['x-message-id'] || headers['X-Message-Id']) || ''
-        ).trim();
-
-        console.log('Payment link email send attempt result (SendGrid):', {
-          to: normalizedToEmail,
-          from: fromEmail,
-          subject,
-          statusCode,
-          messageId,
-        });
-
-        if (statusCode !== 202) {
-          lastSendGridError = {
-            statusCode: statusCode || 502,
-            detail: `SendGrid did not return 202 accepted. Received ${statusCode || 'unknown'}.`,
-          };
-          continue;
-        }
-
-        return { ok: true, delivery: 'sendgrid', statusCode, messageId };
-      } catch (error) {
-        const sendGridError = extractSendGridErrorDetails(error);
-        lastSendGridError = sendGridError;
-        console.error('Failed to send booking payment link email via SendGrid:', {
-          to: normalizedToEmail,
-          from: fromEmail,
-          subject,
-          statusCode: sendGridError.statusCode,
-          detail: sendGridError.detail,
-          responseBody: sendGridError.responseBody,
-        });
-        if (![401, 403].includes(Number(sendGridError.statusCode || 0))) {
-          break;
-        }
-      }
-    }
-
+  try {
+    const result = await sendMailgunEmail({
+     to: normalizedToEmail,
+     from: MAIL_FROM,
+     subject,
+     text,
+     html,
+    });
+    console.log('Payment link email sent via Mailgun:', {
+      to: normalizedToEmail,
+      from: MAIL_FROM,
+      subject,
+      messageId: result?.id,
+    });
+    return {
+      ok: true,
+      delivery: 'mailgun',
+      messageId: result?.id || '',
+   };
+  } catch (error) {
+    console.error('Failed to send booking payment link email via Mailgun:', {
+      to: normalizedToEmail,
+      from: MAIL_FROM,
+      subject,
+      error,
+    });
     return {
       ok: false,
-      statusCode: lastSendGridError?.statusCode || 500,
-      message:
-        Number(lastSendGridError?.statusCode || 0) === 403
-          ? 'SendGrid rejected all configured sender identities. Verify SENDGRID_BOOKING_FROM_EMAIL or authenticate the sender domain.'
-          : 'Unable to send payment link email. Please try again.',
+      statusCode: 500,
+      message: 'Unable to send payment link email. Please try again.',
     };
   }
 
@@ -12012,26 +12026,26 @@ async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
   }
 
   try {
-    await sgMail.send({
+    await sendMailgunEmail({
       to: normalizedToEmail,
-      from: SENDGRID_OTP_FROM_EMAIL,
+      from: MAIL_FROM,
       subject,
       text,
       html,
     });
     return {
       ok: true,
-      delivery: 'sendgrid',
+      delivery: 'mailgun',
       message: `${isBookingReschedule ? 'Booking reschedule' : isPasswordReset ? 'Password reset' : 'Signup'} OTP sent to ${normalizedToEmail}. It expires in ${OTP_TTL_MINUTES} minutes.`,
     };
   } catch (error) {
-    const sendGridError = extractSendGridErrorDetails(error);
-    console.error('Failed to send OTP email via SendGrid:', {
+    const mailgunError = extractMailgunErrorDetails(error);
+    console.error('Failed to send OTP email via Mailgun:', {
       to: normalizedToEmail,
-      from: SENDGRID_OTP_FROM_EMAIL,
-      statusCode: sendGridError.statusCode,
-      detail: sendGridError.detail,
-      responseBody: sendGridError.responseBody,
+      from: MAIL_FROM,
+      statusCode: mailgunError.statusCode,
+      detail: mailgunError.detail,
+      responseBody: mailgunError.responseBody,
     });
     const statusCode = sendGridError.statusCode;
     if (ALLOW_DEV_OTP_FALLBACK) {
@@ -12041,7 +12055,7 @@ async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
       return {
         ok: true,
         delivery: 'console',
-        message: `OTP generated for ${normalizedToEmail}. SendGrid failed, so OTP fallback is active in development.`,
+        message: `OTP generated for ${normalizedToEmail}. Mailgun failed, so OTP fallback is active in development.`,
       };
     }
     const isUnauthorized = statusCode === 401 || statusCode === 403;
@@ -12051,8 +12065,8 @@ async function sendOtpEmail(toEmail, otp, purpose = 'signup') {
       statusCode,
       message: isUnauthorized
         ? statusCode === 403
-          ? 'SendGrid rejected the sender identity. Verify the configured FROM email or authenticated domain.'
-          : 'SendGrid authentication failed. Please contact support.'
+          ? 'Mailgun rejected the sender identity. Verify the configured FROM email or authenticated domain.'
+          : 'Mailgun authentication failed. Please contact support.'
         : 'Unable to send OTP email. Please try again.',
     };
   }

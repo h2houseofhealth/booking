@@ -2916,7 +2916,20 @@ async function loadGuestDashboardData() {
       state.services = cachedServices;
     }
   }
-  state.bookings = Array.isArray(state.cart) ? state.cart : [];
+
+  const guestToken = String(state.guestSessionToken || loadStoredGuestPaymentToken() || '').trim();
+  if (guestToken) {
+    state.guestSessionToken = guestToken;
+    try {
+      const bookingResult = await api(`/api/public/payments/booking?token=${encodeURIComponent(guestToken)}`);
+      state.bookings = Array.isArray(bookingResult?.bookings) ? bookingResult.bookings : [];
+    } catch (error) {
+      console.warn('Guest bookings load failed.', error?.message || error);
+      state.bookings = [];
+    }
+  } else {
+    state.bookings = [];
+  }
   state.membership = { plans: [], active: false, current: null };
   state.userMembershipOrders = [];
   state.membershipBrowseVisible = false;
@@ -2954,7 +2967,28 @@ function loadStoredGuestCart() {
   }
 }
 
-function resetGuestCheckoutState() {
+function loadStoredGuestPaymentToken() {
+  try {
+    return String(localStorage.getItem('h2_guest_payment_token') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function persistGuestPaymentToken(token) {
+  const normalizedToken = String(token || '').trim();
+  try {
+    if (normalizedToken) {
+      localStorage.setItem('h2_guest_payment_token', normalizedToken);
+    } else {
+      localStorage.removeItem('h2_guest_payment_token');
+    }
+  } catch {
+    // Local storage can be unavailable in private or embedded browsing contexts.
+  }
+}
+
+function resetGuestCheckoutState({ preserveToken = false } = {}) {
   state.guestCheckout = {
     isActive: false,
     guestName: '',
@@ -2962,7 +2996,9 @@ function resetGuestCheckoutState() {
     guestPhone: '',
     formErrors: {},
   };
-  state.guestSessionToken = null;
+  if (!preserveToken) {
+    state.guestSessionToken = null;
+  }
 }
 
 async function enterGuestBookingMode({ scrollToServices = true } = {}) {
@@ -2976,7 +3012,8 @@ async function enterGuestBookingMode({ scrollToServices = true } = {}) {
   state.servicesBackTargetTab = '';
   state.cart = loadStoredGuestCart();
   state.bookings = Array.isArray(state.cart) ? state.cart : [];
-  resetGuestCheckoutState();
+  state.guestSessionToken = loadStoredGuestPaymentToken();
+  resetGuestCheckoutState({ preserveToken: Boolean(state.guestSessionToken) });
   storeAuthToken('');
 
   try {
@@ -3004,6 +3041,24 @@ function persistGuestCart() {
   state.bookings = cart;
   try {
     localStorage.setItem('h2_guest_cart', JSON.stringify(cart));
+  } catch {
+    // Local storage can be unavailable in private or embedded browsing contexts.
+  }
+}
+
+function clearGuestCart() {
+  state.cart = [];
+  state.bookings = [];
+  try {
+    localStorage.removeItem('h2_guest_cart');
+  } catch {
+    // Local storage can be unavailable in private or embedded browsing contexts.
+  }
+}
+
+function clearGuestCheckoutInfo() {
+  try {
+    localStorage.removeItem('h2_guest_checkout_info');
   } catch {
     // Local storage can be unavailable in private or embedded browsing contexts.
   }
@@ -3800,8 +3855,8 @@ async function proceedToGuestPayment() {
     if (!response.paymentToken) {
       throw new Error('Failed to generate payment token');
     }
-    
     state.guestSessionToken = response.paymentToken;
+    persistGuestPaymentToken(response.paymentToken);
     await openGuestPaymentGateway(response.paymentToken);
   } catch (error) {
     alert(`Checkout failed: ${error.message}`);
@@ -3850,8 +3905,12 @@ async function openGuestPaymentGateway(token) {
             razorpay_signature: response.razorpay_signature,
           }),
         });
-        resetGuestCheckoutState();
-        await loadDashboardData();
+        clearGuestCart();
+        clearGuestCheckoutInfo();
+        resetGuestCheckoutState({ preserveToken: true });
+        await loadGuestDashboardData();
+        state.activeUserTab = 'bookings';
+        window.location.hash = '#bookings';
         render();
         alert('Payment successful. Your booking is confirmed.');
       } catch (error) {
@@ -7424,7 +7483,8 @@ function render() {
     if (elements.memberSessionCountDecBtn) {
       elements.memberSessionCountDecBtn.disabled = Number(state.memberSessionDisplayCount || 0) <= 0;
     }
-    renderUserRows(isGuest ? [] : filteredHistoryBookings, state.userMembershipOrders || [], historyBookings);
+    const userBookingRows = isGuest ? state.bookings || [] : filteredHistoryBookings;
+    renderUserRows(userBookingRows, state.userMembershipOrders || [], isGuest ? state.bookings || [] : historyBookings);
     renderCartRows(cartDisplayBookings);
     renderUserCheckoutSummary(cartPayableBookings);
 
@@ -15727,7 +15787,7 @@ function clearHydrogenComposerNotice() {
 }
 
 function renderMyBookingsSessionTracking() {
-  if (state.user?.role !== 'user') return;
+  if (state.user?.role !== 'user' && !state.isGuestUser) return;
 
   const bookings = (state.bookings || []).filter((booking) => String(booking?.status || '').toLowerCase() !== 'cancelled');
   const todayKey = getTodayIsoDate();
